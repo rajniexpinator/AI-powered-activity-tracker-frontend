@@ -1,0 +1,36 @@
+@import "tailwindcss";
+
+/* Brand: primary #3f4b9d, accent #E22637 — use in classes as text-[#3f4b9d] bg-[#E22637] */
+
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  background-color: #f3f4f6;
+  color: #111827;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  margin: 0;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+a {
+  color: #3f4b9d;
+  text-decoration: none;
+}
+
+a:hover {
+  color: #323b7d;
+}
+
+button,
+input,
+textarea,
+select {
+  font-family: inherit;
+}
+
+button {
+  cursor: pointer;
+}
