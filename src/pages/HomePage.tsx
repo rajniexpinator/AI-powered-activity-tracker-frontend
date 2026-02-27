@@ -12,7 +12,6 @@ import {
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 
-const HERO_IMAGE = 'https://images.unsplash.com/photo-1551288049-bebda4e38f71?w=1200&q=80'
 const SECTION_IMAGE = 'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800&q=80'
 
 const feature1 = {
@@ -53,56 +52,118 @@ export function HomePage() {
   return (
     <div className="w-full">
       <main className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 py-8 md:py-14">
-        {/* Hero — elegant, spacious */}
-        <section className="relative overflow-hidden rounded-[var(--radius-lg)] bg-[var(--color-primary)] text-white mb-10 sm:mb-12 md:mb-16">
-          <div className="absolute inset-0">
-            <img
-              src={HERO_IMAGE}
-              alt=""
-              className="w-full h-full object-cover opacity-25"
-            />
-            <div className="absolute inset-0 bg-gradient-to-b from-[var(--color-primary)]/95 to-[#2d3570]/95" />
-          </div>
-          <div className="relative z-10 px-6 sm:px-8 md:px-14 lg:px-20 py-14 sm:py-20 md:py-28 text-center max-w-2xl mx-auto">
-            <h1 className="text-2xl sm:text-4xl md:text-5xl font-semibold tracking-tight leading-[1.15]">
-              Internal Activity Tracking
-            </h1>
-            <p className="mt-4 sm:mt-5 text-sm sm:text-base md:text-lg text-white/90 leading-relaxed">
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam.
-            </p>
-            {user ? (
-              <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row items-center justify-center gap-3 sm:gap-4">
-                <span className="text-white/80 text-xs sm:text-sm text-center sm:text-left">
-                  Signed in as <strong className="text-white">{user.email}</strong>
-                  <span className="text-white/70"> · {user.role}</span>
-                </span>
-                {user.role === 'admin' && (
-                  <Link
-                    to="/users"
-                    className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 bg-white font-medium rounded-[var(--radius)] hover:bg-white/95 transition-colors no-underline text-sm !text-[#3f4b9d] w-full sm:w-auto"
-                  >
-                    <Users className="w-4 h-4" />
-                    User management
-                  </Link>
-                )}
+        {/* Hero — refined dashboard intro */}
+        <section className="rounded-[var(--radius-lg)] bg-gradient-to-r from-white via-[#f4f5ff] to-[var(--color-bg)] border border-[var(--color-border)] shadow-[var(--shadow-sm)] mb-10 sm:mb-12 md:mb-16">
+          <div className="px-6 sm:px-8 md:px-10 lg:px-14 py-10 sm:py-14 md:py-18 text-[#111]">
+            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8">
+              <div className="max-w-3xl">
+              <p className="text-[11px] sm:text-xs font-semibold uppercase tracking-[0.18em] text-[#888] mb-3">
+                Lorem ipsum · Dashboard overview
+              </p>
+              <h1 className="text-2xl sm:text-3xl md:text-[32px] lg:text-[36px] font-semibold tracking-tight leading-[1.2] text-[#111]">
+                Internal activity
+                <span className="block text-[var(--color-primary)]">tracking at a glance</span>
+              </h1>
+              <p className="mt-3 sm:mt-4 text-xs sm:text-sm md:text-base text-[#555] max-w-xl leading-relaxed">
+                Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et
+                dolore magna aliqua. Ut enim ad minim veniam.
+              </p>
+
+                {/* Phase chips row */}
+                <div className="mt-4 flex flex-wrap gap-2 text-[11px] sm:text-xs">
+                  <span className="inline-flex items-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] px-3 py-1">
+                    Phase 1–2 · Setup & access
+                  </span>
+                  <span className="inline-flex items-center rounded-full bg-[var(--color-accent)]/10 text-[var(--color-accent)] px-3 py-1">
+                    Phase 3 · AI chat · design only
+                  </span>
+                </div>
+
+                {/* Actions */}
+                <div className="mt-5 sm:mt-6 flex flex-col sm:flex-row sm:flex-wrap items-center gap-3">
+                  {user ? (
+                    <>
+                      <Link
+                        to="/"
+                        className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 bg-white font-medium rounded-[var(--radius)] hover:bg-white/95 transition-colors no-underline text-sm !text-[#3f4b9d] w-full sm:w-auto"
+                      >
+                        <BarChart3 className="w-4 h-4" />
+                        View dashboard
+                      </Link>
+                      {user.role === 'admin' && (
+                        <Link
+                          to="/users"
+                          className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 bg-white/10 text-white font-medium rounded-[var(--radius)] border border-white/20 hover:bg-white/18 transition-colors no-underline text-sm w-full sm:w-auto"
+                        >
+                          <Users className="w-4 h-4" />
+                          User management
+                        </Link>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <Link
+                        to="/register"
+                        className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 bg-white font-medium rounded-[var(--radius)] hover:bg-white/95 transition-colors no-underline text-sm !text-[#3f4b9d] w-full sm:w-auto"
+                      >
+                        Get started
+                        <ArrowRight className="w-4 h-4" />
+                      </Link>
+                      <Link
+                        to="/login"
+                        className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 bg-white/10 text-white font-medium rounded-[var(--radius)] border border-white/20 hover:bg-white/18 transition-colors no-underline text-sm w-full sm:w-auto"
+                      >
+                        Sign in
+                      </Link>
+                    </>
+                  )}
+                </div>
               </div>
-            ) : (
-              <div className="mt-6 sm:mt-8 flex flex-col sm:flex-row sm:flex-wrap items-center justify-center gap-3">
-                <Link
-                  to="/register"
-                  className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 bg-white font-medium rounded-[var(--radius)] hover:bg-white/95 transition-colors no-underline text-sm !text-[#3f4b9d] w-full sm:w-auto"
-                >
-                  Get started
-                  <ArrowRight className="w-4 h-4" />
-                </Link>
-                <Link
-                  to="/login"
-                  className="inline-flex items-center justify-center gap-2 px-4 sm:px-5 py-2.5 bg-white/10 text-white font-medium rounded-[var(--radius)] border border-white/20 hover:bg-white/20 transition-colors no-underline text-sm w-full sm:w-auto"
-                >
-                  Sign in
-                </Link>
+
+              {/* Right-side visual card (desktop) */}
+              <div className="hidden lg:flex items-center">
+                <div className="relative w-80 min-h-[200px] rounded-[28px] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.2)] border border-white/80 overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-[#eef1ff] via-white to-[#fef3f2]" />
+                  <div className="relative h-full flex flex-col justify-between p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center justify-center w-10 h-10 rounded-2xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+                          <MessageSquare className="w-5 h-5" />
+                        </span>
+                        <div>
+                          <p className="text-[13px] font-semibold text-[#111] tracking-tight">
+                            Internal activity
+                          </p>
+                          <p className="text-[11px] text-[#6b7280]">AI chat · dashboard view</p>
+                        </div>
+                      </div>
+                      <span className="text-[11px] px-2.5 py-1 rounded-full bg-[#e7f1ff] text-[#2949b6] font-medium">
+                        Phase 2
+                      </span>
+                    </div>
+                    <div className="space-y-2 text-[12px]">
+                      <div className="flex items-center justify-between text-[#4b5563]">
+                        <span>Setup &amp; access</span>
+                        <span className="text-[var(--color-primary)] font-semibold">100%</span>
+                      </div>
+                      <div className="flex items-center justify-between text-[#4b5563]">
+                        <span>AI chat (design)</span>
+                        <span className="text-[#f97373] font-semibold">In progress</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-black/[0.06]">
+                      <span className="flex items-center gap-2 text-[11px] text-[#6b7280]">
+                        <Lock className="w-4 h-4" />
+                        Role-based access
+                      </span>
+                      <span className="text-[11px] font-medium text-[var(--color-primary)]">
+                        View details →
+                      </span>
+                    </div>
+                  </div>
+                </div>
               </div>
-            )}
+            </div>
           </div>
         </section>
 
@@ -178,9 +239,20 @@ export function HomePage() {
                 <p className="text-sm text-[#666] leading-relaxed">
                   {description}
                 </p>
-                <p className="mt-3 text-xs font-medium text-[var(--color-primary)] opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                  Coming soon <ArrowRight className="w-3.5 h-3.5" />
-                </p>
+                <div className="mt-3 flex items-center justify-between">
+                  <p className="text-xs font-medium text-[var(--color-primary)] opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                    {title === 'AI Chat Logging' ? 'Phase 3 design ready' : 'Coming soon'}
+                    <ArrowRight className="w-3.5 h-3.5" />
+                  </p>
+                  {title === 'AI Chat Logging' && (
+                    <Link
+                      to="/chat"
+                      className="text-[11px] font-medium text-[var(--color-primary)] hover:underline whitespace-nowrap"
+                    >
+                      Open chat
+                    </Link>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -223,7 +295,7 @@ export function HomePage() {
           </div>
         </section>
 
-        {/* Footer strip — light, elegant */}
+        {/* Footer strip — light, placeholder content */}
         <section className="rounded-[var(--radius-lg)] bg-[#f5f5f5] border border-[var(--color-border)] px-6 py-5">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -231,12 +303,12 @@ export function HomePage() {
                 <Lock className="w-4 h-4" />
               </span>
               <div>
-                <p className="text-sm font-medium text-[#333]">Secure by design</p>
-                <p className="text-xs text-[#666]">JWT auth · Role-based access · Encrypted</p>
+                <p className="text-sm font-medium text-[#333]">Lorem ipsum dolor sit amet</p>
+                <p className="text-xs text-[#666]">Consectetur adipiscing elit · Sed do eiusmod tempor</p>
               </div>
             </div>
             <p className="text-xs text-[#888]">
-              AI Activity Tracker · Phase 2
+              Lorem ipsum · Placeholder copy
             </p>
           </div>
         </section>
