@@ -24,7 +24,11 @@ async function request<T>(path: string, options?: RequestInit & { skipAuth?: boo
   }
   const res = await fetch(url, { ...options, headers })
   const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data as { error?: string }).error || res.statusText)
+  if (!res.ok) {
+    const err = new Error((data as { error?: string }).error || res.statusText) as Error & { status?: number }
+    err.status = res.status
+    throw err
+  }
   return data as T
 }
 
@@ -45,6 +49,11 @@ export const api = {
         body: JSON.stringify({ email, password, name, role }),
       }),
     getMe: () => request<{ user: User }>('/api/auth/me', { method: 'GET' }),
+    updateMe: (data: { name?: string; currentPassword?: string; newPassword?: string }) =>
+      request<{ user: User }>('/api/auth/me', {
+        method: 'PATCH',
+        body: JSON.stringify(data),
+      }),
     getUsers: () => request<{ users: User[] }>('/api/auth/users', { method: 'GET' }),
     updateUser: (id: string, data: { role?: User['role']; isActive?: boolean }) =>
       request<{ user: User }>(`/api/auth/users/${id}`, {

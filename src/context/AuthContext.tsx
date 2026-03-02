@@ -25,9 +25,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const { user: me } = await api.auth.getMe()
       setUser(me)
-    } catch {
-      setToken(null)
-      setUser(null)
+    } catch (err) {
+      // Only clear stored token on 401 (invalid/expired) so refresh keeps user logged in
+      const status = (err as Error & { status?: number }).status
+      if (status === 401) {
+        setToken(null)
+        setUser(null)
+      }
     } finally {
       setLoading(false)
     }

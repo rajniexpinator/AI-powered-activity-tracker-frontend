@@ -1,4 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 import { AuthProvider } from '@/context/AuthContext'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AdminRoute } from '@/components/auth/AdminRoute'
@@ -8,6 +10,7 @@ import { LoginPage } from './pages/LoginPage'
 import { RegisterPage } from './pages/RegisterPage'
 import { UserManagementPage } from './pages/UserManagementPage'
 import { ChatPage } from './pages/ChatPage'
+import { ProfilePage } from './pages/ProfilePage'
 
 function App() {
   return (
@@ -26,6 +29,14 @@ function App() {
             }
           />
           <Route
+            path="profile"
+            element={
+              <ProtectedRoute>
+                <ProfilePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="users"
             element={
               <ProtectedRoute>
@@ -38,6 +49,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
+      <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop closeOnClick pauseOnHover theme="light" />
     </AuthProvider>
   )
 }

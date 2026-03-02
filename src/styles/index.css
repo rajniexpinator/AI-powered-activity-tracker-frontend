@@ -4,7 +4,7 @@
 
 :root {
   --color-primary: #3f4b9d;
-  --color-primary-hover: #323b7d;
+  --color-primary-hover: #2a3270;
   --color-accent: #E22637;
   --color-surface: #ffffff;
   --color-bg: #fafafa;
@@ -35,12 +35,16 @@ body {
 }
 
 a {
-  color: var(--color-primary);
   text-decoration: none;
 }
 
 a:hover {
   color: var(--color-primary-hover);
+}
+
+/* Links that use white text (e.g. primary buttons, footer) must stay white on hover */
+a.text-white:hover {
+  color: #ffffff !important;
 }
 
 /* Primary-filled buttons: force white text on primary blue (#3f4b9d) for visibility */

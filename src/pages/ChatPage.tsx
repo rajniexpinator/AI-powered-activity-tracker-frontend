@@ -138,7 +138,7 @@ export function ChatPage() {
                   </p>
                   <button
                     type="button"
-                    className="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-4 py-1.5 text-xs sm:text-sm font-medium text-white"
+                    className="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 px-4 py-1.5 text-xs sm:text-sm font-medium text-white transition-all"
                   >
                     <Send className="w-3.5 h-3.5" />
                     Log with AI
