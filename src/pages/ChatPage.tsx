@@ -1,7 +1,85 @@
-import { MessageSquare, Clock, Tag, Archive, Send } from 'lucide-react'
+import { useState } from 'react'
+import { MessageSquare, Clock, Tag, Archive, Send, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { api } from '@/services/api'
+
+type ExtractResult = {
+  structured: unknown
+  rawText: string
+  model: string
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+}
+
+type ValidationResult = {
+  ok: boolean
+  severity: 'ok' | 'minor' | 'warning' | 'critical'
+  issues: string[]
+  suggestions: string[]
+}
 
 export function ChatPage() {
+  const [text, setText] = useState('')
+  const [customerHint, setCustomerHint] = useState('')
+  const [loadingExtract, setLoadingExtract] = useState(false)
+  const [loadingValidate, setLoadingValidate] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [result, setResult] = useState<ExtractResult | null>(null)
+  const [validation, setValidation] = useState<ValidationResult | null>(null)
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+
+  async function handleExtract() {
+    if (!text.trim()) {
+      setError('Please describe the activity before logging with AI.')
+      return
+    }
+    setError(null)
+    setSaveMessage(null)
+    setValidation(null)
+    setLoadingExtract(true)
+    try {
+      const data = await api.ai.extractActivity(text, customerHint || undefined)
+      setResult(data)
+    } catch (err) {
+      const message = (err as Error).message || 'Failed to extract activity'
+      setError(message)
+    } finally {
+      setLoadingExtract(false)
+    }
+  }
+
+  async function handleValidate() {
+    if (!result) return
+    setError(null)
+    setSaveMessage(null)
+    setLoadingValidate(true)
+    try {
+      const data = await api.ai.validateActivity(result.structured, result.rawText)
+      setValidation(data)
+    } catch (err) {
+      const message = (err as Error).message || 'Failed to validate activity'
+      setError(message)
+    } finally {
+      setLoadingValidate(false)
+    }
+  }
+
+  async function handleSave() {
+    if (!result) return
+    setError(null)
+    setSaveMessage(null)
+    setSaving(true)
+    try {
+      await api.activities.create({ rawText: result.rawText, structured: result.structured })
+      setSaveMessage('Activity saved to tracker.')
+    } catch (err) {
+      const message = (err as Error).message || 'Failed to save activity'
+      setError(message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="w-full">
       <main className="max-w-6xl mx-auto px-5 sm:px-6 md:px-8 py-8 md:py-10">
@@ -52,19 +130,29 @@ export function ChatPage() {
               </button>
             </div>
             <div className="max-h-[420px] overflow-auto divide-y divide-[var(--color-border)]">
-              {Array.from({ length: 6 }).map((_, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  className="w-full px-4 py-3 text-left hover:bg-[var(--color-bg)] focus-visible:outline-none"
-                >
-                  <p className="text-xs font-medium text-[#999] mb-0.5">Customer · 2025-02-24 · 14:32</p>
-                  <p className="text-sm text-[#222] line-clamp-2">
-                    Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut
-                    labore et dolore magna aliqua.
+              {result ? (
+                <div className="px-4 py-3 text-left">
+                  <p className="text-xs font-medium text-[#999] mb-1">
+                    Latest extracted activity · model {result.model}
                   </p>
-                </button>
-              ))}
+                  <p className="text-sm text-[#222] line-clamp-3 mb-2">{result.rawText}</p>
+                  <p className="text-[11px] text-[#777]">
+                    Tokens:{' '}
+                    {result.usage
+                      ? `${result.usage.total_tokens ?? 0} total (prompt ${result.usage.prompt_tokens ?? 0}, completion ${result.usage.completion_tokens ?? 0})`
+                      : 'n/a'}
+                  </p>
+                </div>
+              ) : (
+                Array.from({ length: 3 }).map((_, idx) => (
+                  <div key={idx} className="px-4 py-3 text-left">
+                    <p className="text-xs font-medium text-[#999] mb-0.5">No activity yet</p>
+                    <p className="text-sm text-[#666]">
+                      Use the form on the right to describe an activity. The AI will extract a structured log for you.
+                    </p>
+                  </div>
+                ))
+              )}
             </div>
           </section>
 
@@ -75,11 +163,13 @@ export function ChatPage() {
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#777]">New activity</p>
                 <p className="text-sm text-[#333]">
-                  Lorem ipsum dolor sit amet, consectetur adipiscing elit.
+                  Describe a call, issue, task, or conversation and we&apos;ll turn it into a structured activity.
                 </p>
               </div>
               <div className="hidden sm:flex flex-col items-end gap-1 text-right">
-                <p className="text-xs text-[#777]">Log will be saved as structured record.</p>
+                <p className="text-xs text-[#777]">
+                  1) Extract JSON with AI, 2) validate, 3) save to tracker.
+                </p>
                 <Link to="/" className="text-[11px] font-medium text-[var(--color-primary)] hover:underline">
                   View dashboard
                 </Link>
@@ -88,61 +178,123 @@ export function ChatPage() {
 
             {/* Messages area */}
             <div className="flex-1 px-4 sm:px-5 py-4 space-y-3 overflow-auto bg-[var(--color-bg)]">
-              <div className="flex gap-3">
-                <div className="mt-1 h-7 w-7 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center text-[var(--color-primary)] text-xs font-semibold">
-                  AI
+              {error && (
+                <div className="flex items-start gap-2 rounded-[var(--radius)] border border-red-200 bg-red-50 px-3 py-2">
+                  <AlertCircle className="w-4 h-4 text-red-600 mt-0.5" />
+                  <p className="text-xs text-red-700">{error}</p>
                 </div>
-                <div className="max-w-[80%] rounded-2xl rounded-bl-sm bg-white border border-[var(--color-border)] px-3 py-2.5">
-                  <p className="text-xs font-medium text-[#666] mb-1">Assistant</p>
-                  <p className="text-sm text-[#222]">
-                    Lorem ipsum dolor sit amet, consectetur adipiscing elit. Describe what happened and I&apos;ll turn
-                    it into a structured activity log.
-                  </p>
-                </div>
-              </div>
+              )}
 
-              <div className="flex gap-3 justify-end">
-                <div className="max-w-[80%] rounded-2xl rounded-br-sm bg-[var(--color-primary)] text-white px-3 py-2.5">
-                  <p className="text-xs font-medium text-white/80 mb-1">You</p>
-                  <p className="text-sm">
-                    Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt.
-                  </p>
+              {result && (
+                <div className="mt-2">
+                  <div className="flex items-center justify-between mb-1 gap-2">
+                    <p className="text-xs font-medium text-[#666]">Extracted JSON</p>
+                    {validation && (
+                      <div
+                        className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                          validation.ok && validation.severity === 'ok'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : 'bg-amber-50 text-amber-700 border border-amber-200'
+                        }`}
+                      >
+                        <CheckCircle2 className="w-3 h-3" />
+                        <span>
+                          {validation.ok ? 'Ready to save' : validation.severity === 'critical' ? 'Needs attention' : 'Review suggested'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                  <pre className="max-h-64 overflow-auto rounded-[var(--radius)] bg-[#0b1020] text-[11px] text-[#e5f0ff] px-3 py-2 border border-[#1f2937]">
+                    {JSON.stringify(result.structured, null, 2)}
+                  </pre>
+                  {validation && (validation.issues.length > 0 || validation.suggestions.length > 0) && (
+                    <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                      {validation.issues.length > 0 && (
+                        <div className="rounded-[var(--radius)] border border-amber-200 bg-amber-50 px-3 py-2">
+                          <p className="text-[11px] font-semibold text-amber-800 mb-1">Issues</p>
+                          <ul className="space-y-0.5">
+                            {validation.issues.map((issue, idx) => (
+                              <li key={idx} className="text-[11px] text-amber-900">
+                                • {issue}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {validation.suggestions.length > 0 && (
+                        <div className="rounded-[var(--radius)] border border-sky-200 bg-sky-50 px-3 py-2">
+                          <p className="text-[11px] font-semibold text-sky-800 mb-1">Suggestions</p>
+                          <ul className="space-y-0.5">
+                            {validation.suggestions.map((s, idx) => (
+                              <li key={idx} className="text-[11px] text-sky-900">
+                                • {s}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  {saveMessage && (
+                    <p className="mt-2 text-[11px] text-emerald-700 flex items-center gap-1">
+                      <CheckCircle2 className="w-3 h-3" />
+                      {saveMessage}
+                    </p>
+                  )}
                 </div>
-              </div>
-
-              <div className="flex gap-3">
-                <div className="mt-1 h-7 w-7 rounded-full bg-[var(--color-primary)]/10 flex items-center justify-center text-[var(--color-primary)] text-xs font-semibold">
-                  AI
-                </div>
-                <div className="max-w-[80%] rounded-2xl rounded-bl-sm bg-white border border-[var(--color-border)] px-3 py-2.5">
-                  <p className="text-xs font-medium text-[#666] mb-1">Assistant</p>
-                  <p className="text-sm text-[#222]">
-                    Lorem ipsum dolor sit amet, consectetur adipiscing elit. I will extract customer, line, product and
-                    timestamps from this log.
-                  </p>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Input */}
             <div className="border-t border-[var(--color-border)] px-4 sm:px-5 py-3 bg-white">
               <div className="flex flex-col gap-2">
                 <textarea
-                  rows={2}
-                  placeholder="Describe what happened, e.g. customer call, machine issue, shipment, etc. (Lorem ipsum for now)…"
+                  rows={3}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder="Example: Spoke with Apex Engineering about line-3 downtime; diagnosed sensor issue and planned follow‑up visit tomorrow at 10:00."
                   className="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30"
+                />
+                <input
+                  type="text"
+                  value={customerHint}
+                  onChange={(e) => setCustomerHint(e.target.value)}
+                  placeholder="Optional customer / project hint (e.g. Apex Engineering)"
+                  className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
                 />
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[11px] text-[#999] hidden sm:block">
-                    Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt.
+                    1) Extract JSON, 2) validate the log, 3) save when you&apos;re satisfied.
                   </p>
-                  <button
-                    type="button"
-                    className="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 px-4 py-1.5 text-xs sm:text-sm font-medium text-white transition-all"
-                  >
-                    <Send className="w-3.5 h-3.5" />
-                    Log with AI
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleExtract}
+                      disabled={loadingExtract}
+                      className="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 px-4 py-1.5 text-xs sm:text-sm font-medium text-white transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      {loadingExtract ? 'Extracting…' : 'Log with AI'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleValidate}
+                      disabled={!result || loadingValidate}
+                      className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-white hover:bg-black/[0.03] px-3 py-1.5 text-[11px] sm:text-xs font-medium text-[#444] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5 text-[var(--color-primary)]" />
+                      {loadingValidate ? 'Validating…' : 'Validate'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSave}
+                      disabled={!result || saving}
+                      className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600 px-3 py-1.5 text-[11px] sm:text-xs font-medium transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {saving ? 'Saving…' : 'Save to tracker'}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

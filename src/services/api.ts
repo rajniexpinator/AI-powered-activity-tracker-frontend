@@ -61,4 +61,36 @@ export const api = {
         body: JSON.stringify(data),
       }),
   },
+
+  ai: {
+    extractActivity: (text: string, customerHint?: string) =>
+      request<{
+        structured: unknown
+        rawText: string
+        model: string
+        usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number }
+      }>('/api/ai/extract-activity', {
+        method: 'POST',
+        body: JSON.stringify({ text, customerHint }),
+      }),
+
+    validateActivity: (structured: unknown, rawText: string) =>
+      request<{
+        ok: boolean
+        severity: 'ok' | 'minor' | 'warning' | 'critical'
+        issues: string[]
+        suggestions: string[]
+      }>('/api/ai/validate-activity', {
+        method: 'POST',
+        body: JSON.stringify({ structured, rawText }),
+      }),
+  },
+
+  activities: {
+    create: (payload: { rawText: string; structured: unknown }) =>
+      request<{ activity: unknown }>('/api/activities', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+  },
 }
