@@ -6,7 +6,7 @@ import './styles/index.css'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter basename="/ai_activity_tracker">
+    <BrowserRouter>
       <App />
     </BrowserRouter>
   </StrictMode>
