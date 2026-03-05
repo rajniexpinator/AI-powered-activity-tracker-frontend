@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Users, LogOut, User, ChevronDown, Pencil, Menu, X } from 'lucide-react'
-import logoSrc from '@/assets/ApexLogoFinal_Color.png'
+import logoSrc from '../../../public/logo.png'
 import { useAuth } from '@/context/AuthContext'
 
 export function Header() {
@@ -54,7 +54,7 @@ export function Header() {
         </div>
       </div>
       <div className="p-2">
-        <Link to="/" onClick={closeMobileMenu} className="flex items-center gap-3 px-4 py-3 rounded-lg text-[#333] hover:bg-black/[0.04] no-underline text-[15px]">
+        <Link to="/dashboard" onClick={closeMobileMenu} className="flex items-center gap-3 px-4 py-3 rounded-lg text-[#333] hover:bg-black/[0.04] no-underline text-[15px]">
           <LayoutDashboard className="w-5 h-5 text-[#666]" />
           Dashboard
         </Link>
@@ -92,11 +92,8 @@ export function Header() {
   return (
     <header className="sticky top-0 z-50 w-full bg-white/80 backdrop-blur-md border-b border-black/[0.06]">
       <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 h-14 sm:h-16 flex items-center justify-between gap-4">
-        <Link
-          to="/"
-          className="flex items-center gap-2 sm:gap-3 no-underline text-[#111] hover:opacity-90 transition-opacity min-w-0"
-        >
-          <span className="flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-lg bg-[#f5f5f7] overflow-hidden border border-black/[0.06] shrink-0">
+        <Link to="/" className="flex items-center gap-2 sm:gap-3 no-underline text-[#111] hover:opacity-90 transition-opacity min-w-0">
+          <span className="flex items-center justify-center w-15 h-15 overflow-hidden shrink-0">
             <img
               src={logoSrc}
               alt="AI Activity Tracker"
@@ -107,18 +104,18 @@ export function Header() {
                 if (next) (next as HTMLElement).style.display = 'flex'
               }}
             />
-            <span className="hidden items-center justify-center w-full h-full bg-[var(--color-accent)] text-white text-xs font-semibold" aria-hidden>AI</span>
+            {/* <span className="hidden items-center justify-center w-full h-full bg-[var(--color-accent)] text-white text-xs font-semibold" aria-hidden>AI</span> */}
           </span>
-          <span className="text-[15px] sm:text-[17px] font-semibold tracking-tight text-[#111] truncate">
+          {/* <span className="text-[15px] sm:text-[17px] font-semibold tracking-tight text-[#111] truncate">
             AI Activity Tracker
-          </span>
+          </span> */}
         </Link>
 
         {/* Desktop nav — hidden on mobile */}
         <nav className="hidden md:flex items-center gap-0.5">
           {user ? (
             <>
-              <Link to="/" className="hidden sm:flex items-center gap-2 px-3.5 py-2 text-[14px] font-medium text-[#666] hover:text-[#111] rounded-lg hover:bg-black/[0.06] hover:ring-1 hover:ring-black/5 transition-colors no-underline">
+              <Link to="/dashboard" className="hidden sm:flex items-center gap-2 px-3.5 py-2 text-[14px] font-medium text-[#666] hover:text-[#111] rounded-lg hover:bg-black/[0.06] hover:ring-1 hover:ring-black/5 transition-colors no-underline">
                 <LayoutDashboard className="w-4 h-4 opacity-70" />
                 Dashboard
               </Link>

@@ -117,7 +117,7 @@ export function HomePage() {
                   {user ? (
                     <>
                       <Link
-                        to="/"
+                        to="/dashboard"
                         className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-white font-semibold rounded-xl hover:bg-gray-100 hover:ring-2 hover:ring-[var(--color-primary)]/40 hover:ring-offset-2 transition-all no-underline text-sm !text-[var(--color-primary)] shadow-xl hover:shadow-2xl hover:-translate-y-0.5"
                       >
                         <BarChart3 className="w-4 h-4" />
@@ -375,7 +375,7 @@ export function HomePage() {
               )}
               {user && (
                 <Link
-                  to="/"
+                  to="/dashboard"
                   className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-[var(--color-primary)] font-semibold rounded-xl text-white hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 hover:-translate-y-0.5 transition-all no-underline text-sm"
                 >
                   Go to dashboard

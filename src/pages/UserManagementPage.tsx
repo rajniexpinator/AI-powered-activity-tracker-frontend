@@ -4,6 +4,7 @@ import { ArrowLeft, Users, UserPlus, UserCircle, Shield, AlertCircle, Loader2, C
 import type { User } from '@/types/auth'
 import { api } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
+import { AdminShell } from '@/components/layout/AdminShell'
 
 const ROLES: User['role'][] = ['admin', 'supervisor', 'employee']
 
@@ -94,46 +95,44 @@ export function UserManagementPage() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh]">
-        <Loader2 className="w-10 h-10 text-[var(--color-primary)] animate-spin" />
-        <p className="mt-4 text-[15px] text-[var(--color-text-secondary)]">Loading users…</p>
-      </div>
-    )
-  }
-
   return (
-    <div className="max-w-5xl mx-auto px-3 sm:px-4 md:px-6 py-6 sm:py-8">
-      {/* Page header */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6 mb-8">
-        <div>
-          <Link
-            to="/"
-            className="inline-flex items-center gap-2 text-[14px] font-medium text-[var(--color-primary)] hover:underline mb-4"
-          >
-            <ArrowLeft className="w-4 h-4" />
-            Back to Dashboard
-          </Link>
-          <h1 className="text-2xl sm:text-[28px] md:text-[32px] font-bold tracking-tight text-[var(--color-text)] flex items-center gap-3">
-            <span className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
-              <Users className="w-5 h-5 sm:w-6 sm:h-6" />
-            </span>
-            User management
-          </h1>
-          <p className="mt-2 text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] max-w-md">
-            Add users and manage roles and access for your team.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowAddModal(true)}
-          className="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 sm:px-6 sm:py-3.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 transition-all text-[14px] sm:text-[15px] font-semibold rounded-xl !text-white shadow-[0_4px_14px_rgba(63,75,157,0.25)]"
-        >
-          <UserPlus className="w-5 h-5" />
-          Add user
-        </button>
-      </div>
+    <AdminShell>
+      {loading ? (
+            <div className="flex flex-col items-center justify-center min-h-[50vh]">
+              <Loader2 className="w-10 h-10 text-[var(--color-primary)] animate-spin" />
+              <p className="mt-4 text-[15px] text-[var(--color-text-secondary)]">Loading users…</p>
+            </div>
+          ) : (
+            <>
+              {/* Page header */}
+              <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6 mb-8">
+                <div>
+                  <Link
+                    to="/dashboard"
+                    className="inline-flex items-center gap-2 text-[14px] font-medium text-[var(--color-primary)] hover:underline mb-4"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    Back to Dashboard
+                  </Link>
+                  <h1 className="text-2xl sm:text-[28px] md:text-[32px] font-bold tracking-tight text-[var(--color-text)] flex items-center gap-3">
+                    <span className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+                      <Users className="w-5 h-5 sm:w-6 sm:h-6" />
+                    </span>
+                    User management
+                  </h1>
+                  <p className="mt-2 text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] max-w-md">
+                    Add users and manage roles and access for your team.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(true)}
+                  className="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 sm:px-6 sm:py-3.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 transition-all text-[14px] sm:text-[15px] font-semibold rounded-xl !text-white shadow-[0_4px_14px_rgba(63,75,157,0.25)]"
+                >
+                  <UserPlus className="w-5 h-5" />
+                  Add user
+                </button>
+              </div>
 
       {/* Error banner */}
       {error && !showAddModal ? (
@@ -146,36 +145,36 @@ export function UserManagementPage() {
         </div>
       ) : null}
 
-      {/* Users table card */}
-      <section className="bg-white rounded-2xl border border-[var(--color-primary)]/10 shadow-[0_4px_24px_rgba(63,75,157,0.08)] overflow-hidden">
-        <div className="px-5 sm:px-6 md:px-8 py-5 sm:py-6 border-b border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <UserCircle className="w-5 h-5 text-[var(--color-primary)]" />
-            <h2 className="text-lg sm:text-[19px] font-semibold text-[var(--color-text)]">All users</h2>
-          </div>
-          <p className="text-[13px] text-[var(--color-text-secondary)]">
-            {users.length} user{users.length !== 1 ? 's' : ''}
-          </p>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="min-w-full">
-            <thead>
-              <tr className="bg-[var(--color-bg)]">
-                <th className="px-5 sm:px-6 md:px-8 py-4 text-left text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
-                  User
-                </th>
-                <th className="px-5 sm:px-6 md:px-8 py-4 text-left text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
-                  Role
-                </th>
-                <th className="px-5 sm:px-6 md:px-8 py-4 text-left text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
-                  Status
-                </th>
-                <th className="px-5 sm:px-6 md:px-8 py-4 text-right text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
-                  Actions
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[var(--color-border)]">
+              {/* Users table card */}
+              <section className="bg-white rounded-2xl border border-[var(--color-primary)]/10 shadow-[0_4px_24px_rgba(63,75,157,0.08)] overflow-hidden">
+                <div className="px-5 sm:px-6 md:px-8 py-5 sm:py-6 border-b border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <UserCircle className="w-5 h-5 text-[var(--color-primary)]" />
+                    <h2 className="text-lg sm:text-[19px] font-semibold text-[var(--color-text)]">All users</h2>
+                  </div>
+                  <p className="text-[13px] text-[var(--color-text-secondary)]">
+                    {users.length} user{users.length !== 1 ? 's' : ''}
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead>
+                      <tr className="bg-[var(--color-bg)]">
+                        <th className="px-5 sm:px-6 md:px-8 py-4 text-left text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                          User
+                        </th>
+                        <th className="px-5 sm:px-6 md:px-8 py-4 text-left text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                          Role
+                        </th>
+                        <th className="px-5 sm:px-6 md:px-8 py-4 text-left text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                          Status
+                        </th>
+                        <th className="px-5 sm:px-6 md:px-8 py-4 text-right text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                          Actions
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--color-border)]">
               {users.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-5 sm:px-6 md:px-8 py-16 sm:py-20 text-center">
@@ -264,10 +263,10 @@ export function UserManagementPage() {
                   </tr>
                 ))
               )}
-            </tbody>
-          </table>
-        </div>
-      </section>
+                    </tbody>
+                  </table>
+                </div>
+              </section>
 
       {/* Add User Modal */}
       {showAddModal && (
@@ -408,6 +407,8 @@ export function UserManagementPage() {
           </div>
         </div>
       )}
-    </div>
+            </>
+          )}
+    </AdminShell>
   )
 }

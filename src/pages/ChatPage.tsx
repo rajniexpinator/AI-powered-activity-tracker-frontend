@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { MessageSquare, Clock, Tag, Archive, Send, AlertCircle, CheckCircle2 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '@/services/api'
+import { AdminShell } from '@/components/layout/AdminShell'
 
 type ExtractResult = {
   structured: unknown
@@ -17,9 +18,22 @@ type ValidationResult = {
   suggestions: string[]
 }
 
+type StructuredActivity = {
+  summary?: string
+  part_name?: string
+  intent?: string
+  outcome?: string
+  next_actions?: string[]
+  notes?: string
+}
+
 export function ChatPage() {
   const [text, setText] = useState('')
   const [customerHint, setCustomerHint] = useState('')
+  const [customers, setCustomers] = useState<
+    { _id: string; name: string; email?: string; notes?: string; createdAt: string }[]
+  >([])
+  const [selectedCustomerId, setSelectedCustomerId] = useState('')
   const [loadingExtract, setLoadingExtract] = useState(false)
   const [loadingValidate, setLoadingValidate] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -27,6 +41,45 @@ export function ChatPage() {
   const [result, setResult] = useState<ExtractResult | null>(null)
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [recentActivities, setRecentActivities] = useState<
+    { _id: string; customer?: string; summary?: string; createdAt: string }[]
+  >([])
+  const [loadingRecent, setLoadingRecent] = useState(false)
+  const [loadingCustomers, setLoadingCustomers] = useState(false)
+  const [editSummary, setEditSummary] = useState('')
+  const [editPartName, setEditPartName] = useState('')
+  const [editIntent, setEditIntent] = useState('')
+  const [editOutcome, setEditOutcome] = useState('')
+  const [editNextActions, setEditNextActions] = useState('')
+  const [editNotes, setEditNotes] = useState('')
+
+  async function loadRecent() {
+    setLoadingRecent(true)
+    try {
+      const { activities } = await api.activities.list(20)
+      setRecentActivities(activities)
+    } catch {
+      // ignore list errors here; the right-hand flow still works
+    } finally {
+      setLoadingRecent(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadRecent()
+    const loadCustomers = async () => {
+      setLoadingCustomers(true)
+      try {
+        const { customers } = await api.customers.list()
+        setCustomers(customers)
+      } catch {
+        // ignore customers load error for now; chat still works without dropdown
+      } finally {
+        setLoadingCustomers(false)
+      }
+    }
+    void loadCustomers()
+  }, [])
 
   async function handleExtract() {
     if (!text.trim()) {
@@ -40,6 +93,13 @@ export function ChatPage() {
     try {
       const data = await api.ai.extractActivity(text, customerHint || undefined)
       setResult(data)
+      const structured = (data.structured || {}) as StructuredActivity
+      setEditSummary(structured.summary ?? '')
+      setEditPartName(structured.part_name ?? '')
+      setEditIntent(structured.intent ?? '')
+      setEditOutcome(structured.outcome ?? '')
+      setEditNextActions(structured.next_actions?.join('\n') ?? '')
+      setEditNotes(structured.notes ?? '')
     } catch (err) {
       const message = (err as Error).message || 'Failed to extract activity'
       setError(message)
@@ -70,8 +130,34 @@ export function ChatPage() {
     setSaveMessage(null)
     setSaving(true)
     try {
-      await api.activities.create({ rawText: result.rawText, structured: result.structured })
+      const base = (result.structured || {}) as any
+      const editedStructured = {
+        ...base,
+        summary: editSummary || base.summary,
+        part_name: editPartName || base.part_name,
+        intent: editIntent || base.intent,
+        outcome: editOutcome || base.outcome,
+        next_actions: editNextActions
+          ? editNextActions
+              .split('\n')
+              .map((s) => s.trim())
+              .filter(Boolean)
+          : base.next_actions,
+        notes: editNotes || base.notes,
+      }
+
+      const { activity } = await api.activities.create({ rawText: result.rawText, structured: editedStructured })
       setSaveMessage('Activity saved to tracker.')
+      // Refresh recent list with the new activity at the top
+      setRecentActivities((prev) => [
+        {
+          _id: (activity as any)._id,
+          customer: (activity as any).customer,
+          summary: (activity as any).summary,
+          createdAt: (activity as any).createdAt,
+        },
+        ...prev,
+      ])
     } catch (err) {
       const message = (err as Error).message || 'Failed to save activity'
       setError(message)
@@ -81,8 +167,8 @@ export function ChatPage() {
   }
 
   return (
-    <div className="w-full">
-      <main className="max-w-6xl mx-auto px-5 sm:px-6 md:px-8 py-8 md:py-10">
+    <AdminShell>
+      <main className="max-w-6xl mx-auto px-5 sm:px-6 md:px-8 py-4 md:py-6">
         {/* Header row */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
@@ -130,19 +216,17 @@ export function ChatPage() {
               </button>
             </div>
             <div className="max-h-[420px] overflow-auto divide-y divide-[var(--color-border)]">
-              {result ? (
-                <div className="px-4 py-3 text-left">
-                  <p className="text-xs font-medium text-[#999] mb-1">
-                    Latest extracted activity · model {result.model}
-                  </p>
-                  <p className="text-sm text-[#222] line-clamp-3 mb-2">{result.rawText}</p>
-                  <p className="text-[11px] text-[#777]">
-                    Tokens:{' '}
-                    {result.usage
-                      ? `${result.usage.total_tokens ?? 0} total (prompt ${result.usage.prompt_tokens ?? 0}, completion ${result.usage.completion_tokens ?? 0})`
-                      : 'n/a'}
-                  </p>
-                </div>
+              {loadingRecent ? (
+                <div className="px-4 py-3 text-left text-xs text-[#777]">Loading recent logs…</div>
+              ) : recentActivities.length > 0 ? (
+                recentActivities.map((act) => (
+                  <div key={act._id} className="px-4 py-3 text-left">
+                    <p className="text-xs font-medium text-[#999] mb-0.5">
+                      {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                    </p>
+                    <p className="text-sm text-[#222] line-clamp-2">{act.summary || 'No summary'}</p>
+                  </div>
+                ))
               ) : (
                 Array.from({ length: 3 }).map((_, idx) => (
                   <div key={idx} className="px-4 py-3 text-left">
@@ -170,7 +254,7 @@ export function ChatPage() {
                 <p className="text-xs text-[#777]">
                   1) Extract JSON with AI, 2) validate, 3) save to tracker.
                 </p>
-                <Link to="/" className="text-[11px] font-medium text-[var(--color-primary)] hover:underline">
+                <Link to="/dashboard" className="text-[11px] font-medium text-[var(--color-primary)] hover:underline">
                   View dashboard
                 </Link>
               </div>
@@ -186,7 +270,7 @@ export function ChatPage() {
               )}
 
               {result && (
-                <div className="mt-2">
+                <div className="mt-2 space-y-3">
                   <div className="flex items-center justify-between mb-1 gap-2">
                     <p className="text-xs font-medium text-[#666]">Extracted JSON</p>
                     {validation && (
@@ -207,6 +291,84 @@ export function ChatPage() {
                   <pre className="max-h-64 overflow-auto rounded-[var(--radius)] bg-[#0b1020] text-[11px] text-[#e5f0ff] px-3 py-2 border border-[#1f2937]">
                     {JSON.stringify(result.structured, null, 2)}
                   </pre>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#555] mb-1">
+                          Summary
+                        </label>
+                        <input
+                          type="text"
+                          value={editSummary}
+                          onChange={(e) => setEditSummary(e.target.value)}
+                          className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                          placeholder="One-sentence summary"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#555] mb-1">
+                          Part name
+                        </label>
+                        <input
+                          type="text"
+                          value={editPartName}
+                          onChange={(e) => setEditPartName(e.target.value)}
+                          className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                          placeholder="e.g. wheel liner, BCM, IP"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#555] mb-1">
+                          Intent
+                        </label>
+                        <input
+                          type="text"
+                          value={editIntent}
+                          onChange={(e) => setEditIntent(e.target.value)}
+                          className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                          placeholder="What were you trying to achieve?"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#555] mb-1">
+                          Outcome
+                        </label>
+                        <input
+                          type="text"
+                          value={editOutcome}
+                          onChange={(e) => setEditOutcome(e.target.value)}
+                          className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                          placeholder="What actually happened / decided?"
+                        />
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#555] mb-1">
+                          Next actions (one per line)
+                        </label>
+                        <textarea
+                          rows={3}
+                          value={editNextActions}
+                          onChange={(e) => setEditNextActions(e.target.value)}
+                          className="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                          placeholder="- Call supplier\n- Take new photos\n- Check DTC history"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#555] mb-1">
+                          Notes
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={editNotes}
+                          onChange={(e) => setEditNotes(e.target.value)}
+                          className="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                          placeholder="Any extra context or clarifications."
+                        />
+                      </div>
+                    </div>
+                  </div>
                   {validation && (validation.issues.length > 0 || validation.suggestions.length > 0) && (
                     <div className="mt-2 grid gap-2 sm:grid-cols-2">
                       {validation.issues.length > 0 && (
@@ -255,13 +417,32 @@ export function ChatPage() {
                   placeholder="Example: Spoke with Apex Engineering about line-3 downtime; diagnosed sensor issue and planned follow‑up visit tomorrow at 10:00."
                   className="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30"
                 />
-                <input
-                  type="text"
-                  value={customerHint}
-                  onChange={(e) => setCustomerHint(e.target.value)}
-                  placeholder="Optional customer / project hint (e.g. Apex Engineering)"
-                  className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
-                />
+                <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+                  <select
+                    value={selectedCustomerId}
+                    onChange={(e) => {
+                      const id = e.target.value
+                      setSelectedCustomerId(id)
+                      const customer = customers.find((c) => c._id === id)
+                      setCustomerHint(customer?.name ?? '')
+                    }}
+                    className="w-full sm:w-1/2 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                  >
+                    <option value="">{loadingCustomers ? 'Loading customers…' : 'Select customer (optional)'}</option>
+                    {customers.map((c) => (
+                      <option key={c._id} value={c._id}>
+                        {c.name}{c.email ? ` — ${c.email}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    value={customerHint}
+                    onChange={(e) => setCustomerHint(e.target.value)}
+                    placeholder="Or type a customer / project name"
+                    className="w-full sm:flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                  />
+                </div>
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[11px] text-[#999] hidden sm:block">
                     1) Extract JSON, 2) validate the log, 3) save when you&apos;re satisfied.
@@ -301,7 +482,7 @@ export function ChatPage() {
           </section>
         </div>
       </main>
-    </div>
+    </AdminShell>
   )
 }
 

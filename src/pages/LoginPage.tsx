@@ -20,7 +20,7 @@ export function LoginPage() {
     try {
       await login(email.trim(), password)
       toast.success('User login successfully')
-      navigate('/', { replace: true })
+      navigate('/dashboard', { replace: true })
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed')
     } finally {

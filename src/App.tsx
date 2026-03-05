@@ -11,6 +11,9 @@ import { RegisterPage } from './pages/RegisterPage'
 import { UserManagementPage } from './pages/UserManagementPage'
 import { ChatPage } from './pages/ChatPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { DashboardPage } from './pages/DashboardPage'
+import { CustomersPage } from './pages/CustomersPage'
+import { AdminActivityPage } from './pages/AdminActivityPage'
 
 function App() {
   return (
@@ -20,6 +23,14 @@ function App() {
         <Route path="/register" element={<RegisterPage />} />
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
+          <Route
+            path="dashboard"
+            element={
+              <ProtectedRoute>
+                <DashboardPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="chat"
             element={
@@ -42,6 +53,24 @@ function App() {
               <ProtectedRoute>
                 <AdminRoute>
                   <UserManagementPage />
+                </AdminRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="customers"
+            element={
+              <ProtectedRoute>
+                <CustomersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="activity"
+            element={
+              <ProtectedRoute>
+                <AdminRoute>
+                  <AdminActivityPage />
                 </AdminRoute>
               </ProtectedRoute>
             }

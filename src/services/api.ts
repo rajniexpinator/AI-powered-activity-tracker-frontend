@@ -92,5 +92,59 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+
+    list: (limit = 20) =>
+      request<{
+        activities: { _id: string; customer?: string; summary?: string; createdAt: string }[]
+      }>(`/api/activities?limit=${limit}`, {
+        method: 'GET',
+      }),
+
+    adminList: (params: { userId?: string; customer?: string; from?: string; to?: string; limit?: number }) => {
+      const search = new URLSearchParams()
+      if (params.userId) search.set('userId', params.userId)
+      if (params.customer) search.set('customer', params.customer)
+      if (params.from) search.set('from', params.from)
+      if (params.to) search.set('to', params.to)
+      if (typeof params.limit === 'number') search.set('limit', String(params.limit))
+      const qs = search.toString()
+      const path = qs ? `/api/activities/admin?${qs}` : '/api/activities/admin'
+      return request<{
+        activities: {
+          _id: string
+          customer?: string
+          summary?: string
+          createdAt: string
+          userId?: { _id: string; name?: string; email?: string; role?: string }
+        }[]
+      }>(path, { method: 'GET' })
+    },
+
+    generateWeeklyReport: (payload: { userId?: string; customer?: string; from?: string; to?: string; limit?: number }) =>
+      request<{ report: string }>('/api/activities/admin/weekly-report', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+  },
+
+  customers: {
+    list: () =>
+      request<{
+        customers: { _id: string; name: string; email?: string; notes?: string; createdAt: string }[]
+      }>('/api/customers', {
+        method: 'GET',
+      }),
+    create: (payload: { name: string; email?: string; notes?: string }) =>
+      request<{ customer: { _id: string; name: string; email?: string; notes?: string; createdAt: string } }>(
+        '/api/customers',
+        {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        }
+      ),
+    delete: (id: string) =>
+      request<{ success: boolean }>(`/api/customers/${id}`, {
+        method: 'DELETE',
+      }),
   },
 }
