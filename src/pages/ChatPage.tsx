@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { MessageSquare, Clock, Tag, Archive, Send, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { MessageSquare, Clock, Tag, Archive, Send, AlertCircle, CheckCircle2, Image as ImageIcon, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
@@ -27,6 +27,16 @@ type StructuredActivity = {
   notes?: string
 }
 
+type ActivityDetail = {
+  _id: string
+  customer?: string
+  summary?: string
+  rawConversation?: string
+  structuredData?: StructuredActivity | (StructuredActivity & Record<string, unknown>)
+  images?: string[]
+  createdAt: string
+}
+
 export function ChatPage() {
   const [text, setText] = useState('')
   const [customerHint, setCustomerHint] = useState('')
@@ -52,6 +62,14 @@ export function ChatPage() {
   const [editOutcome, setEditOutcome] = useState('')
   const [editNextActions, setEditNextActions] = useState('')
   const [editNotes, setEditNotes] = useState('')
+  const [imageFile, setImageFile] = useState<File | null>(null)
+  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [imageUrls, setImageUrls] = useState<string[]>([])
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [loadingSelected, setLoadingSelected] = useState(false)
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null)
+  const [archiving, setArchiving] = useState(false)
 
   async function loadRecent() {
     setLoadingRecent(true)
@@ -146,7 +164,11 @@ export function ChatPage() {
         notes: editNotes || base.notes,
       }
 
-      const { activity } = await api.activities.create({ rawText: result.rawText, structured: editedStructured })
+      const { activity } = await api.activities.create({
+        rawText: result.rawText,
+        structured: editedStructured,
+        images: imageUrls.length ? imageUrls : undefined,
+      })
       setSaveMessage('Activity saved to tracker.')
       // Refresh recent list with the new activity at the top
       setRecentActivities((prev) => [
@@ -163,6 +185,42 @@ export function ChatPage() {
       setError(message)
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function handleSelectRecent(id: string) {
+    setSelectedActivityId(id)
+    setLoadingSelected(true)
+    setError(null)
+    setSaveMessage(null)
+    setValidation(null)
+    try {
+      const { activity } = await api.activities.getOne(id)
+      const detail = activity as ActivityDetail
+
+      const structured = (detail.structuredData || {}) as StructuredActivity
+
+      setResult({
+        structured,
+        rawText: detail.rawConversation ?? '',
+        model: 'from-history',
+      })
+
+      setText(detail.rawConversation ?? '')
+      setEditSummary(structured.summary ?? '')
+      setEditPartName(structured.part_name ?? '')
+      setEditIntent(structured.intent ?? '')
+      setEditOutcome(structured.outcome ?? '')
+      setEditNextActions(structured.next_actions?.join('\n') ?? '')
+      setEditNotes(structured.notes ?? '')
+      setImageUrls(detail.images ?? [])
+      setImageFile(null)
+      setImagePreview(null)
+    } catch (err) {
+      const message = (err as Error).message || 'Failed to load activity'
+      setError(message)
+    } finally {
+      setLoadingSelected(false)
     }
   }
 
@@ -209,24 +267,68 @@ export function ChatPage() {
               <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#777]">Recent logs</p>
               <button
                 type="button"
-                className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium text-[#666] hover:bg-black/[0.03]"
+                onClick={async () => {
+                  if (!selectedActivityId) {
+                    setError('Select a log from the list before archiving.')
+                    return
+                  }
+                  setArchiving(true)
+                  setError(null)
+                  setSaveMessage(null)
+                  try {
+                    await api.activities.archive(selectedActivityId)
+                    setRecentActivities((prev) => prev.filter((a) => a._id !== selectedActivityId))
+                    setSelectedActivityId(null)
+                    setResult(null)
+                    setValidation(null)
+                    setText('')
+                    setEditSummary('')
+                    setEditPartName('')
+                    setEditIntent('')
+                    setEditOutcome('')
+                    setEditNextActions('')
+                    setEditNotes('')
+                    setImageUrls([])
+                    setImageFile(null)
+                    setImagePreview(null)
+                  } catch (err) {
+                    const message = (err as Error).message || 'Failed to archive activity'
+                    setError(message)
+                  } finally {
+                    setArchiving(false)
+                  }
+                }}
+                disabled={!selectedActivityId || archiving}
+                className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium text-[#666] hover:bg-black/[0.03] disabled:opacity-50"
               >
                 <Archive className="w-3.5 h-3.5" />
-                Archive
+                {archiving ? 'Archiving…' : 'Archive'}
               </button>
             </div>
             <div className="max-h-[420px] overflow-auto divide-y divide-[var(--color-border)]">
               {loadingRecent ? (
                 <div className="px-4 py-3 text-left text-xs text-[#777]">Loading recent logs…</div>
               ) : recentActivities.length > 0 ? (
-                recentActivities.map((act) => (
-                  <div key={act._id} className="px-4 py-3 text-left">
-                    <p className="text-xs font-medium text-[#999] mb-0.5">
-                      {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
-                    </p>
-                    <p className="text-sm text-[#222] line-clamp-2">{act.summary || 'No summary'}</p>
-                  </div>
-                ))
+                recentActivities.map((act) => {
+                  const isSelected = act._id === selectedActivityId
+                  return (
+                    <button
+                      key={act._id}
+                      type="button"
+                      onClick={() => void handleSelectRecent(act._id)}
+                      className={`w-full text-left px-4 py-3 transition-colors ${
+                        isSelected
+                          ? 'bg-[var(--color-primary)]/6 border-l-2 border-[var(--color-primary)]'
+                          : 'hover:bg-black/[0.025]'
+                      }`}
+                    >
+                      <p className="text-xs font-medium text-[#999] mb-0.5">
+                        {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                      </p>
+                      <p className="text-sm text-[#222] line-clamp-2">{act.summary || 'No summary'}</p>
+                    </button>
+                  )
+                })
               ) : (
                 Array.from({ length: 3 }).map((_, idx) => (
                   <div key={idx} className="px-4 py-3 text-left">
@@ -238,6 +340,11 @@ export function ChatPage() {
                 ))
               )}
             </div>
+            {loadingSelected && (
+              <div className="px-4 py-2 text-[11px] text-[var(--color-text-secondary)] border-t border-[var(--color-border)] bg-[var(--color-bg)]">
+                Loading selected activity…
+              </div>
+            )}
           </section>
 
           {/* Right: chat surface */}
@@ -443,6 +550,81 @@ export function ChatPage() {
                     className="w-full sm:flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
                   />
                 </div>
+                {/* Image upload section */}
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-2">
+                    <label className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-[11px] sm:text-xs text-[#444] cursor-pointer hover:bg-black/[0.03]">
+                      <ImageIcon className="w-3.5 h-3.5" />
+                      <span>{imageFile ? 'Change image' : 'Attach image (optional)'}</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            setImageFile(file)
+                            setImagePreview(URL.createObjectURL(file))
+                            setUploadError(null)
+                          }
+                        }}
+                      />
+                    </label>
+                    {imageFile && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setImageFile(null)
+                          setImagePreview(null)
+                        }}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] text-[#666] hover:bg-black/[0.03]"
+                      >
+                        <X className="w-3 h-3" />
+                        Clear
+                      </button>
+                    )}
+                    {imageFile && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!imageFile) return
+                          setUploadingImage(true)
+                          setUploadError(null)
+                          try {
+                            const { url } = await api.upload.image(imageFile)
+                            setImageUrls((prev) => [...prev, url])
+                            setImageFile(null)
+                            setImagePreview(null)
+                          } catch (err) {
+                            const msg = (err as Error).message || 'Failed to upload image'
+                            setUploadError(msg)
+                          } finally {
+                            setUploadingImage(false)
+                          }
+                        }}
+                        disabled={uploadingImage}
+                        className="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)] px-3 py-1 text-[11px] sm:text-xs font-medium hover:bg-[var(--color-primary)]/15 disabled:opacity-60"
+                      >
+                        {uploadingImage ? 'Uploading…' : 'Upload image'}
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {imagePreview && (
+                      <div className="h-10 w-10 rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)]">
+                        <img src={imagePreview} alt="Preview" className="h-full w-full object-cover" />
+                      </div>
+                    )}
+                    {imageUrls.length > 0 && (
+                      <p className="text-[10px] text-[#777]">
+                        {imageUrls.length} image{imageUrls.length !== 1 ? 's' : ''} attached
+                      </p>
+                    )}
+                  </div>
+                </div>
+                {uploadError && (
+                  <p className="text-[11px] text-red-600">{uploadError}</p>
+                )}
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-[11px] text-[#999] hidden sm:block">
                     1) Extract JSON, 2) validate the log, 3) save when you&apos;re satisfied.

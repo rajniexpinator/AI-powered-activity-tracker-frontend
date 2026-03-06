@@ -104,11 +104,8 @@ export function Header() {
                 if (next) (next as HTMLElement).style.display = 'flex'
               }}
             />
-            {/* <span className="hidden items-center justify-center w-full h-full bg-[var(--color-accent)] text-white text-xs font-semibold" aria-hidden>AI</span> */}
           </span>
-          {/* <span className="text-[15px] sm:text-[17px] font-semibold tracking-tight text-[#111] truncate">
-            AI Activity Tracker
-          </span> */}
+       
         </Link>
 
         {/* Desktop nav — hidden on mobile */}

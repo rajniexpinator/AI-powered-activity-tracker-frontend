@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { Mail, User as UserIcon, Plus, AlertCircle, Trash2 } from 'lucide-react'
+import { toast } from 'react-toastify'
+import { Mail, User as UserIcon, Plus, AlertCircle, Trash2, Pencil } from 'lucide-react'
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { useAuth } from '@/context/AuthContext'
@@ -23,6 +24,11 @@ export function CustomersPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [editNotes, setEditNotes] = useState('')
+  const [savingEdit, setSavingEdit] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -54,10 +60,51 @@ export function CustomersPage() {
       setName('')
       setEmail('')
       setNotes('')
+      toast.success('Customer added successfully.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add customer')
+      const msg = err instanceof Error ? err.message : 'Failed to add customer'
+      setError(msg)
+      toast.error(msg)
     } finally {
-        setSaving(false)
+      setSaving(false)
+    }
+  }
+
+  function openEditModal(c: Customer) {
+    setEditingCustomer(c)
+    setEditName(c.name)
+    setEditEmail(c.email ?? '')
+    setEditNotes(c.notes ?? '')
+    setError('')
+  }
+
+  function closeEditModal() {
+    setEditingCustomer(null)
+    setEditName('')
+    setEditEmail('')
+    setEditNotes('')
+    setError('')
+  }
+
+  async function handleUpdateCustomer(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editingCustomer || !editName.trim()) return
+    setSavingEdit(true)
+    setError('')
+    try {
+      const { customer } = await api.customers.update(editingCustomer._id, {
+        name: editName.trim(),
+        email: editEmail.trim() || undefined,
+        notes: editNotes.trim() || undefined,
+      })
+      setCustomers((prev) => prev.map((c) => (c._id === customer._id ? customer : c)))
+      closeEditModal()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update customer'
+      setError(msg)
+      toast.error(msg)
+    } finally {
+      setSavingEdit(false)
     }
   }
 
@@ -68,8 +115,11 @@ export function CustomersPage() {
     try {
       await api.customers.delete(id)
       setCustomers((prev) => prev.filter((c) => c._id !== id))
+      toast.success('Customer deleted successfully.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete customer')
+      const msg = err instanceof Error ? err.message : 'Failed to delete customer'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setDeletingId(null)
     }
@@ -148,7 +198,15 @@ export function CustomersPage() {
                       <p className="text-[12px] text-[var(--color-text-secondary)] max-w-xs truncate">
                         {c.notes || '-'}
                       </p>
-                      <div className="flex md:justify-end">
+                      <div className="flex md:justify-end gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(c)}
+                          className="inline-flex items-center justify-center rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/30"
+                        >
+                          <Pencil className="w-3.5 h-3.5 mr-1" />
+                          Edit
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleDeleteCustomer(c._id)}
@@ -275,12 +333,102 @@ export function CustomersPage() {
                           {c.notes}
                         </p>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => openEditModal(c)}
+                        className="shrink-0 inline-flex items-center justify-center rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/30"
+                      >
+                        <Pencil className="w-3.5 h-3.5 mr-1" />
+                        Edit
+                      </button>
                     </div>
                   ))
                 )}
               </div>
             </div>
           </section>
+        )}
+
+        {/* Edit customer modal */}
+        {editingCustomer && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={closeEditModal}>
+            <div
+              className="w-full max-w-md rounded-2xl bg-white border border-[var(--color-border)] shadow-xl p-5 sm:p-6"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 className="text-lg font-semibold text-[var(--color-text)] mb-4 flex items-center gap-2">
+                <Pencil className="w-4 h-4 text-[var(--color-primary)]" />
+                Edit customer
+              </h3>
+              {error && (
+                <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-700">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {error}
+                </div>
+              )}
+              <form onSubmit={handleUpdateCustomer} className="space-y-4">
+                <div>
+                  <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                    Name
+                  </label>
+                  <div className="relative">
+                    <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-secondary)] opacity-60" />
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      placeholder="Customer name"
+                      className="w-full pl-9 pr-3 py-2.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
+                      required
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                    Email <span className="font-normal normal-case">(optional)</span>
+                  </label>
+                  <div className="relative">
+                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-secondary)] opacity-60" />
+                    <input
+                      type="email"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      placeholder="contact@customer.com"
+                      className="w-full pl-9 pr-3 py-2.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                    Notes <span className="font-normal normal-case">(optional)</span>
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    placeholder="Notes"
+                    className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
+                  />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button
+                    type="button"
+                    onClick={closeEditModal}
+                    className="flex-1 py-2.5 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] text-[14px] font-medium text-[var(--color-text)] hover:bg-gray-100"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={savingEdit}
+                    className="flex-1 py-2.5 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[14px] font-semibold text-white disabled:opacity-60"
+                  >
+                    {savingEdit ? 'Saving…' : 'Save changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
         )}
       </main>
     </AdminShell>

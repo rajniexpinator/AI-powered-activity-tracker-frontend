@@ -2,6 +2,27 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { User } from '@/types/auth'
 import { api, getToken, setToken } from '@/services/api'
 
+const USER_KEY = 'activity_tracker_user'
+
+function loadStoredUser(): User | null {
+  try {
+    const raw = localStorage.getItem(USER_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as User
+  } catch {
+    return null
+  }
+}
+
+function storeUser(user: User | null) {
+  try {
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user))
+    else localStorage.removeItem(USER_KEY)
+  } catch {
+    // ignore storage issues (private mode, quota, etc.)
+  }
+}
+
 interface AuthContextValue {
   user: User | null
   loading: boolean
@@ -13,12 +34,18 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUserState] = useState<User | null>(() => loadStoredUser())
   const [loading, setLoading] = useState(true)
+
+  const setUser = useCallback((u: User | null) => {
+    setUserState(u)
+    storeUser(u)
+  }, [])
 
   const loadUser = useCallback(async () => {
     const token = getToken()
     if (!token) {
+      setUser(null)
       setLoading(false)
       return
     }
