@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { MessageSquare, Clock, Tag, Archive, Send, AlertCircle, CheckCircle2, Image as ImageIcon, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { toast } from 'react-toastify'
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 
@@ -40,6 +41,7 @@ type ActivityDetail = {
 export function ChatPage() {
   const [text, setText] = useState('')
   const [customerHint, setCustomerHint] = useState('')
+  const [customerHintTouched, setCustomerHintTouched] = useState(false)
   const [customers, setCustomers] = useState<
     { _id: string; name: string; email?: string; notes?: string; createdAt: string }[]
   >([])
@@ -70,11 +72,14 @@ export function ChatPage() {
   const [loadingSelected, setLoadingSelected] = useState(false)
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null)
   const [archiving, setArchiving] = useState(false)
+  const [dateFilter, setDateFilter] = useState<'all' | 'today'>('all')
+  const [customerFilter, setCustomerFilter] = useState<string>('') // '' = all customers
+  const [savedResultKey, setSavedResultKey] = useState<string | null>(null)
 
   async function loadRecent() {
     setLoadingRecent(true)
     try {
-      const { activities } = await api.activities.list(20)
+      const { activities } = await api.activities.list({ limit: 20 })
       setRecentActivities(activities)
     } catch {
       // ignore list errors here; the right-hand flow still works
@@ -107,6 +112,8 @@ export function ChatPage() {
     setError(null)
     setSaveMessage(null)
     setValidation(null)
+    setSavedResultKey(null)
+    setCustomerHintTouched(false)
     setLoadingExtract(true)
     try {
       const data = await api.ai.extractActivity(text, customerHint || undefined)
@@ -149,19 +156,47 @@ export function ChatPage() {
     setSaving(true)
     try {
       const base = (result.structured || {}) as any
+      const resolvedSummary = editSummary || base.summary || ''
+      const resolvedPartName = editPartName || base.part_name || ''
+      const resolvedIntent = editIntent || base.intent || ''
+      const resolvedOutcome = editOutcome || base.outcome || ''
+      const resolvedNextActions = editNextActions
+        ? editNextActions
+            .split('\n')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : Array.isArray(base.next_actions)
+          ? base.next_actions
+          : undefined
+      const resolvedNotes = editNotes || base.notes || ''
+
+      const nextActionsKey = Array.isArray(resolvedNextActions) ? resolvedNextActions.join('\n') : ''
+      const imagesKey = imageUrls.slice().join('|')
+      const currentKey = [
+        (result.rawText || '').trim(),
+        String(resolvedSummary).trim(),
+        String(resolvedPartName).trim(),
+        String(resolvedIntent).trim(),
+        String(resolvedOutcome).trim(),
+        String(nextActionsKey).trim(),
+        String(resolvedNotes).trim(),
+        String(imagesKey),
+      ].join('||')
+
+      if (savedResultKey && savedResultKey === currentKey) {
+        setSaveMessage('Already saved to tracker.')
+        toast.info('Already saved to tracker.')
+        return
+      }
+
       const editedStructured = {
         ...base,
-        summary: editSummary || base.summary,
-        part_name: editPartName || base.part_name,
-        intent: editIntent || base.intent,
-        outcome: editOutcome || base.outcome,
-        next_actions: editNextActions
-          ? editNextActions
-              .split('\n')
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : base.next_actions,
-        notes: editNotes || base.notes,
+        summary: resolvedSummary || base.summary,
+        part_name: resolvedPartName || base.part_name,
+        intent: resolvedIntent || base.intent,
+        outcome: resolvedOutcome || base.outcome,
+        next_actions: resolvedNextActions,
+        notes: resolvedNotes || base.notes,
       }
 
       const { activity } = await api.activities.create({
@@ -170,6 +205,8 @@ export function ChatPage() {
         images: imageUrls.length ? imageUrls : undefined,
       })
       setSaveMessage('Activity saved to tracker.')
+      toast.success('Saved to tracker.')
+      setSavedResultKey(currentKey)
       // Refresh recent list with the new activity at the top
       setRecentActivities((prev) => [
         {
@@ -194,6 +231,8 @@ export function ChatPage() {
     setError(null)
     setSaveMessage(null)
     setValidation(null)
+    setSavedResultKey(null)
+    setCustomerHintTouched(false)
     try {
       const { activity } = await api.activities.getOne(id)
       const detail = activity as ActivityDetail
@@ -216,6 +255,19 @@ export function ChatPage() {
       setImageUrls(detail.images ?? [])
       setImageFile(null)
       setImagePreview(null)
+
+      // Prevent re-saving an existing activity from history
+      const existingKey = [
+        (detail.rawConversation ?? '').trim(),
+        String(structured.summary ?? '').trim(),
+        String(structured.part_name ?? '').trim(),
+        String(structured.intent ?? '').trim(),
+        String(structured.outcome ?? '').trim(),
+        String(structured.next_actions?.join('\n') ?? '').trim(),
+        String(structured.notes ?? '').trim(),
+        String((detail.images ?? []).join('|')),
+      ].join('||')
+      setSavedResultKey(existingKey)
     } catch (err) {
       const message = (err as Error).message || 'Failed to load activity'
       setError(message)
@@ -223,6 +275,22 @@ export function ChatPage() {
       setLoadingSelected(false)
     }
   }
+
+  const filteredActivities = recentActivities.filter((act) => {
+    if (dateFilter === 'today') {
+      const actDate = new Date(act.createdAt)
+      const today = new Date()
+      if (
+        actDate.getFullYear() !== today.getFullYear() ||
+        actDate.getMonth() !== today.getMonth() ||
+        actDate.getDate() !== today.getDate()
+      ) {
+        return false
+      }
+    }
+    if (customerFilter && act.customer !== customerFilter) return false
+    return true
+  })
 
   return (
     <AdminShell>
@@ -244,14 +312,24 @@ export function ChatPage() {
           <div className="flex gap-2 justify-end">
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs sm:text-sm text-[#444] hover:bg-black/[0.03]"
+              onClick={() => setDateFilter((prev) => (prev === 'today' ? 'all' : 'today'))}
+              className={`inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-xs sm:text-sm transition-colors ${
+                dateFilter === 'today'
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                  : 'border-[var(--color-border)] text-[#444] hover:bg-black/[0.03]'
+              }`}
             >
               <Clock className="w-4 h-4" />
               Today
             </button>
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] px-3 py-2 text-xs sm:text-sm text-[#444] hover:bg-black/[0.03]"
+              onClick={() => setCustomerFilter('')}
+              className={`inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-xs sm:text-sm transition-colors ${
+                !customerFilter
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                  : 'border-[var(--color-border)] text-[#444] hover:bg-black/[0.03]'
+              }`}
             >
               <Tag className="w-4 h-4" />
               All customers
@@ -291,6 +369,7 @@ export function ChatPage() {
                     setImageUrls([])
                     setImageFile(null)
                     setImagePreview(null)
+                    setSavedResultKey(null)
                   } catch (err) {
                     const message = (err as Error).message || 'Failed to archive activity'
                     setError(message)
@@ -308,8 +387,8 @@ export function ChatPage() {
             <div className="max-h-[420px] overflow-auto divide-y divide-[var(--color-border)]">
               {loadingRecent ? (
                 <div className="px-4 py-3 text-left text-xs text-[#777]">Loading recent logs…</div>
-              ) : recentActivities.length > 0 ? (
-                recentActivities.map((act) => {
+              ) : filteredActivities.length > 0 ? (
+                filteredActivities.map((act) => {
                   const isSelected = act._id === selectedActivityId
                   return (
                     <button
@@ -330,14 +409,20 @@ export function ChatPage() {
                   )
                 })
               ) : (
-                Array.from({ length: 3 }).map((_, idx) => (
-                  <div key={idx} className="px-4 py-3 text-left">
-                    <p className="text-xs font-medium text-[#999] mb-0.5">No activity yet</p>
-                    <p className="text-sm text-[#666]">
-                      Use the form on the right to describe an activity. The AI will extract a structured log for you.
-                    </p>
-                  </div>
-                ))
+                <div className="px-4 py-6 text-left">
+                  <p className="text-xs font-medium text-[#999] mb-0.5">
+                    {recentActivities.length === 0
+                      ? 'No activity yet'
+                      : 'No matching logs'}
+                  </p>
+                  <p className="text-sm text-[#666]">
+                    {recentActivities.length === 0
+                      ? 'Use the form on the right to describe an activity. The AI will extract a structured log for you.'
+                      : dateFilter === 'today' || customerFilter
+                        ? 'Try "All customers" or show all dates.'
+                        : 'Use the form on the right to add a new activity.'}
+                  </p>
+                </div>
               )}
             </div>
             {loadingSelected && (
@@ -531,7 +616,11 @@ export function ChatPage() {
                       const id = e.target.value
                       setSelectedCustomerId(id)
                       const customer = customers.find((c) => c._id === id)
-                      setCustomerHint(customer?.name ?? '')
+                      // Only auto-fill if the employee hasn't typed a custom value
+                      if (!customerHintTouched || !customerHint.trim()) {
+                        setCustomerHint(customer?.name ?? '')
+                        setCustomerHintTouched(false)
+                      }
                     }}
                     className="w-full sm:w-1/2 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
                   >
@@ -545,7 +634,10 @@ export function ChatPage() {
                   <input
                     type="text"
                     value={customerHint}
-                    onChange={(e) => setCustomerHint(e.target.value)}
+                    onChange={(e) => {
+                      setCustomerHint(e.target.value)
+                      setCustomerHintTouched(true)
+                    }}
                     placeholder="Or type a customer / project name"
                     className="w-full sm:flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
                   />

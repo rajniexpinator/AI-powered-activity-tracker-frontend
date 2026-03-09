@@ -93,12 +93,18 @@ export const api = {
         body: JSON.stringify(payload),
       }),
 
-    list: (limit = 20) =>
-      request<{
+    list: (params?: { limit?: number; page?: number }) => {
+      const search = new URLSearchParams()
+      search.set('limit', String(params?.limit ?? 20))
+      if (params?.page) search.set('page', String(params.page))
+      return request<{
         activities: { _id: string; customer?: string; summary?: string; createdAt: string }[]
-      }>(`/api/activities?limit=${limit}`, {
-        method: 'GET',
-      }),
+        total: number
+        page: number
+        limit: number
+        totalPages: number
+      }>(`/api/activities?${search.toString()}`, { method: 'GET' })
+    },
 
     getOne: (id: string) =>
       request<{
@@ -120,13 +126,26 @@ export const api = {
         method: 'POST',
       }),
 
-    adminList: (params: { userId?: string; customer?: string; from?: string; to?: string; limit?: number }) => {
+    restore: (id: string) =>
+      request<{ success: boolean }>(`/api/activities/${id}/restore`, {
+        method: 'POST',
+      }),
+
+    adminList: (params: {
+      userId?: string
+      customer?: string
+      from?: string
+      to?: string
+      limit?: number
+      page?: number
+    }) => {
       const search = new URLSearchParams()
       if (params.userId) search.set('userId', params.userId)
       if (params.customer) search.set('customer', params.customer)
       if (params.from) search.set('from', params.from)
       if (params.to) search.set('to', params.to)
       if (typeof params.limit === 'number') search.set('limit', String(params.limit))
+      if (typeof params.page === 'number') search.set('page', String(params.page))
       const qs = search.toString()
       const path = qs ? `/api/activities/admin?${qs}` : '/api/activities/admin'
       return request<{
@@ -137,6 +156,43 @@ export const api = {
           createdAt: string
           userId?: { _id: string; name?: string; email?: string; role?: string }
         }[]
+        total: number
+        page: number
+        limit: number
+        totalPages: number
+      }>(path, { method: 'GET' })
+    },
+
+    adminArchivedList: (params: {
+      userId?: string
+      customer?: string
+      from?: string
+      to?: string
+      limit?: number
+      page?: number
+    }) => {
+      const search = new URLSearchParams()
+      if (params.userId) search.set('userId', params.userId)
+      if (params.customer) search.set('customer', params.customer)
+      if (params.from) search.set('from', params.from)
+      if (params.to) search.set('to', params.to)
+      if (typeof params.limit === 'number') search.set('limit', String(params.limit))
+      if (typeof params.page === 'number') search.set('page', String(params.page))
+      const qs = search.toString()
+      const path = qs ? `/api/activities/admin/archived?${qs}` : '/api/activities/admin/archived'
+      return request<{
+        activities: {
+          _id: string
+          customer?: string
+          summary?: string
+          createdAt: string
+          archivedAt?: string
+          userId?: { _id: string; name?: string; email?: string; role?: string }
+        }[]
+        total: number
+        page: number
+        limit: number
+        totalPages: number
       }>(path, { method: 'GET' })
     },
 
@@ -150,7 +206,14 @@ export const api = {
   customers: {
     list: () =>
       request<{
-        customers: { _id: string; name: string; email?: string; notes?: string; createdAt: string }[]
+        customers: {
+          _id: string
+          name: string
+          email?: string
+          notes?: string
+          createdAt: string
+          createdBy?: { _id: string; name?: string; email?: string; role?: string }
+        }[]
       }>('/api/customers', {
         method: 'GET',
       }),

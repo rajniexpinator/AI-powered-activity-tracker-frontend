@@ -3,13 +3,14 @@ import { api } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import type { User } from '@/types/auth'
 import { AdminShell } from '@/components/layout/AdminShell'
-import { BarChart3, Filter, Users, Building2, Calendar, FileText, AlertCircle } from 'lucide-react'
+import { BarChart3, Filter, Users, Building2, Calendar, FileText, AlertCircle, Archive, RotateCcw, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 
 type AdminActivity = {
   _id: string
   customer?: string
   summary?: string
   createdAt: string
+  archivedAt?: string
   userId?: { _id: string; name?: string; email?: string; role?: string }
 }
 
@@ -23,6 +24,11 @@ export function AdminActivityPage() {
   const [selectedCustomer, setSelectedCustomer] = useState<string>('all')
   const [from, setFrom] = useState<string>('')
   const [to, setTo] = useState<string>('')
+  const [tab, setTab] = useState<'active' | 'archived'>('active')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
+  const pageSize = 50
 
   const [loading, setLoading] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
@@ -38,7 +44,6 @@ export function AdminActivityPage() {
     setTo(now.toISOString().slice(0, 10))
   }, [])
 
-  // Load employees and customers for filters
   useEffect(() => {
     const loadFilterData = async () => {
       try {
@@ -62,17 +67,27 @@ export function AdminActivityPage() {
       customer: selectedCustomer !== 'all' ? selectedCustomer : undefined,
       from: from || undefined,
       to: to || undefined,
-      limit: 200,
+      limit: pageSize,
+      page,
     }),
-    [selectedUserId, selectedCustomer, from, to]
+    [selectedUserId, selectedCustomer, from, to, page]
   )
 
   async function loadActivities() {
     setLoading(true)
     setError('')
     try {
-      const { activities } = await api.activities.adminList(appliedFilters)
-      setActivities(activities)
+      if (tab === 'archived') {
+        const res = await api.activities.adminArchivedList(appliedFilters)
+        setActivities(res.activities)
+        setTotal(res.total)
+        setTotalPages(res.totalPages)
+      } else {
+        const res = await api.activities.adminList(appliedFilters)
+        setActivities(res.activities)
+        setTotal(res.total)
+        setTotalPages(res.totalPages)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load activity')
     } finally {
@@ -81,13 +96,27 @@ export function AdminActivityPage() {
   }
 
   useEffect(() => {
+    setPage(1)
+  }, [tab, selectedUserId, selectedCustomer, from, to])
+
+  useEffect(() => {
     void loadActivities()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [tab, page])
 
   async function handleApplyFilters(e: React.FormEvent) {
     e.preventDefault()
+    setPage(1)
     await loadActivities()
+  }
+
+  async function handleRestore(id: string) {
+    try {
+      await api.activities.restore(id)
+      await loadActivities()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to restore')
+    }
   }
 
   async function handleGenerateReport() {
@@ -235,7 +264,14 @@ export function AdminActivityPage() {
                 disabled={loading}
                 className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-primary)] bg-[var(--color-primary)]/5 px-3.5 py-2 text-[13px] font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-60"
               >
-                {loading ? 'Loading…' : 'Apply filters'}
+                {loading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading…
+                  </>
+                ) : (
+                  'Apply filters'
+                )}
               </button>
             </div>
           </form>
@@ -251,24 +287,78 @@ export function AdminActivityPage() {
         <section className="grid gap-4 lg:grid-cols-[minmax(0,_1.4fr)_minmax(0,_1fr)]">
           {/* Activity table */}
           <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] overflow-hidden">
-            <div className="px-5 sm:px-6 md:px-8 py-4 sm:py-5 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
+            <div className="px-5 sm:px-6 md:px-8 py-4 sm:py-5 border-b border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-[var(--color-primary)]" />
-                <h2 className="text-[15px] font-semibold text-[var(--color-text)]">All employee activity</h2>
+                <h2 className="text-[15px] font-semibold text-[var(--color-text)]">
+                  {tab === 'archived' ? 'Archived activity' : 'All employee activity'}
+                </h2>
               </div>
-              <p className="text-[12px] text-[var(--color-text-secondary)]">
-                {activities.length} log{activities.length !== 1 ? 's' : ''}
-              </p>
+              <div className="flex items-center gap-3">
+                <div className="flex rounded-xl border border-[var(--color-border)] p-0.5 bg-[var(--color-bg)]">
+                  <button
+                    type="button"
+                    onClick={() => setTab('active')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
+                      tab === 'active'
+                        ? 'bg-white text-[var(--color-primary)] shadow-sm'
+                        : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
+                    }`}
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    Active
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTab('archived')}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
+                      tab === 'archived'
+                        ? 'bg-white text-[var(--color-primary)] shadow-sm'
+                        : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
+                    }`}
+                  >
+                    <Archive className="w-3.5 h-3.5" />
+                    Archived
+                  </button>
+                </div>
+                <p className="text-[12px] text-[var(--color-text-secondary)]">
+                  {loading ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Loading…
+                    </span>
+                  ) : (
+                    <>
+                      {total} total · page {page} of {totalPages || 1}
+                    </>
+                  )}
+                </p>
+              </div>
             </div>
 
-            <div className="hidden md:grid grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2.2fr)] px-5 sm:px-6 md:px-8 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)] bg-[var(--color-bg)]">
+            <div
+              className={`hidden md:grid px-5 sm:px-6 md:px-8 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)] bg-[var(--color-bg)] ${
+                tab === 'archived'
+                  ? 'grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,80px)]'
+                  : 'grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2.2fr)]'
+              }`}
+            >
               <span>Employee</span>
               <span>Customer</span>
               <span>Date</span>
               <span>Summary</span>
+              {tab === 'archived' && <span className="text-right">Action</span>}
             </div>
 
-            <div className="divide-y divide-[var(--color-border)] max-h-[480px] overflow-auto">
+            <div className="relative divide-y divide-[var(--color-border)] max-h-[480px] overflow-auto">
+              {loading && activities.length > 0 && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-[1px]">
+                  <div className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2 text-[13px] font-medium text-[var(--color-text)] shadow-sm">
+                    <Loader2 className="w-4 h-4 animate-spin text-[var(--color-primary)]" />
+                    Loading activity…
+                  </div>
+                </div>
+              )}
               {loading && activities.length === 0 ? (
                 <div className="px-5 sm:px-6 md:px-8 py-6 text-[13px] text-[var(--color-text-secondary)]">
                   Loading activity…
@@ -281,7 +371,11 @@ export function AdminActivityPage() {
                 activities.map((a) => (
                   <div
                     key={a._id}
-                    className="px-5 sm:px-6 md:px-8 py-3.5 flex flex-col gap-2 md:grid md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2.2fr)] md:items-center"
+                    className={`px-5 sm:px-6 md:px-8 py-3.5 flex flex-col gap-2 md:grid md:items-center ${
+                      tab === 'archived'
+                        ? 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,80px)]'
+                        : 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2.2fr)]'
+                    }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[12px] font-semibold">
@@ -307,10 +401,49 @@ export function AdminActivityPage() {
                     <p className="text-[13px] text-[var(--color-text)] line-clamp-2 md:line-clamp-3">
                       {a.summary || 'No summary'}
                     </p>
+                    {tab === 'archived' && (
+                      <div className="flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleRestore(a._id)}
+                          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-primary)] bg-[var(--color-primary)]/5 px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                          Restore
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))
               )}
             </div>
+            {totalPages > 1 && (
+              <div className="px-5 sm:px-6 md:px-8 py-3 border-t border-[var(--color-border)] flex items-center justify-between gap-3">
+                <p className="text-[12px] text-[var(--color-text-secondary)]">
+                  Page {page} of {totalPages} ({total} total)
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1 || loading}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages || loading}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Next
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Weekly AI report */}

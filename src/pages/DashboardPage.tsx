@@ -16,7 +16,7 @@ export function DashboardPage() {
     const load = async () => {
       setLoading(true)
       try {
-        const { activities } = await api.activities.list(5)
+        const { activities } = await api.activities.list({ limit: 5 })
         setActivities(activities)
       } catch {
         // ignore errors; dashboard still renders

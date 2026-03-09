@@ -11,6 +11,7 @@ type Customer = {
   email?: string
   notes?: string
   createdAt: string
+  createdBy?: { _id: string; name?: string; email?: string; role?: string }
 }
 
 export function CustomersPage() {
@@ -158,67 +159,145 @@ export function CustomersPage() {
                 </p>
               </div>
 
-              {/* Table-style header */}
-              <div className="hidden md:grid grid-cols-[minmax(0,2.2fr)_minmax(0,2fr)_minmax(0,2.2fr)_auto] px-5 sm:px-6 md:px-8 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)] bg-[var(--color-bg)]">
-                <span>Name</span>
-                <span>Email</span>
-                <span>Notes</span>
-                <span className="text-right">Actions</span>
-              </div>
-
-              <div className="divide-y divide-[var(--color-border)] max-h-[420px] overflow-auto">
+              <div className="max-h-[420px] overflow-y-auto overflow-x-auto">
                 {loading ? (
-                  <div className="px-5 sm:px-6 md:px-8 py-6 text-[13px] text-[var(--color-text-secondary)]">
+                  <div className="px-4 sm:px-6 md:px-8 py-6 sm:py-8 text-[13px] text-[var(--color-text-secondary)]">
                     Loading customers…
                   </div>
                 ) : customers.length === 0 ? (
-                  <div className="px-5 sm:px-6 md:px-8 py-10 text-center text-[13px] text-[var(--color-text-secondary)]">
+                  <div className="px-4 sm:px-6 md:px-8 py-10 sm:py-12 text-center text-[13px] text-[var(--color-text-secondary)]">
                     No customers yet.
                   </div>
                 ) : (
-                  customers.map((c) => (
-                    <div
-                      key={c._id}
-                      className="px-5 sm:px-6 md:px-8 py-3.5 flex flex-col gap-3 md:grid md:grid-cols-[minmax(0,2.2fr)_minmax(0,2fr)_minmax(0,2.2fr)_auto] md:items-center"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[13px] font-semibold">
-                          {c.name.charAt(0).toUpperCase()}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-[14px] font-medium text-[var(--color-text)] truncate">{c.name}</p>
-                          {c.email && (
-                            <p className="text-[12px] text-[var(--color-text-secondary)] truncate md:hidden">{c.email}</p>
-                          )}
+                  <>
+                    {/* Mobile/tablet: card layout (< lg) */}
+                    <div className="divide-y divide-[var(--color-border)] md:hidden">
+                      {customers.map((c) => (
+                        <div
+                          key={c._id}
+                          className="px-4 sm:px-6 py-4 hover:bg-[var(--color-bg)]/50 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="flex min-w-0 flex-1 items-center gap-3">
+                              <span className="flex shrink-0 items-center justify-center w-10 h-10 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[14px] font-semibold">
+                                {c.name.charAt(0).toUpperCase()}
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-[14px] font-medium text-[var(--color-text)]">{c.name}</p>
+                                {c.email && (
+                                  <p className="mt-0.5 text-[12px] text-[var(--color-text-secondary)] truncate">
+                                    {c.email}
+                                  </p>
+                                )}
+                                {c.notes && (
+                                  <p className="mt-0.5 text-[12px] text-[var(--color-text-secondary)] line-clamp-2">
+                                    {c.notes}
+                                  </p>
+                                )}
+                                {c.createdBy && (
+                                  <p className="mt-1 text-[11px] text-[var(--color-text-secondary)]/80">
+                                    Added by: {c.createdBy.name || c.createdBy.email || c.createdBy.role || '-'}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+                              <button
+                                type="button"
+                                onClick={() => openEditModal(c)}
+                                className="inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/30"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCustomer(c._id)}
+                                disabled={deletingId === c._id}
+                                className="inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 border border-red-100 disabled:opacity-60"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                {deletingId === c._id ? '…' : 'Delete'}
+                              </button>
+                            </div>
+                          </div>
                         </div>
-                      </div>
-                      <p className="hidden md:block text-[13px] text-[var(--color-text-secondary)] truncate">
-                        {c.email || '-'}
-                      </p>
-                      <p className="text-[12px] text-[var(--color-text-secondary)] max-w-xs truncate">
-                        {c.notes || '-'}
-                      </p>
-                      <div className="flex md:justify-end gap-2">
-                        <button
-                          type="button"
-                          onClick={() => openEditModal(c)}
-                          className="inline-flex items-center justify-center rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/30"
-                        >
-                          <Pencil className="w-3.5 h-3.5 mr-1" />
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleDeleteCustomer(c._id)}
-                          disabled={deletingId === c._id}
-                          className="inline-flex items-center justify-center rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 border border-red-100 disabled:opacity-60"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 mr-1" />
-                          {deletingId === c._id ? 'Removing…' : 'Delete'}
-                        </button>
-                      </div>
+                      ))}
                     </div>
-                  ))
+
+                    {/* Desktop: table layout (lg+) */}
+                    <table className="hidden md:table w-full min-w-[720px] table-auto">
+                      <thead className="sticky top-0 z-10 bg-[var(--color-bg)]">
+                        <tr>
+                          <th className="whitespace-nowrap px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                            Name
+                          </th>
+                          <th className="whitespace-nowrap px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                            Email
+                          </th>
+                          <th className="whitespace-nowrap px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                            Notes
+                          </th>
+                          <th className="whitespace-nowrap px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                            Added by
+                          </th>
+                          <th className="whitespace-nowrap px-4 lg:px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--color-border)]">
+                        {customers.map((c) => (
+                          <tr key={c._id} className="hover:bg-[var(--color-bg)]/50 transition-colors">
+                            <td className="px-4 lg:px-6 py-3 align-middle">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <span className="flex shrink-0 items-center justify-center w-8 h-8 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[13px] font-semibold">
+                                  {c.name.charAt(0).toUpperCase()}
+                                </span>
+                                <p className="truncate text-[14px] font-medium text-[var(--color-text)]">{c.name}</p>
+                              </div>
+                            </td>
+                            <td className="px-4 lg:px-6 py-3 align-middle">
+                              <span className="truncate block max-w-[180px] text-[13px] text-[var(--color-text-secondary)]">
+                                {c.email || '-'}
+                              </span>
+                            </td>
+                            <td className="px-4 lg:px-6 py-3 align-middle">
+                              <span className="truncate block max-w-[200px] text-[12px] text-[var(--color-text-secondary)]">
+                                {c.notes || '-'}
+                              </span>
+                            </td>
+                            <td className="px-4 lg:px-6 py-3 align-middle">
+                              <span className="truncate block max-w-[130px] text-[12px] text-[var(--color-text-secondary)]">
+                                {c.createdBy?.name || c.createdBy?.email || c.createdBy?.role || '-'}
+                              </span>
+                            </td>
+                            <td className="px-4 lg:px-6 py-3 align-middle text-right whitespace-nowrap">
+                              <div className="flex justify-end gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openEditModal(c)}
+                                  className="inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 border border-[var(--color-primary)]/30"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCustomer(c._id)}
+                                  disabled={deletingId === c._id}
+                                  className="inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 border border-red-100 disabled:opacity-60"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                  {deletingId === c._id ? '…' : 'Delete'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
                 )}
               </div>
             </div>

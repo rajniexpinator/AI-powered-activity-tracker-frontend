@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, MessageSquare, Users, Building2, LogOut, Menu, X, BarChart3 } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Users, Building2, LogOut, Menu, X, BarChart3, UserCircle } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 
 interface AdminShellProps {
@@ -11,6 +11,8 @@ interface AdminShellProps {
 export function AdminShell({ children }: AdminShellProps) {
   const { user, logout } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const isSupervisor = user?.role === 'supervisor'
+  const canViewActivity = isAdmin || isSupervisor
   const location = useLocation()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -54,7 +56,7 @@ export function AdminShell({ children }: AdminShellProps) {
               to="/dashboard"
               className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                 isActive('/dashboard')
-                  ? 'bg-[var(--color-primary)] text-white shadow-[0_8px_20px_rgba(63,75,157,0.25)]'
+                  ? 'bg-[#3F4B9D] text-white shadow-[0_8px_20px_rgba(63,75,157,0.25)]'
                   : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
               }`}
             >
@@ -65,19 +67,19 @@ export function AdminShell({ children }: AdminShellProps) {
               to="/chat"
               className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                 isActive('/chat')
-                  ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                  ? 'bg-[#3F4B9D] text-white'
                   : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
               }`}
             >
               <MessageSquare className="w-4 h-4 opacity-80" />
               AI logs
             </Link>
-            {isAdmin && (
+            {canViewActivity && (
               <Link
                 to="/activity"
                 className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                   isActive('/activity')
-                    ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                    ? 'bg-[#3F4B9D] text-white'
                     : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
                 }`}
               >
@@ -94,7 +96,7 @@ export function AdminShell({ children }: AdminShellProps) {
                   to="/users"
                   className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                     isActive('/users')
-                      ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                      ? 'bg-[#3F4B9D] text-white'
                       : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
                   }`}
                 >
@@ -105,7 +107,7 @@ export function AdminShell({ children }: AdminShellProps) {
                   to="/customers"
                   className={`mt-0.5 flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                     isActive('/customers')
-                      ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                      ? 'bg-[#3F4B9D] text-white'
                       : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
                   }`}
                 >
@@ -123,7 +125,7 @@ export function AdminShell({ children }: AdminShellProps) {
                   to="/customers"
                   className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                     isActive('/customers')
-                      ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                      ? 'bg-[#3F4B9D] text-white'
                       : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
                   }`}
                 >
@@ -133,7 +135,15 @@ export function AdminShell({ children }: AdminShellProps) {
               </div>
             )}
           </nav>
-          <div className="px-3 pb-3 pt-1 border-t border-[var(--color-border)]/60 mt-auto">
+          <div className="px-3 pb-3 pt-1 border-t border-[var(--color-border)]/60 mt-auto space-y-2">
+            {user && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--color-bg)]/80">
+                <UserCircle className="w-4 h-4 text-[var(--color-primary)] shrink-0" />
+                <p className="text-[12px] text-[var(--color-text-secondary)] truncate" title={user.email}>
+                  {user.email}
+                </p>
+              </div>
+            )}
             <button
               type="button"
               onClick={handleLogout}
@@ -182,7 +192,7 @@ export function AdminShell({ children }: AdminShellProps) {
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
-                    {isAdmin ? 'Admin' : 'Employee'}
+                    {isAdmin ? 'Admin' : isSupervisor ? 'Supervisor' : 'Employee'}
                   </p>
                   <p className="mt-0.5 text-[13px] font-semibold text-[var(--color-text)]">
                     Operations
@@ -204,7 +214,7 @@ export function AdminShell({ children }: AdminShellProps) {
                 onClick={() => setMobileOpen(false)}
                 className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                   isActive('/dashboard')
-                    ? 'bg-[var(--color-primary)] text-white'
+                    ? 'bg-[#3F4B9D] text-white'
                     : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
                 }`}
               >
@@ -216,20 +226,20 @@ export function AdminShell({ children }: AdminShellProps) {
                 onClick={() => setMobileOpen(false)}
                 className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                   isActive('/chat')
-                    ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                    ? 'bg-[#3F4B9D] text-white'
                     : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
                 }`}
               >
                 <MessageSquare className="w-4 h-4 opacity-80" />
                 AI logs
               </Link>
-              {isAdmin && (
+              {canViewActivity && (
                 <Link
                   to="/activity"
                   onClick={() => setMobileOpen(false)}
                   className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                     isActive('/activity')
-                      ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                      ? 'bg-[#3F4B9D] text-white'
                       : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
                   }`}
                 >
@@ -244,7 +254,7 @@ export function AdminShell({ children }: AdminShellProps) {
                     onClick={() => setMobileOpen(false)}
                     className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                       isActive('/users')
-                        ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                        ? 'bg-[#3F4B9D] text-white'
                         : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
                     }`}
                   >
@@ -256,7 +266,7 @@ export function AdminShell({ children }: AdminShellProps) {
                     onClick={() => setMobileOpen(false)}
                     className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                       isActive('/customers')
-                        ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                        ? 'bg-[#3F4B9D] text-white'
                         : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
                     }`}
                   >
@@ -271,7 +281,7 @@ export function AdminShell({ children }: AdminShellProps) {
                   onClick={() => setMobileOpen(false)}
                   className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
                     isActive('/customers')
-                      ? 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                      ? 'bg-[#3F4B9D] text-white'
                       : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
                   }`}
                 >
@@ -280,7 +290,15 @@ export function AdminShell({ children }: AdminShellProps) {
                 </Link>
               )}
             </nav>
-            <div className="px-3 pb-3 pt-1 border-t border-[var(--color-border)]/60">
+            <div className="px-3 pb-3 pt-1 border-t border-[var(--color-border)]/60 space-y-2">
+              {user && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--color-bg)]/80">
+                  <UserCircle className="w-4 h-4 text-[var(--color-primary)] shrink-0" />
+                  <p className="text-[12px] text-[var(--color-text-secondary)] truncate" title={user.email}>
+                    {user.email}
+                  </p>
+                </div>
+              )}
               <button
                 type="button"
                 onClick={handleLogout}

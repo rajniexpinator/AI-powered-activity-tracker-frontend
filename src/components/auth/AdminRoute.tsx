@@ -1,12 +1,19 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
+type Role = 'admin' | 'supervisor' | 'employee'
 
-export function AdminRoute({ children }: { children: React.ReactNode }) {
+interface AdminRouteProps {
+  children: React.ReactNode
+  /** Allowed roles (default: admin only) */
+  roles?: Role[]
+}
+
+export function AdminRoute({ children, roles = ['admin'] }: AdminRouteProps) {
   const { user } = useAuth()
 
   if (!user) return null
-  if (user.role !== 'admin') {
+  if (!roles.includes(user.role)) {
     return <Navigate to="/" replace />
   }
 

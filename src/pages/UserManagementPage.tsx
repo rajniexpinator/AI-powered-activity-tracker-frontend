@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
+import { toast } from 'react-toastify'
 import { ArrowLeft, Users, UserPlus, UserCircle, Shield, AlertCircle, Loader2, CheckCircle, XCircle, Mail, User as UserIcon, Lock, X } from 'lucide-react'
 import type { User } from '@/types/auth'
 import { api } from '@/services/api'
@@ -66,8 +67,11 @@ export function UserManagementPage() {
       await api.auth.register(newEmail.trim(), newPassword, newName.trim() || undefined, newRole)
       closeAddModal()
       await loadUsers()
+      toast.success('User added successfully.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to add user')
+      const msg = err instanceof Error ? err.message : 'Failed to add user'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setAdding(false)
     }
@@ -78,8 +82,11 @@ export function UserManagementPage() {
     try {
       const { user: updated } = await api.auth.updateUser(userId, { role })
       setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
+      toast.success('Role updated successfully.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to update role')
+      const msg = err instanceof Error ? err.message : 'Failed to update role'
+      setError(msg)
+      toast.error(msg)
     }
   }
 
