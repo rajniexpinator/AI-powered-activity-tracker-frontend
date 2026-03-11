@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
-import { MessageSquare, Clock, Tag, Archive, Send, AlertCircle, CheckCircle2, Image as ImageIcon, X } from 'lucide-react'
+import { MessageSquare, Clock, Tag, Archive, Send, AlertCircle, CheckCircle2, Image as ImageIcon, X, Plus } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
+import { useAuth } from '@/context/AuthContext'
 
 type ExtractResult = {
   structured: unknown
@@ -39,6 +40,8 @@ type ActivityDetail = {
 }
 
 export function ChatPage() {
+  const { user } = useAuth()
+  const isEmployee = user?.role === 'employee'
   const [text, setText] = useState('')
   const [customerHint, setCustomerHint] = useState('')
   const [customerHintTouched, setCustomerHintTouched] = useState(false)
@@ -109,6 +112,15 @@ export function ChatPage() {
       setError('Please describe the activity before logging with AI.')
       return
     }
+    if (isEmployee) {
+      const hasDropdownChoice = Boolean(selectedCustomerId)
+      const hasTypedCustomer = Boolean(customerHint.trim())
+      if (!hasDropdownChoice && !hasTypedCustomer) {
+        setError('Please select a customer before logging with AI.')
+        setCustomerHintTouched(true)
+        return
+      }
+    }
     setError(null)
     setSaveMessage(null)
     setValidation(null)
@@ -151,6 +163,15 @@ export function ChatPage() {
 
   async function handleSave() {
     if (!result) return
+    if (isEmployee) {
+      const hasDropdownChoice = Boolean(selectedCustomerId)
+      const hasTypedCustomer = Boolean(customerHint.trim())
+      if (!hasDropdownChoice && !hasTypedCustomer) {
+        setError('Please select a customer before saving to tracker.')
+        setCustomerHintTouched(true)
+        return
+      }
+    }
     setError(null)
     setSaveMessage(null)
     setSaving(true)
@@ -343,22 +364,15 @@ export function ChatPage() {
           <section className="rounded-[var(--radius-lg)] bg-white border border-[var(--color-border)] shadow-[var(--shadow-sm)] overflow-hidden">
             <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
               <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#777]">Recent logs</p>
-              <button
-                type="button"
-                onClick={async () => {
-                  if (!selectedActivityId) {
-                    setError('Select a log from the list before archiving.')
-                    return
-                  }
-                  setArchiving(true)
-                  setError(null)
-                  setSaveMessage(null)
-                  try {
-                    await api.activities.archive(selectedActivityId)
-                    setRecentActivities((prev) => prev.filter((a) => a._id !== selectedActivityId))
+              <div className="flex items-center gap-2 whitespace-nowrap">
+                <button
+                  type="button"
+                  onClick={() => {
                     setSelectedActivityId(null)
                     setResult(null)
                     setValidation(null)
+                    setError(null)
+                    setSaveMessage(null)
                     setText('')
                     setEditSummary('')
                     setEditPartName('')
@@ -370,19 +384,54 @@ export function ChatPage() {
                     setImageFile(null)
                     setImagePreview(null)
                     setSavedResultKey(null)
-                  } catch (err) {
-                    const message = (err as Error).message || 'Failed to archive activity'
-                    setError(message)
-                  } finally {
-                    setArchiving(false)
-                  }
-                }}
-                disabled={!selectedActivityId || archiving}
-                className="inline-flex items-center gap-1 rounded-full px-2 py-1 text-[10px] font-medium text-[#666] hover:bg-black/[0.03] disabled:opacity-50"
-              >
-                <Archive className="w-3.5 h-3.5" />
-                {archiving ? 'Archiving…' : 'Archive'}
-              </button>
+                    setCustomerHintTouched(false)
+                  }}
+                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium text-[#444] hover:bg-black/[0.03] border border-[var(--color-border)] bg-white"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  New log
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!selectedActivityId) {
+                      setError('Select a log from the list before archiving.')
+                      return
+                    }
+                    setArchiving(true)
+                    setError(null)
+                    setSaveMessage(null)
+                    try {
+                      await api.activities.archive(selectedActivityId)
+                      setRecentActivities((prev) => prev.filter((a) => a._id !== selectedActivityId))
+                      setSelectedActivityId(null)
+                      setResult(null)
+                      setValidation(null)
+                      setText('')
+                      setEditSummary('')
+                      setEditPartName('')
+                      setEditIntent('')
+                      setEditOutcome('')
+                      setEditNextActions('')
+                      setEditNotes('')
+                      setImageUrls([])
+                      setImageFile(null)
+                      setImagePreview(null)
+                      setSavedResultKey(null)
+                    } catch (err) {
+                      const message = (err as Error).message || 'Failed to archive activity'
+                      setError(message)
+                    } finally {
+                      setArchiving(false)
+                    }
+                  }}
+                  disabled={!selectedActivityId || archiving}
+                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium text-[#666] hover:bg-black/[0.03] disabled:opacity-50 border border-[var(--color-border)] bg-white"
+                >
+                  <Archive className="w-3.5 h-3.5" />
+                  {archiving ? 'Archiving…' : 'Archive'}
+                </button>
+              </div>
             </div>
             <div className="max-h-[420px] overflow-auto divide-y divide-[var(--color-border)]">
               {loadingRecent ? (
@@ -624,7 +673,13 @@ export function ChatPage() {
                     }}
                     className="w-full sm:w-1/2 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
                   >
-                    <option value="">{loadingCustomers ? 'Loading customers…' : 'Select customer (optional)'}</option>
+                    <option value="">
+                      {loadingCustomers
+                        ? 'Loading customers…'
+                        : isEmployee
+                          ? 'Select customer *'
+                          : 'Select customer (optional)'}
+                    </option>
                     {customers.map((c) => (
                       <option key={c._id} value={c._id}>
                         {c.name}{c.email ? ` — ${c.email}` : ''}
@@ -638,7 +693,7 @@ export function ChatPage() {
                       setCustomerHint(e.target.value)
                       setCustomerHintTouched(true)
                     }}
-                    placeholder="Or type a customer / project name"
+                    placeholder={isEmployee ? 'Type customer name (required if not selected)' : 'Or type a customer / project name'}
                     className="w-full sm:flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
                   />
                 </div>

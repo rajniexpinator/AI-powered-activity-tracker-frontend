@@ -35,18 +35,17 @@ export function LoginPage() {
         {/* Apple-style: headline first, minimal chrome */}
         <div className="text-center mb-8">
           <div className="flex items-center justify-center mb-4">
-            <img
-              src={logoSrc}
-              alt="AI Activity Tracker"
-              className="h-10 w-auto object-contain"
-            />
+            <Link to="/" className="inline-flex items-center justify-center hover:opacity-90 transition-opacity">
+              <img
+                src={logoSrc}
+                alt="AI Activity Tracker"
+                className="h-10 w-auto object-contain"
+              />
+            </Link>
           </div>
           <h1 className="text-[20px] md:text-[24px] font-semibold tracking-tight text-[var(--color-text)]">
             Sign in
           </h1>
-          <p className="mt-1.5 text-[13px] text-[var(--color-text-secondary)]">
-            AI Activity Tracker
-          </p>
         </div>
 
         <div className="bg-[var(--color-surface)] rounded-[var(--radius-lg)] p-6 md:p-8 shadow-[var(--shadow-md)] border border-[var(--color-border)]">
@@ -112,11 +111,8 @@ export function LoginPage() {
           </form>
           <div className="mt-5 pt-5 border-t border-[var(--color-border)] text-center">
             <span className="text-[13px] text-[var(--color-text-secondary)]">
-              First user to register becomes admin.{' '}
+              Use your company credentials to sign in. If you don’t have access, contact an administrator.
             </span>
-            <Link to="/register" className="text-[13px] font-medium text-[var(--color-primary)] hover:underline">
-              Create account
-            </Link>
           </div>
         </div>
       </div>

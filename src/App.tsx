@@ -7,20 +7,19 @@ import { AdminRoute } from '@/components/auth/AdminRoute'
 import { Layout } from './components/layout/Layout'
 import { HomePage } from './pages/HomePage'
 import { LoginPage } from './pages/LoginPage'
-import { RegisterPage } from './pages/RegisterPage'
 import { UserManagementPage } from './pages/UserManagementPage'
 import { ChatPage } from './pages/ChatPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { DashboardPage } from './pages/DashboardPage'
 import { CustomersPage } from './pages/CustomersPage'
 import { AdminActivityPage } from './pages/AdminActivityPage'
+import { ReportsPage } from './pages/ReportsPage'
 
 function App() {
   return (
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
-        <Route path="/register" element={<RegisterPage />} />
         <Route path="/" element={<Layout />}>
           <Route index element={<HomePage />} />
           <Route
@@ -69,8 +68,18 @@ function App() {
             path="activity"
             element={
               <ProtectedRoute>
-                <AdminRoute roles={['admin', 'supervisor']}>
+                <AdminRoute roles={['admin']}>
                   <AdminActivityPage />
+                </AdminRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="reports"
+            element={
+              <ProtectedRoute>
+                <AdminRoute roles={['admin']}>
+                  <ReportsPage />
                 </AdminRoute>
               </ProtectedRoute>
             }

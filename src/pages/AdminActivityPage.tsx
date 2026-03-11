@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
-import { api } from '@/services/api'
+import { api, getToken } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import type { User } from '@/types/auth'
 import { AdminShell } from '@/components/layout/AdminShell'
-import { BarChart3, Filter, Users, Building2, Calendar, FileText, AlertCircle, Archive, RotateCcw, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
+import { BarChart3, Filter, Users, Building2, Calendar, FileText, AlertCircle, Archive, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, Loader2 } from 'lucide-react'
 
 type AdminActivity = {
   _id: string
@@ -32,10 +32,13 @@ export function AdminActivityPage() {
 
   const [loading, setLoading] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [report, setReport] = useState<string>('')
+  const [reportId, setReportId] = useState<string>('')
   const [error, setError] = useState<string>('')
+  const [includeCustomerSummaries, setIncludeCustomerSummaries] = useState(false)
+  const [filtersOpen, setFiltersOpen] = useState(false)
 
-  // Default to last 7 days
   useEffect(() => {
     const now = new Date()
     const weekAgo = new Date()
@@ -51,7 +54,7 @@ export function AdminActivityPage() {
           api.auth.getUsers(),
           api.customers.list(),
         ])
-        const employees = users.filter((u) => u.role === 'employee' || u.role === 'supervisor')
+        const employees = users.filter((u) => u.role === 'employee')
         setUsers(employees)
         setCustomers(customers.map((c) => ({ _id: c._id, name: c.name })))
       } catch {
@@ -123,13 +126,56 @@ export function AdminActivityPage() {
     setLoadingReport(true)
     setError('')
     setReport('')
+    setReportId('')
     try {
-      const { report } = await api.activities.generateWeeklyReport(appliedFilters)
+      const { report, reportId } = await api.activities.generateWeeklyReport({
+        ...appliedFilters,
+        includeCustomerSummaries: includeCustomerSummaries && selectedCustomer === 'all',
+      })
       setReport(report)
+      setReportId(reportId)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate weekly report')
     } finally {
       setLoadingReport(false)
+    }
+  }
+
+  async function handleExportCsv() {
+    try {
+      setExporting(true)
+      const search = new URLSearchParams()
+      if (appliedFilters.userId) search.set('userId', appliedFilters.userId)
+      if (appliedFilters.customer) search.set('customer', appliedFilters.customer)
+      if (appliedFilters.from) search.set('from', appliedFilters.from)
+      if (appliedFilters.to) search.set('to', appliedFilters.to)
+      if (appliedFilters.limit) search.set('limit', String(appliedFilters.limit))
+      if (tab === 'archived') search.set('archived', 'true')
+      const qs = search.toString()
+      const base = import.meta.env.VITE_API_BASE_URL ?? ''
+      const url = `${base}/api/activities/admin/export${qs ? `?${qs}` : ''}`
+
+      const headers: HeadersInit = {}
+      const token = getToken()
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const res = await fetch(url, { headers })
+      if (!res.ok) {
+        throw new Error('Failed to export CSV')
+      }
+      const blob = await res.blob()
+      const downloadUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download = 'activities-export.csv'
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(downloadUrl)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to export CSV')
+    } finally {
+      setExporting(false)
     }
   }
 
@@ -159,122 +205,167 @@ export function AdminActivityPage() {
 
         {/* Filters + report CTA */}
         <section className="mb-5 rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-4 sm:p-5">
-          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-            <h2 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
-              <Filter className="w-4 h-4 text-[var(--color-primary)]" />
-              Filters
-            </h2>
+          <div className="flex items-center justify-between gap-3 mb-2 sm:mb-3 flex-wrap">
             <button
               type="button"
-              onClick={handleGenerateReport}
-              disabled={loadingReport}
-              className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3.5 py-2 text-[13px] font-semibold !text-white disabled:opacity-60"
+              onClick={() => setFiltersOpen((open) => !open)}
+              className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]"
             >
-              <FileText className="w-4 h-4" />
-              {loadingReport ? 'Generating report…' : 'Generate weekly AI report'}
+              <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-[var(--color-primary)]/8 text-[var(--color-primary)]">
+                <Filter className="w-3.5 h-3.5" />
+              </span>
+              <span>Filters</span>
+              <ChevronDown
+                className={`w-3.5 h-3.5 text-[var(--color-text-secondary)] transition-transform ${
+                  filtersOpen ? 'rotate-180' : ''
+                }`}
+              />
             </button>
-          </div>
-          <form
-            onSubmit={handleApplyFilters}
-            className="grid gap-3 sm:grid-cols-2 md:grid-cols-4 items-end"
-          >
-            <div>
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
-                Employee
-              </label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]">
-                  <Users className="w-3.5 h-3.5" />
-                </span>
-                <select
-                  value={selectedUserId}
-                  onChange={(e) => setSelectedUserId(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 py-2 text-[13px] text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
-                >
-                  <option value="all">All employees</option>
-                  {users.map((u) => (
-                    <option key={u.id} value={u.id}>
-                      {u.name || u.email} ({u.role})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
-                Customer
-              </label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]">
-                  <Building2 className="w-3.5 h-3.5" />
-                </span>
-                <select
-                  value={selectedCustomer}
-                  onChange={(e) => setSelectedCustomer(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 py-2 text-[13px] text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
-                >
-                  <option value="all">All customers</option>
-                  {customers.map((c) => (
-                    <option key={c._id} value={c.name}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
-                From date
-              </label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]">
-                  <Calendar className="w-3.5 h-3.5" />
-                </span>
+            <div className="flex items-center gap-3 flex-wrap justify-end">
+              <label className="inline-flex items-center gap-2 text-[12px] text-[var(--color-text-secondary)] select-none">
                 <input
-                  type="date"
-                  value={from}
-                  onChange={(e) => setFrom(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 py-2 text-[13px] text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
+                  type="checkbox"
+                  checked={includeCustomerSummaries}
+                  onChange={(e) => setIncludeCustomerSummaries(e.target.checked)}
+                  disabled={selectedCustomer !== 'all'}
                 />
-              </div>
-            </div>
-
-            <div>
-              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
-                To date
+                Customer summaries
+                {selectedCustomer !== 'all' && (
+                  <span className="text-[11px] opacity-70">(select “All customers” to enable)</span>
+                )}
               </label>
-              <div className="relative">
-                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]">
-                  <Calendar className="w-3.5 h-3.5" />
-                </span>
-                <input
-                  type="date"
-                  value={to}
-                  onChange={(e) => setTo(e.target.value)}
-                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 py-2 text-[13px] text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
-                />
-              </div>
-            </div>
-
-            <div className="sm:col-span-2 md:col-span-4 flex justify-end">
               <button
-                type="submit"
-                disabled={loading}
-                className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-primary)] bg-[var(--color-primary)]/5 px-3.5 py-2 text-[13px] font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-60"
+                type="button"
+                onClick={handleExportCsv}
+                disabled={exporting}
+                className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-60"
               >
-                {loading ? (
+                {exporting ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    Loading…
+                    Exporting…
                   </>
                 ) : (
-                  'Apply filters'
+                  <>
+                    <FileText className="w-4 h-4" />
+                    Export CSV
+                  </>
                 )}
               </button>
+              <button
+                type="button"
+                onClick={handleGenerateReport}
+                disabled={loadingReport}
+                className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3.5 py-2 text-[13px] font-semibold !text-white disabled:opacity-60"
+              >
+                <FileText className="w-4 h-4" />
+                {loadingReport ? 'Generating report…' : 'Generate weekly AI report'}
+              </button>
             </div>
-          </form>
+          </div>
+          {filtersOpen && (
+            <form
+              onSubmit={handleApplyFilters}
+              className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-4 items-end"
+            >
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                  Employee
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]">
+                    <Users className="w-3.5 h-3.5" />
+                  </span>
+                  <select
+                    value={selectedUserId}
+                    onChange={(e) => setSelectedUserId(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 py-2 text-[13px] text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
+                  >
+                    <option value="all">All employees</option>
+                    {users.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name || u.email} ({u.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                  Customer
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]">
+                    <Building2 className="w-3.5 h-3.5" />
+                  </span>
+                  <select
+                    value={selectedCustomer}
+                    onChange={(e) => setSelectedCustomer(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 py-2 text-[13px] text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
+                  >
+                    <option value="all">All customers</option>
+                    {customers.map((c) => (
+                      <option key={c._id} value={c.name}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                  From date
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]">
+                    <Calendar className="w-3.5 h-3.5" />
+                  </span>
+                  <input
+                    type="date"
+                    value={from}
+                    onChange={(e) => setFrom(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 py-2 text-[13px] text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                  To date
+                </label>
+                <div className="relative">
+                  <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]">
+                    <Calendar className="w-3.5 h-3.5" />
+                  </span>
+                  <input
+                    type="date"
+                    value={to}
+                    onChange={(e) => setTo(e.target.value)}
+                    className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 py-2 text-[13px] text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
+                  />
+                </div>
+              </div>
+
+              <div className="sm:col-span-2 md:col-span-4 flex justify-end">
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-primary)] bg-[var(--color-primary)]/5 px-3.5 py-2 text-[13px] font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-60"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Loading…
+                    </>
+                  ) : (
+                    'Apply filters'
+                  )}
+                </button>
+              </div>
+            </form>
+          )}
           {error && (
             <div className="mt-3 flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-700">
               <AlertCircle className="w-4 h-4 shrink-0" />
@@ -458,6 +549,11 @@ export function AdminActivityPage() {
               AI-generated summary of the filtered activity logs. Use it as a starting point for
               supplier or management updates.
             </p>
+            {reportId && (
+              <p className="mb-2 text-[11px] text-[var(--color-text-secondary)]">
+                Saved to reports history.
+              </p>
+            )}
             <div className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3.5 py-3 text-[13px] text-[var(--color-text)] overflow-auto whitespace-pre-wrap">
               {loadingReport && !report
                 ? 'Generating weekly report…'

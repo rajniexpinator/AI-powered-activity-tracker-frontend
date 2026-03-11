@@ -1,7 +1,7 @@
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 
-type Role = 'admin' | 'supervisor' | 'employee'
+type Role = 'admin' | 'employee'
 
 interface AdminRouteProps {
   children: React.ReactNode

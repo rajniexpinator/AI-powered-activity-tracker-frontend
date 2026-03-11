@@ -1,469 +1,465 @@
 import { Link } from 'react-router-dom'
-import {
-  MessageSquare,
-  Database as DatabaseIcon,
-  Sparkles,
-  Users,
-  ArrowRight,
-  BarChart3,
-  Zap,
-  CheckCircle2,
-  Lock,
-  Shield,
-  Twitter,
-  Linkedin,
-  Github,
-  ChevronRight,
-} from 'lucide-react'
+import { Activity, ArrowRight, BarChart3, Building2, FileText, History, Lock, Mail, MessageSquare, Shield, User, Users } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
-import logoSrc from '@/assets/ApexLogoFinal_Color.png'
 
-const SECTION_IMAGE = 'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800&q=80'
+const SECONDARY_COLOR = '#E83946'
 
-const feature1 = {
-  icon: MessageSquare,
-  title: 'AI Chat Logging',
-  description: 'Capture every conversation with intelligent logging. Our AI parses context and tags activities automatically so your team stays aligned without manual notes.',
-  phase: 'Phase 3',
-  color: 'primary',
-}
-const feature2 = {
-  icon: DatabaseIcon,
-  title: 'Structured Records',
-  description: 'All activities stored in a clean, queryable format. Export reports, filter by project or date, and keep a single source of truth for internal operations.',
-  phase: 'Phase 5',
-  color: 'primary',
-}
-const feature3 = {
-  icon: Sparkles,
-  title: 'Reports & Email',
-  description: 'Generate summary reports and send digest emails to stakeholders. Customize templates and schedules so the right people get the right updates.',
-  phase: 'Phase 6–7',
-  color: 'accent',
-}
-const FEATURES = [feature1, feature2, feature3]
+function FeatureCard({
+  icon: Icon,
+  title,
+  desc,
+  locked,
+  tint = 'primary',
+}: {
+  icon: React.ComponentType<{ className?: string }>
+  title: string
+  desc: string
+  locked?: boolean
+  tint?: 'primary' | 'secondary' | 'info' | 'neutral'
+}) {
+  const tintClass =
+    tint === 'secondary'
+      ? 'from-[rgba(232,57,70,0.10)] via-white/65 to-[rgba(232,57,70,0.04)]'
+      : tint === 'info'
+        ? 'from-[rgba(96,165,250,0.14)] via-white/65 to-[rgba(96,165,250,0.05)]'
+        : tint === 'neutral'
+          ? 'from-[rgba(15,23,42,0.06)] via-white/65 to-[rgba(15,23,42,0.03)]'
+          : 'from-[rgba(63,75,157,0.12)] via-white/65 to-[rgba(63,75,157,0.04)]'
 
-const stats = [
-  { value: '10k+', label: 'Activities logged', icon: BarChart3 },
-  { value: '99.9%', label: 'Uptime', icon: Shield },
-  { value: '50+', label: 'Teams onboarded', icon: Users },
-  { value: '24/7', label: 'Support', icon: Zap },
-]
+  return (
+    <div
+      className={[
+        'group relative rounded-2xl border bg-gradient-to-br backdrop-blur-sm',
+        tintClass,
+        'border-[var(--color-primary)]/10 shadow-[0_8px_30px_rgba(15,23,42,0.06)]',
+        'hover:shadow-[0_16px_50px_rgba(63,75,157,0.18)] hover:border-[var(--color-primary)]/25',
+        'transition-all duration-300',
+        locked ? 'opacity-[0.98]' : '',
+      ].join(' ')}
+    >
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3">
+          <span
+            className="relative inline-flex items-center justify-center w-12 h-12 rounded-2xl ring-1"
+            style={{
+              background:
+                tint === 'secondary'
+                  ? 'rgba(232,57,70,0.10)'
+                  : tint === 'info'
+                    ? 'rgba(96,165,250,0.14)'
+                    : tint === 'neutral'
+                      ? 'rgba(15,23,42,0.06)'
+                      : 'rgba(63,75,157,0.12)',
+              color:
+                tint === 'secondary'
+                  ? SECONDARY_COLOR
+                  : tint === 'info'
+                    ? 'rgb(37 99 235)'
+                    : 'var(--color-primary)',
+              borderColor:
+                tint === 'secondary'
+                  ? 'rgba(232,57,70,0.20)'
+                  : tint === 'info'
+                    ? 'rgba(96,165,250,0.25)'
+                    : tint === 'neutral'
+                      ? 'rgba(15,23,42,0.10)'
+                      : 'rgba(63,75,157,0.18)',
+            }}
+          >
+            <Icon className="w-5 h-5" />
+            <span
+              className="pointer-events-none absolute -inset-[1px] rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity"
+              style={{
+                background:
+                  'radial-gradient(120px 120px at 20% 15%, rgba(255,255,255,0.7), transparent 55%)',
+              }}
+            />
+          </span>
 
-const benefits = [
-  'Real-time activity tracking across projects and teams',
-  'Role-based access so admins and employees see only what they need',
-  'Secure, encrypted storage with regular backups',
-  'Integrations with your existing tools and workflows',
-  'Dedicated onboarding and training for your organization',
-]
+          {locked ? (
+            <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--color-text-secondary)] bg-[var(--color-bg)] px-2.5 py-1.5 rounded-full border border-[var(--color-border)]">
+              <Lock className="w-3.5 h-3.5" />
+              Sign in
+            </span>
+          ) : null}
+        </div>
 
-/* Footer structure inspired by apple.com: column groups + bottom legal bar */
-const footerLinks = {
-  product: { title: 'Product', links: [{ label: 'Features', href: '#features' }, { label: 'Pricing', href: '#' }, { label: 'Changelog', href: '#' }, { label: 'API', href: '#' }] },
-  company: { title: 'Company', links: [{ label: 'About us', href: '#' }, { label: 'Careers', href: '#' }, { label: 'Contact', href: '#' }, { label: 'Partners', href: '#' }] },
-  support: { title: 'Support', links: [{ label: 'Help center', href: '#' }, { label: 'Documentation', href: '#' }, { label: 'Status', href: '#' }, { label: 'Security', href: '#' }] },
-  legal: [
-    { label: 'Privacy Policy', href: '#' },
-    { label: 'Terms of Use', href: '#' },
-    { label: 'Cookie policy', href: '#' },
-  ],
+        <p className="mt-4 text-[15px] font-semibold text-[var(--color-text)] tracking-tight">
+          {title}
+        </p>
+        <p className="mt-1.5 text-[13px] text-[var(--color-text-secondary)] leading-relaxed">
+          {desc}
+        </p>
+      </div>
+
+      <div className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+        <div
+          className="absolute inset-0 rounded-2xl"
+          style={{
+            background:
+              tint === 'secondary'
+                ? 'radial-gradient(600px 260px at 20% 0%, rgba(232,57,70,0.22), transparent 55%), radial-gradient(360px 220px at 90% 40%, rgba(63,75,157,0.12), transparent 60%)'
+                : tint === 'info'
+                  ? 'radial-gradient(600px 260px at 20% 0%, rgba(96,165,250,0.22), transparent 55%), radial-gradient(360px 220px at 90% 40%, rgba(232,57,70,0.10), transparent 60%)'
+                  : 'radial-gradient(600px 260px at 20% 0%, rgba(63,75,157,0.18), transparent 55%), radial-gradient(360px 220px at 90% 40%, rgba(232,57,70,0.12), transparent 60%)',
+          }}
+        />
+      </div>
+    </div>
+  )
 }
 
 export function HomePage() {
   const { user } = useAuth()
-  const features = FEATURES
+  const isAdmin = user?.role === 'admin'
 
   return (
     <div className="w-full min-h-screen bg-[#f5f6fc] overflow-x-hidden">
-      <main className="max-w-6xl mx-auto px-3 sm:px-6 md:px-8 py-5 sm:py-8 md:py-14">
-        {/* ——— Hero ——— */}
-        <section className="relative rounded-xl sm:rounded-2xl overflow-hidden mb-10 sm:mb-16 md:mb-20 shadow-[0_24px_60px_-12px_rgba(63,75,157,0.35)]">
-          <div className="absolute inset-0 bg-[var(--color-primary)]" />
-          <div
-            className="absolute inset-0 opacity-25"
-            style={{
-              backgroundImage: `radial-gradient(circle at 1px 1px, rgba(255,255,255,0.2) 1px, transparent 0)`,
-              backgroundSize: '32px 32px',
-            }}
-          />
-          <div className="absolute inset-0 bg-gradient-to-br from-[var(--color-primary)] via-[var(--color-primary)] to-[#252d5c]" />
-          <div className="absolute top-0 right-0 w-[55%] max-w-lg h-full bg-gradient-to-l from-white/10 to-transparent" />
-          <div className="absolute bottom-0 left-0 w-72 h-72 rounded-full bg-white/5 blur-3xl -translate-x-1/2 translate-y-1/2" />
-          <div className="absolute top-1/3 right-1/4 w-56 h-56 rounded-full bg-[var(--color-accent)]/15 blur-3xl" />
+      <main className="max-w-5xl mx-auto px-3 sm:px-6 md:px-8 py-8 sm:py-12 md:py-8">
+        {!user ? (
+          <section className="space-y-6">
+            {/* Hero / overview */}
+            <div className="relative rounded-3xl overflow-hidden border border-white/30 shadow-[0_30px_80px_-20px_rgba(63,75,157,0.55)]">
+              {/* background mesh */}
+              <div className="absolute inset-0 bg-gradient-to-br from-[#3F4B9D] via-[#2d3572] to-[#111827]" />
+              <div
+                className="absolute inset-0 opacity-40"
+                style={{
+                  backgroundImage:
+                    'radial-gradient(circle at 1px 1px, rgba(255,255,255,0.16) 1px, transparent 0)',
+                  backgroundSize: '26px 26px',
+                }}
+              />
+              <div className="absolute -top-24 -right-24 w-80 h-80 rounded-full bg-white/10 blur-3xl" />
+              <div
+                className="absolute -bottom-24 -left-24 w-96 h-96 rounded-full blur-3xl"
+                style={{ backgroundColor: `${SECONDARY_COLOR}26` }}
+              />
 
-          <div className="relative px-4 sm:px-8 md:px-12 lg:px-16 py-8 sm:py-14 md:py-20">
-            <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-8 sm:gap-10">
-              <div className="min-w-0 max-w-2xl">
-                <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.18em] sm:tracking-[0.2em] text-white/75 mb-2 sm:mb-4">
-                  AI-Powered Internal Tracker
+              <div className="relative px-6 sm:px-10 py-10 sm:py-12 lg:py-14">
+                <p className="text-[10px] sm:text-xs font-semibold uppercase tracking-[0.18em] text-white/75">
+                  Internal portal
                 </p>
-                <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-[42px] xl:text-[48px] font-bold tracking-tight leading-[1.15] text-white">
-                  Track activity.
-                  <span className="block mt-0.5 sm:mt-1 text-white/95">Stay in sync.</span>
+                <h1 className="mt-2 text-3xl sm:text-4xl lg:text-[44px] font-bold tracking-tight leading-tight">
+                  <span className="inline-flex items-center gap-3">
+                    <span
+                      className="inline-flex items-center justify-center px-3 py-1 rounded-full text-[12px] font-semibold tracking-wide bg-white/10 border border-white/20"
+                      style={{ color: SECONDARY_COLOR }}
+                    >
+                      AI
+                    </span>
+                    <span className="text-white drop-shadow-[0_2px_14px_rgba(0,0,0,0.35)]">
+                      Activity Tracker
+                    </span>
+                  </span>
                 </h1>
-                <p className="mt-3 sm:mt-5 text-sm sm:text-base md:text-lg text-white/88 max-w-lg leading-relaxed">
-                  One place to log, analyze, and report internal activities. Role-based access, AI-assisted summaries, and reports that keep everyone aligned.
+                <p className="mt-3 text-sm sm:text-base text-white/85 max-w-2xl leading-relaxed">
+                  This system is not public. An admin creates employee accounts. Employees then sign in to access dashboards, customers, AI logs, and reports (admin only).
                 </p>
-                <div className="mt-4 sm:mt-5 flex flex-wrap gap-1.5 sm:gap-2 text-[11px] sm:text-xs md:text-sm">
-                  <span className="inline-flex items-center rounded-full bg-white/20 text-white backdrop-blur-sm px-2.5 sm:px-3.5 py-1.5 sm:py-2 border border-white/25">
-                    Phase 1–2 · Live
-                  </span>
-                  <span className="inline-flex items-center rounded-full bg-[var(--color-accent)]/90 text-white px-2.5 sm:px-3.5 py-1.5 sm:py-2 border border-white/20">
-                    Phase 3 · AI chat
-                  </span>
-                </div>
-                <div className="mt-4 sm:mt-6 md:mt-8 flex flex-col sm:flex-row sm:flex-wrap items-stretch sm:items-start gap-2 sm:gap-3">
-                  {user ? (
-                    <>
-                      <Link
-                        to="/dashboard"
-                        className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-white font-semibold rounded-xl hover:bg-gray-100 hover:ring-2 hover:ring-[var(--color-primary)]/40 hover:ring-offset-2 transition-all no-underline text-sm !text-[var(--color-primary)] shadow-xl hover:shadow-2xl hover:-translate-y-0.5"
-                      >
-                        <BarChart3 className="w-4 h-4" />
-                        View dashboard
-                      </Link>
-                      {user.role === 'admin' && (
-                        <Link
-                          to="/users"
-                          className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-white/15 text-white font-medium rounded-xl border-2 border-white/40 hover:bg-white/35 hover:border-white/60 hover:ring-2 hover:ring-white/30 backdrop-blur-sm transition-all no-underline text-sm"
-                        >
-                          <Users className="w-4 h-4" />
-                          User management
-                        </Link>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <Link
-                        to="/register"
-                        className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-white font-semibold rounded-xl hover:bg-gray-100 hover:ring-2 hover:ring-[var(--color-primary)]/40 hover:ring-offset-2 transition-all no-underline text-sm !text-[var(--color-primary)] shadow-xl hover:shadow-2xl hover:-translate-y-0.5"
-                      >
-                        Get started free
-                        <ArrowRight className="w-4 h-4" />
-                      </Link>
-                      <Link
-                        to="/login"
-                        className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-white/15 text-white font-medium rounded-xl border-2 border-white/40 hover:bg-white/35 hover:border-white/60 hover:ring-2 hover:ring-white/30 backdrop-blur-sm transition-all no-underline text-sm"
-                      >
-                        Sign in
-                      </Link>
-                    </>
-                  )}
-                </div>
-              </div>
-              <div className="hidden lg:flex items-center shrink-0">
-                <div className="relative w-[320px] min-h-[220px] rounded-2xl bg-white/15 backdrop-blur-xl shadow-2xl border border-white/25 overflow-hidden">
-                  <div className="relative h-full flex flex-col justify-between p-6 text-white">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <span className="flex items-center justify-center w-11 h-11 rounded-xl bg-white/25 text-white">
-                          <MessageSquare className="w-5 h-5" />
-                        </span>
-                        <div>
-                          <p className="text-sm font-semibold tracking-tight">Internal activity</p>
-                          <p className="text-xs text-white/80">AI chat · dashboard</p>
-                        </div>
-                      </div>
-                      <span className="text-xs px-2.5 py-1 rounded-full bg-white/25 text-white font-medium">Phase 2</span>
-                    </div>
-                    <div className="space-y-2.5 text-sm text-white/90">
-                      <div className="flex items-center justify-between">
-                        <span>Setup &amp; access</span>
-                        <span className="font-semibold text-white">100%</span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span>AI chat (design)</span>
-                        <span className="font-semibold text-[var(--color-accent)]">In progress</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between pt-3 border-t border-white/20">
-                      <span className="flex items-center gap-2 text-xs text-white/80">
-                        <Lock className="w-4 h-4" />
-                        Role-based access
-                      </span>
-                      <span className="text-xs font-medium text-white">View details →</span>
-                    </div>
+
+                <div className="mt-7 flex flex-col sm:flex-row gap-3 max-w-xl">
+                  <Link
+                    to="/login"
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-white font-semibold rounded-2xl hover:bg-gray-100 hover:ring-2 hover:ring-white/40 hover:ring-offset-2 hover:ring-offset-[#2d3572] transition-all no-underline text-[14px] !text-[#2d3572] shadow-xl"
+                  >
+                    Sign in
+                    <ArrowRight className="w-4 h-4" />
+                  </Link>
+                  <div className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-white/10 rounded-2xl border border-white/20 text-[13px] text-white/90 backdrop-blur-sm">
+                    <Shield className="w-4 h-4" />
+                    Admin-created access only
                   </div>
+                </div>
+
+                {/* mini preview cards */}
+                <div className="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl">
+                  {[
+                    { icon: MessageSquare, label: 'AI logs', value: 'Chat → activities' },
+                    { icon: History, label: 'History', value: 'Searchable timeline' },
+                    { icon: FileText, label: 'Reports', value: 'Weekly summaries' },
+                  ].map(({ icon: Icon, label, value }) => (
+                    <div
+                      key={label}
+                      className="rounded-2xl border border-white/20 bg-white/10 backdrop-blur-md px-4 py-3 text-white"
+                    >
+                      <div className="flex items-center gap-2 text-white/85">
+                        <Icon className="w-4 h-4" style={label === 'Reports' ? { color: SECONDARY_COLOR } : undefined} />
+                        <span className="text-[12px] font-semibold uppercase tracking-[0.14em]">{label}</span>
+                      </div>
+                      <p className="mt-2 text-[14px] font-semibold tracking-tight">{value}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
-          </div>
-        </section>
 
-        {/* ——— Stats strip ——— */}
-        <section className="mb-10 sm:mb-16 md:mb-20">
-          <div className="rounded-xl sm:rounded-2xl bg-white border border-[var(--color-primary)]/10 shadow-[0_4px_24px_rgba(63,75,157,0.08)] p-4 sm:p-6 md:p-10">
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 md:gap-8">
-              {stats.map(({ value, label, icon: Icon }) => (
-                <div key={label} className="text-center sm:text-left">
-                  <div className="inline-flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-lg sm:rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)] mb-2 sm:mb-3">
-                    <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
-                  </div>
-                  <p className="text-xl sm:text-2xl md:text-3xl font-bold text-[#111] tracking-tight">{value}</p>
-                  <p className="text-xs sm:text-sm text-[#666] mt-0.5 sm:mt-1">{label}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* ——— Welcome (logged in) ——— */}
-        {user && (
-          <section className="mb-16">
-            <div className="rounded-2xl bg-white border border-[var(--color-primary)]/10 shadow-[0_4px_24px_rgba(63,75,157,0.08)] p-6 md:p-8">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-6">
+            {/* Features/modules (locked until sign-in) */}
+            <div className="rounded-3xl bg-white/70 backdrop-blur-sm border border-[var(--color-primary)]/10 shadow-[0_20px_60px_rgba(63,75,157,0.10)] p-6 sm:p-8">
+              <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-3">
                 <div>
-                  <h2 className="text-xl font-semibold text-[#111]">Welcome back</h2>
-                  <p className="mt-2 text-[#555] max-w-xl">
-                    Your dashboard is ready. Jump into activity tracking, manage users, or open the AI chat to get started.
+                  <h2 className="text-[16px] sm:text-[18px] font-semibold text-[var(--color-text)]">
+                    Modules available in the employee panel
+                  </h2>
+                  <p className="mt-1.5 text-[13px] text-[var(--color-text-secondary)]">
+                    Sign in to open these modules.
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-3 shrink-0">
-                  {user.role === 'admin' && (
-                    <Link
-                      to="/users"
-                      className="inline-flex items-center gap-2 px-5 py-2.5 bg-[var(--color-primary)] font-medium rounded-xl hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 hover:-translate-y-0.5 transition-all no-underline text-sm !text-white"
-                    >
-                      <Users className="w-4 h-4" />
-                      Users
-                    </Link>
-                  )}
-                  <a
-                    href="#features"
-                    className="inline-flex items-center gap-2 px-5 py-2.5 border border-[var(--color-border)] text-[#444] font-medium rounded-xl hover:bg-black/[0.06] hover:border-[var(--color-primary)]/30 hover:ring-1 hover:ring-[var(--color-primary)]/20 transition-all no-underline text-sm"
-                  >
-                    <BarChart3 className="w-4 h-4" />
-                    See features
-                  </a>
+                <div className="inline-flex items-center gap-2 text-[12px] text-[var(--color-text-secondary)]">
+                  <Lock className="w-4 h-4" />
+                  Locked until authenticated
+                </div>
+              </div>
+
+              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 gap-4">
+                {[
+                  { icon: BarChart3, title: 'Dashboard', desc: 'Overview, recent activity, and quick actions.', tint: 'primary' as const },
+                  { icon: MessageSquare, title: 'AI logs', desc: 'Chat-based logging and activity extraction.', tint: 'info' as const },
+                  { icon: Building2, title: 'Customers', desc: 'View and manage customer records.', tint: 'neutral' as const },
+                  { icon: User, title: 'Profile', desc: 'Update your details and password.', tint: 'secondary' as const },
+                ].map(({ icon, title, desc, tint }) => (
+                  <FeatureCard key={title} icon={icon} title={title} desc={desc} locked tint={tint} />
+                ))}
+              </div>
+            </div>
+
+            {/* How access works + roles */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="rounded-2xl bg-white border border-[var(--color-primary)]/10 shadow-[0_4px_24px_rgba(63,75,157,0.06)] p-6 sm:p-8">
+                <h2 className="text-[16px] sm:text-[18px] font-semibold text-[var(--color-text)]">
+                  How access works
+                </h2>
+                <ol className="mt-4 space-y-3 text-[13px] text-[var(--color-text-secondary)]">
+                  <li className="flex gap-3">
+                    <span className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-semibold">1</span>
+                    <span><span className="font-medium text-[var(--color-text)]">Admin</span> creates employee accounts in Employee Management.</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-semibold">2</span>
+                    <span>Employee signs in with the credentials provided by admin.</span>
+                  </li>
+                  <li className="flex gap-3">
+                    <span className="shrink-0 inline-flex items-center justify-center w-7 h-7 rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)] font-semibold">3</span>
+                    <span>Employee uses Dashboard, AI logs, Customers, and Profile.</span>
+                  </li>
+                </ol>
+              </div>
+
+              <div className="rounded-2xl bg-white border border-[var(--color-primary)]/10 shadow-[0_4px_24px_rgba(63,75,157,0.06)] p-6 sm:p-8">
+                <h2 className="text-[16px] sm:text-[18px] font-semibold text-[var(--color-text)]">
+                  Roles
+                </h2>
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] p-4">
+                    <div className="flex items-start gap-3">
+                      <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-white border border-[var(--color-border)] text-[var(--color-primary)]">
+                        <Shield className="w-4 h-4" />
+                      </span>
+                      <div>
+                        <p className="text-[14px] font-semibold text-[var(--color-text)]">Admin</p>
+                        <p className="mt-1 text-[13px] text-[var(--color-text-secondary)]">
+                          Can create employees, view admin activity, and generate reports.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] p-4">
+                    <div className="flex items-start gap-3">
+                      <span
+                        className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-white border border-[var(--color-border)]"
+                        style={{ color: SECONDARY_COLOR }}
+                      >
+                        <User className="w-4 h-4" />
+                      </span>
+                      <div>
+                        <p className="text-[14px] font-semibold text-[var(--color-text)]">Employee</p>
+                        <p className="mt-1 text-[13px] text-[var(--color-text-secondary)]">
+                          Can use dashboard, customers, AI logs, and manage their profile.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* What this system tracks + reporting */}
+            <div className="relative rounded-3xl overflow-hidden border border-[var(--color-primary)]/10 shadow-[0_20px_60px_rgba(63,75,157,0.10)]">
+              <div
+                className="absolute inset-0"
+                style={{
+                  background:
+                    'radial-gradient(900px 360px at 0% 0%, rgba(63,75,157,0.18), transparent 55%), radial-gradient(700px 300px at 100% 40%, rgba(232,57,70,0.14), transparent 60%), linear-gradient(180deg, rgba(255,255,255,0.82), rgba(255,255,255,0.74))',
+                }}
+              />
+              <div className="absolute inset-0 backdrop-blur-sm" />
+              <div className="relative p-6 sm:p-8">
+              <h2 className="text-[16px] sm:text-[18px] font-semibold text-[var(--color-text)]">
+                What this portal is used for
+              </h2>
+              <p className="mt-1.5 text-[13px] text-[var(--color-text-secondary)] max-w-3xl">
+                AI Activity Tracker helps teams capture day-to-day work updates in a consistent format, so admins can review activity and generate weekly reports without chasing messages across tools.
+              </p>
+
+              <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="rounded-2xl bg-gradient-to-br from-white/85 via-white/75 to-[rgba(63,75,157,0.06)] border border-[var(--color-primary)]/10 shadow-[0_10px_30px_rgba(15,23,42,0.06)] p-5">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-[var(--color-primary)]/10 text-[var(--color-primary)] ring-1 ring-[var(--color-primary)]/15">
+                      <History className="w-5 h-5" />
+                    </span>
+                    <p className="font-semibold text-[var(--color-text)]">Activity history</p>
+                  </div>
+                  <p className="mt-2 text-[13px] text-[var(--color-text-secondary)]">
+                    Maintain a searchable timeline of employee activities by date and customer.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-gradient-to-br from-white/85 via-white/75 to-[rgba(96,165,250,0.08)] border border-[var(--color-primary)]/10 shadow-[0_10px_30px_rgba(15,23,42,0.06)] p-5">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-[var(--color-primary)]/10 text-[var(--color-primary)] ring-1 ring-[var(--color-primary)]/15">
+                      <MessageSquare className="w-5 h-5" />
+                    </span>
+                    <p className="font-semibold text-[var(--color-text)]">AI assisted logs</p>
+                  </div>
+                  <p className="mt-2 text-[13px] text-[var(--color-text-secondary)]">
+                    Convert chat notes into structured activities that are easier to review and report.
+                  </p>
+                </div>
+
+                <div className="rounded-2xl bg-gradient-to-br from-white/85 via-white/75 to-[rgba(232,57,70,0.07)] border border-[var(--color-primary)]/10 shadow-[0_10px_30px_rgba(15,23,42,0.06)] p-5">
+                  <div className="flex items-center gap-3">
+                    <span className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-[var(--color-primary)]/10 text-[var(--color-primary)] ring-1 ring-[var(--color-primary)]/15">
+                      <FileText className="w-5 h-5" />
+                    </span>
+                    <p className="font-semibold text-[var(--color-text)]">Weekly reporting</p>
+                  </div>
+                  <p className="mt-2 text-[13px] text-[var(--color-text-secondary)]">
+                    Admins can generate reports across employees and customers for weekly updates.
+                  </p>
+                </div>
+              </div>
+              </div>
+            </div>
+
+            {/* Help / support */}
+            <div className="rounded-3xl bg-white/70 backdrop-blur-sm border border-[var(--color-primary)]/10 shadow-[0_20px_60px_rgba(63,75,157,0.10)] p-6 sm:p-8">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                <div>
+                  <h2 className="text-[16px] sm:text-[18px] font-semibold text-[var(--color-text)]">
+                    Need help?
+                  </h2>
+                  <p className="mt-1.5 text-[13px] text-[var(--color-text-secondary)]">
+                    For access issues, ask your admin. For technical issues, contact your internal support team.
+                  </p>
+                </div>
+                <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] text-[13px] text-[var(--color-text-secondary)]">
+                  <Mail className="w-4 h-4" />
+                  <span>Support: internal IT / Admin</span>
                 </div>
               </div>
             </div>
           </section>
-        )}
+        ) : (
+          <section className="space-y-6">
+            <div className="rounded-3xl bg-white/70 backdrop-blur-sm border border-[var(--color-primary)]/10 shadow-[0_20px_60px_rgba(63,75,157,0.10)] p-6 sm:p-8">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
+                    Portal home
+                  </p>
+                  <h1 className="mt-2 text-2xl sm:text-3xl font-bold tracking-tight text-[var(--color-text)]">
+                    Welcome{user.name ? `, ${user.name}` : ''}.
+                  </h1>
+                  <p className="mt-2 text-[14px] text-[var(--color-text-secondary)]">
+                    Use the shortcuts below to access dashboards and admin tools.
+                  </p>
+                </div>
 
-        {/* ——— Features ——— */}
-        <section id="features" className="mb-10 sm:mb-16 md:mb-20">
-          <div className="text-center max-w-2xl mx-auto mb-8 sm:mb-12 px-1">
-            <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-[#111] tracking-tight">
-              Everything you need to track activity
-            </h2>
-            <p className="mt-2 sm:mt-3 text-sm sm:text-base text-[#666]">
-              From AI-powered chat logging to structured records and automated reports—built for teams that need clarity and control.
-            </p>
-          </div>
-          <div className="grid gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">
-            {features.map(({ icon: Icon, title, description, phase, color }) => (
-              <div
-                key={title}
-                className="group rounded-xl sm:rounded-2xl bg-white border border-[var(--color-primary)]/10 p-4 sm:p-6 md:p-7 shadow-[0_4px_24px_rgba(63,75,157,0.06)] hover:shadow-[0_8px_32px_rgba(63,75,157,0.12)] hover:border-[var(--color-primary)]/20 transition-all duration-300"
-              >
-                <div
-                  className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
-                    color === 'accent'
-                      ? 'bg-[var(--color-accent)]/10 text-[var(--color-accent)]'
-                      : 'bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-                  }`}
-                >
-                  <Icon className="w-6 h-6" strokeWidth={1.6} />
-                </div>
-                <div className="flex items-center gap-2 mb-2">
-                  <h3 className="text-lg font-semibold text-[#111]">{title}</h3>
-                  <span className="text-[10px] font-semibold uppercase tracking-wider text-[#888] bg-[#f5f5f5] px-2.5 py-1 rounded-lg">
-                    {phase}
+                <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] text-[13px] text-[var(--color-text-secondary)]">
+                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-white border border-[var(--color-border)] text-[var(--color-primary)]">
+                    <Shield className="w-4 h-4" />
                   </span>
+                  <span className="font-medium text-[var(--color-text)]">{isAdmin ? 'Admin' : 'Employee'}</span>
                 </div>
-                <p className="text-[#666] leading-relaxed">{description}</p>
-                <div className="mt-4 flex items-center justify-between">
-                  <span className="text-sm font-medium text-[var(--color-primary)] opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
-                    {title === 'AI Chat Logging' ? 'Try it now' : 'Coming soon'}
-                    <ChevronRight className="w-4 h-4" />
-                  </span>
-                  {title === 'AI Chat Logging' && (
-                    <Link
-                      to="/chat"
-                      className="text-sm font-medium text-[var(--color-primary)] hover:underline whitespace-nowrap"
-                    >
-                      Open chat →
-                    </Link>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* ——— Why us / Benefits ——— */}
-        <section className="mb-10 sm:mb-16 md:mb-20">
-          <div className="rounded-xl sm:rounded-2xl overflow-hidden bg-white border border-[var(--color-primary)]/10 shadow-[0_4px_24px_rgba(63,75,157,0.08)]">
-            <div className="grid grid-cols-1 md:grid-cols-2">
-              <div className="relative aspect-[4/3] md:aspect-auto md:min-h-[360px] min-h-[200px]">
-                <img
-                  src={SECTION_IMAGE}
-                  alt="Team collaboration"
-                  className="absolute inset-0 w-full h-full object-cover"
-                />
-                <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-primary)]/80 to-transparent md:from-[var(--color-primary)]/60" />
-                <div className="absolute bottom-0 left-0 right-0 p-4 sm:p-6 md:p-8 text-white">
-                  <p className="text-xs sm:text-sm font-semibold uppercase tracking-wider text-white/90">Built for teams</p>
-                  <p className="text-base sm:text-lg md:text-xl font-semibold mt-1">One platform. Full visibility.</p>
-                </div>
-              </div>
-              <div className="p-4 sm:p-6 md:p-8 flex flex-col justify-center">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="flex items-center justify-center w-10 h-10 rounded-xl bg-[var(--color-accent)]/10 text-[var(--color-accent)]">
-                    <Zap className="w-5 h-5" />
-                  </span>
-                  <h2 className="text-xl font-semibold text-[#111] tracking-tight">Why choose us</h2>
-                </div>
-                <p className="text-[#666] mb-6">
-                  We combine security, ease of use, and powerful reporting so your internal activity stays organized and actionable.
-                </p>
-                <ul className="space-y-3">
-                  {benefits.map((item) => (
-                    <li key={item} className="flex items-center gap-3 text-[#444]">
-                      <CheckCircle2 className="w-5 h-5 text-[var(--color-primary)] shrink-0" />
-                      <span>{item}</span>
-                    </li>
-                  ))}
-                </ul>
               </div>
             </div>
-          </div>
-        </section>
 
-        {/* ——— Testimonial / Quote ——— */}
-        <section className="mb-10 sm:mb-16 md:mb-20">
-          <div className="rounded-xl sm:rounded-2xl bg-gradient-to-br from-[var(--color-primary)] to-[#2d3572] p-5 sm:p-8 md:p-12 text-center relative overflow-hidden shadow-[0_24px_60px_-12px_rgba(63,75,157,0.3)]">
-            <div className="absolute inset-0 opacity-15" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '24px 24px' }} />
-            <div className="relative">
-              <p className="text-base sm:text-xl md:text-2xl lg:text-3xl font-medium text-white leading-relaxed max-w-3xl mx-auto px-0" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.1)' }}>
-                “Activity tracking used to be scattered across spreadsheets and chat. Now we have one place—and the AI summaries save us hours every week.”
+            <div className="rounded-3xl bg-white/70 backdrop-blur-sm border border-[var(--color-primary)]/10 shadow-[0_20px_60px_rgba(63,75,157,0.10)] p-6 sm:p-8">
+              <h2 className="text-[16px] sm:text-[18px] font-semibold text-[var(--color-text)]">
+                Employee panel features
+              </h2>
+              <p className="mt-1.5 text-[13px] text-[var(--color-text-secondary)]">
+                These are the main sections available after login.
               </p>
-              <p className="mt-6 text-white font-medium opacity-90">— Engineering lead, Manufacturing</p>
-              <p className="text-sm text-white opacity-70 mt-1">Dummy testimonial for design</p>
-            </div>
-          </div>
-        </section>
 
-        {/* ——— CTA ——— */}
-        <section className="mb-10 sm:mb-16 md:mb-20">
-          <div className="rounded-xl sm:rounded-2xl bg-white border border-[var(--color-primary)]/10 p-5 sm:p-8 md:p-12 text-center shadow-[0_4px_24px_rgba(63,75,157,0.08)]">
-            <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-[#111] tracking-tight">
-              Ready to get started?
-            </h2>
-            <p className="mt-2 sm:mt-3 text-sm sm:text-base text-[#555] max-w-lg mx-auto">
-              Join teams that use AI Activity Tracker to stay aligned. No credit card required.
-            </p>
-            <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
-              {!user && (
-                <>
-                  <Link
-                    to="/register"
-                    className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-[var(--color-primary)] font-semibold rounded-xl text-white border-2 border-transparent hover:bg-[var(--color-primary-hover)] hover:!text-white hover:border-white/60 hover:shadow-[0_6px_20px_rgba(63,75,157,0.5)] hover:scale-105 active:scale-[0.98] transition-all duration-200 no-underline text-sm"
-                  >
-                    Create free account
-                    <ArrowRight className="w-4 h-4" />
-                  </Link>
-                  <Link
-                    to="/login"
-                    className="inline-flex items-center justify-center gap-2 px-6 py-3.5 border-2 border-[var(--color-primary)]/30 text-[var(--color-primary)] font-medium rounded-xl hover:bg-[var(--color-primary)]/10 hover:border-[var(--color-primary)] hover:shadow-[0_4px_14px_rgba(63,75,157,0.2)] hover:scale-105 active:scale-[0.98] transition-all duration-200 no-underline text-sm"
-                  >
-                    Sign in
-                  </Link>
-                </>
-              )}
-              {user && (
-                <Link
-                  to="/dashboard"
-                  className="inline-flex items-center justify-center gap-2 px-6 py-3.5 bg-[var(--color-primary)] font-semibold rounded-xl text-white hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 hover:-translate-y-0.5 transition-all no-underline text-sm"
-                >
-                  Go to dashboard
-                  <ArrowRight className="w-4 h-4" />
+              <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <Link to="/dashboard" className="no-underline">
+                  <FeatureCard icon={BarChart3} title="Dashboard" desc="Overview, recent activity, and quick actions." />
                 </Link>
-              )}
+                <Link to="/chat" className="no-underline">
+                  <FeatureCard icon={MessageSquare} title="AI logs" desc="Chat-based logging and activity extraction." />
+                </Link>
+                <Link to="/customers" className="no-underline">
+                  <FeatureCard icon={Building2} title="Customers" desc="View and manage customer records." />
+                </Link>
+                <Link to="/profile" className="no-underline">
+                  <FeatureCard icon={User} title="Profile" desc="Update your details and password." />
+                </Link>
+              </div>
             </div>
-          </div>
-        </section>
+
+            {/* Quick usage tips */}
+            <div className="rounded-3xl bg-white/70 backdrop-blur-sm border border-[var(--color-primary)]/10 shadow-[0_20px_60px_rgba(63,75,157,0.10)] p-6 sm:p-8">
+              <h2 className="text-[16px] sm:text-[18px] font-semibold text-[var(--color-text)]">
+                Tips for better tracking
+              </h2>
+              <ul className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3 text-[13px] text-[var(--color-text-secondary)]">
+                <li className="rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] p-4">
+                  Write short updates: customer, task, outcome, next step.
+                </li>
+                <li className="rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] p-4">
+                  Use AI logs to convert chat notes into structured activities.
+                </li>
+                <li className="rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] p-4">
+                  Keep customer names consistent so filtering works.
+                </li>
+                <li className="rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)] p-4">
+                  Update your profile name so reports show the correct employee.
+                </li>
+              </ul>
+            </div>
+
+            {isAdmin && (
+              <div className="rounded-3xl bg-white/70 backdrop-blur-sm border border-[var(--color-primary)]/10 shadow-[0_20px_60px_rgba(63,75,157,0.10)] p-6 sm:p-8">
+                <h2 className="text-[16px] sm:text-[18px] font-semibold text-[var(--color-text)]">Admin tools</h2>
+                <p className="mt-1.5 text-[13px] text-[var(--color-text-secondary)]">Admin-only modules.</p>
+
+                <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <Link
+                    to="/users"
+                    className="no-underline"
+                  >
+                    <FeatureCard icon={Users} title="Employee management" desc="Create employees and manage access." />
+                  </Link>
+
+                <Link
+                  to="/activity"
+                    className="no-underline"
+                >
+                    <FeatureCard icon={Activity} title="Admin activity" desc="Filter activities across employees and customers." />
+                </Link>
+
+                <Link
+                  to="/reports"
+                    className="no-underline"
+                >
+                    <FeatureCard icon={FileText} title="Reports" desc="Generate and export internal reports." />
+                </Link>
+                </div>
+              </div>
+            )}
+          </section>
+        )}
       </main>
-
-      {/* ——— Footer ——— Apple-style: light gray, column groups, bottom legal bar (reference: apple.com) */}
-      <footer className="bg-[#f5f5f7] text-[#1d1d1f]">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 pt-10 pb-6">
-          {/* Column groups */}
-          <nav className="grid grid-cols-2 sm:grid-cols-4 gap-8 sm:gap-6 md:gap-8" aria-label="Footer">
-            {/* Brand */}
-            <div className="col-span-2 sm:col-span-1">
-              <Link to="/" className="inline-flex items-center gap-2 no-underline text-[#1d1d1f] hover:opacity-80 transition-opacity">
-                <span className="flex items-center justify-center w-8 h-8 rounded-lg bg-[#e8e8ed] overflow-hidden border border-[#d2d2d7]">
-                  <img
-                    src={logoSrc}
-                    alt="AI Activity Tracker"
-                    className="h-full w-auto object-contain"
-                    onError={(e) => {
-                      (e.target as HTMLImageElement).style.display = 'none'
-                      const next = (e.target as HTMLImageElement).nextElementSibling
-                      if (next) (next as HTMLElement).style.display = 'flex'
-                    }}
-                  />
-                  <span className="hidden items-center justify-center w-full h-full bg-[var(--color-primary)] text-white text-xs font-semibold" aria-hidden>AI</span>
-                </span>
-                <span className="font-semibold text-sm tracking-tight">AI Activity Tracker</span>
-              </Link>
-              <p className="mt-3 text-[12px] text-[#6e6e73] max-w-[200px] leading-relaxed">
-                Internal activity tracking with AI. Built for modern teams.
-              </p>
-              <div className="mt-4 flex items-center gap-4">
-                <a href="#" className="text-[#6e6e73] hover:text-[#1d1d1f] transition-colors" aria-label="Twitter" onClick={(e) => e.preventDefault()}>
-                  <Twitter className="w-4 h-4" />
-                </a>
-                <a href="#" className="text-[#6e6e73] hover:text-[#1d1d1f] transition-colors" aria-label="LinkedIn" onClick={(e) => e.preventDefault()}>
-                  <Linkedin className="w-4 h-4" />
-                </a>
-                <a href="#" className="text-[#6e6e73] hover:text-[#1d1d1f] transition-colors" aria-label="GitHub" onClick={(e) => e.preventDefault()}>
-                  <Github className="w-4 h-4" />
-                </a>
-              </div>
-            </div>
-            {[footerLinks.product, footerLinks.company, footerLinks.support].map((section) => (
-              <div key={section.title}>
-                <h3 className="text-[12px] font-semibold text-[#1d1d1f] mb-3">{section.title}</h3>
-                <ul className="space-y-2">
-                  {section.links.map(({ label, href }) => (
-                    <li key={label}>
-                      <a href={href} className="text-[12px] text-[#424245] hover:text-[#1d1d1f] no-underline transition-colors" onClick={href === '#' ? (e) => e.preventDefault() : undefined}>
-                        {label}
-                      </a>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))}
-          </nav>
-
-          {/* More ways / Contact — Apple-style, wraps on mobile */}
-          <div className="mt-6 sm:mt-8 pt-4 sm:pt-6 border-t border-[#d2d2d7] text-[11px] sm:text-[12px] text-[#6e6e73] space-y-1 sm:space-y-0 sm:block">
-            <span className="block sm:inline">More ways to get in touch: </span>
-            <a href="mailto:hello@activitytracker.example" className="text-[#424245] hover:text-[#1d1d1f] underline break-all">hello@activitytracker.example</a>
-            <span className="hidden sm:inline"> · </span>
-            <a href="tel:+15550000000" className="text-[#424245] hover:text-[#1d1d1f] underline sm:ml-0">1-800-ACTIVITY</a>
-            <span className="hidden sm:inline"> · </span>
-            <span className="block sm:inline">123 Example St, City</span>
-          </div>
-
-          {/* Bottom legal bar — like Apple Footer */}
-          <div className="mt-4 pt-4 border-t border-[#d2d2d7] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-[11px] text-[#6e6e73]">
-            <p>Copyright © {new Date().getFullYear()} AI Activity Tracker. All rights reserved.</p>
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-              {footerLinks.legal.map(({ label, href }) => (
-                <a key={label} href={href} className="text-[#6e6e73] hover:text-[#1d1d1f] no-underline transition-colors" onClick={href === '#' ? (e) => e.preventDefault() : undefined}>
-                  {label}
-                </a>
-              ))}
-            </div>
-          </div>
-        </div>
-      </footer>
     </div>
   )
 }

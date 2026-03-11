@@ -196,11 +196,60 @@ export const api = {
       }>(path, { method: 'GET' })
     },
 
-    generateWeeklyReport: (payload: { userId?: string; customer?: string; from?: string; to?: string; limit?: number }) =>
-      request<{ report: string }>('/api/activities/admin/weekly-report', {
+    generateWeeklyReport: (payload: {
+      userId?: string
+      customer?: string
+      from?: string
+      to?: string
+      limit?: number
+      includeCustomerSummaries?: boolean
+    }) =>
+      request<{ report: string; reportId: string }>('/api/reports/generate', {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+  },
+
+  reports: {
+    list: (params?: { page?: number; limit?: number }) => {
+      const search = new URLSearchParams()
+      if (typeof params?.limit === 'number') search.set('limit', String(params.limit))
+      if (typeof params?.page === 'number') search.set('page', String(params.page))
+      const qs = search.toString()
+      const path = qs ? `/api/reports?${qs}` : '/api/reports'
+      return request<{
+        reports: {
+          _id: string
+          customer?: string
+          userId?: string
+          from?: string
+          to?: string
+          includeCustomerSummaries?: boolean
+          model?: string
+          activityCount?: number
+          createdAt: string
+        }[]
+        total: number
+        page: number
+        limit: number
+        totalPages: number
+      }>(path, { method: 'GET' })
+    },
+    getOne: (id: string) =>
+      request<{
+        report: {
+          _id: string
+          customer?: string
+          userId?: string
+          from?: string
+          to?: string
+          includeCustomerSummaries?: boolean
+          model?: string
+          activityCount?: number
+          createdAt: string
+          content: string
+        }
+      }>(`/api/reports/${id}`, { method: 'GET' }),
   },
 
   customers: {

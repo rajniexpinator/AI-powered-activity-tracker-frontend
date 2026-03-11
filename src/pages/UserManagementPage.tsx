@@ -7,11 +7,10 @@ import { api } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import { AdminShell } from '@/components/layout/AdminShell'
 
-const ROLES: User['role'][] = ['admin', 'supervisor', 'employee']
+const ROLES: User['role'][] = ['admin', 'employee']
 
 const ROLE_STYLES: Record<User['role'], string> = {
   admin: 'bg-[var(--color-primary)] !text-white',
-  supervisor: 'bg-[var(--color-primary)]/80 !text-white',
   employee: 'bg-[var(--color-bg)] text-[var(--color-text-secondary)]',
 }
 

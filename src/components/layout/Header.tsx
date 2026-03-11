@@ -83,15 +83,12 @@ export function Header() {
       <Link to="/login" onClick={closeMobileMenu} className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-[#444] font-medium border border-[var(--color-border)] hover:bg-black/[0.03] no-underline text-[15px]">
         Sign in
       </Link>
-      <Link to="/register" onClick={closeMobileMenu} className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium no-underline text-[15px] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] !text-white">
-        Get started
-      </Link>
     </div>
   )
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white/80 backdrop-blur-md border-b border-black/[0.06]">
-      <div className="max-w-6xl mx-auto px-4 sm:px-6 md:px-8 h-14 sm:h-16 flex items-center justify-between gap-4">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 md:px-8 h-14 sm:h-16 flex items-center justify-between gap-4">
         <Link to="/" className="flex items-center gap-2 sm:gap-3 no-underline text-[#111] hover:opacity-90 transition-opacity min-w-0">
           <span className="flex items-center justify-center w-15 h-15 overflow-hidden shrink-0">
             <img
@@ -164,9 +161,6 @@ export function Header() {
             <>
               <Link to="/login" className="flex items-center gap-2 px-3.5 py-2 text-[14px] font-medium text-[#444] hover:text-[#111] rounded-lg hover:bg-black/[0.06] hover:ring-1 hover:ring-black/5 transition-all no-underline">
                 Sign in
-              </Link>
-              <Link to="/register" className="flex items-center gap-2 px-4 py-2 text-[14px] font-medium rounded-lg transition-all no-underline bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 !text-white">
-                Get started
               </Link>
             </>
           )}

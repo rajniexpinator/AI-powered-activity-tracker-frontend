@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, MessageSquare, Users, Building2, LogOut, Menu, X, BarChart3, UserCircle } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Users, Building2, LogOut, Menu, X, BarChart3, UserCircle, FileText } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 
 interface AdminShellProps {
@@ -11,8 +11,7 @@ interface AdminShellProps {
 export function AdminShell({ children }: AdminShellProps) {
   const { user, logout } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const isSupervisor = user?.role === 'supervisor'
-  const canViewActivity = isAdmin || isSupervisor
+  const canViewActivity = isAdmin
   const location = useLocation()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -87,6 +86,19 @@ export function AdminShell({ children }: AdminShellProps) {
                 Activity
               </Link>
             )}
+            {canViewActivity && (
+              <Link
+                to="/reports"
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                  isActive('/reports')
+                    ? 'bg-[#3F4B9D] text-white'
+                    : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                }`}
+              >
+                <FileText className="w-4 h-4 opacity-80" />
+                Reports
+              </Link>
+            )}
             {isAdmin && (
               <div className="flex flex-col gap-0.5 mt-2">
                 <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
@@ -101,7 +113,7 @@ export function AdminShell({ children }: AdminShellProps) {
                   }`}
                 >
                   <Users className="w-4 h-4 opacity-80" />
-                  Employees
+                  Users
                 </Link>
                 <Link
                   to="/customers"
@@ -192,7 +204,7 @@ export function AdminShell({ children }: AdminShellProps) {
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
-                    {isAdmin ? 'Admin' : isSupervisor ? 'Supervisor' : 'Employee'}
+                    {isAdmin ? 'Admin' : 'Employee'}
                   </p>
                   <p className="mt-0.5 text-[13px] font-semibold text-[var(--color-text)]">
                     Operations
@@ -245,6 +257,20 @@ export function AdminShell({ children }: AdminShellProps) {
                 >
                   <BarChart3 className="w-4 h-4 opacity-80" />
                   Activity
+                </Link>
+              )}
+              {canViewActivity && (
+                <Link
+                  to="/reports"
+                  onClick={() => setMobileOpen(false)}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                    isActive('/reports')
+                      ? 'bg-[#3F4B9D] text-white'
+                      : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                  }`}
+                >
+                  <FileText className="w-4 h-4 opacity-80" />
+                  Reports
                 </Link>
               )}
               {isAdmin && (
