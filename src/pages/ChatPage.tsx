@@ -1,5 +1,17 @@
-import { useEffect, useState } from 'react'
-import { MessageSquare, Clock, Tag, Archive, Send, AlertCircle, CheckCircle2, Image as ImageIcon, X, Plus } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
+import {
+  MessageSquare,
+  Clock,
+  Tag,
+  Archive,
+  Send,
+  AlertCircle,
+  CheckCircle2,
+  Image as ImageIcon,
+  X,
+  Plus,
+  ScanLine,
+} from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { api } from '@/services/api'
@@ -78,6 +90,71 @@ export function ChatPage() {
   const [dateFilter, setDateFilter] = useState<'all' | 'today'>('all')
   const [customerFilter, setCustomerFilter] = useState<string>('') // '' = all customers
   const [savedResultKey, setSavedResultKey] = useState<string | null>(null)
+  const [scannerOpen, setScannerOpen] = useState(false)
+  const [scannerError, setScannerError] = useState<string | null>(null)
+  const [scanning, setScanning] = useState(false)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+
+  async function startScanner() {
+    setScannerError(null)
+    setScannerOpen(true)
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      streamRef.current = stream
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+      }
+      if (!(window as any).BarcodeDetector) {
+        setScannerError('This browser does not support live barcode detection. You can still type the code manually.')
+        return
+      }
+      setScanning(true)
+      const detector = new (window as any).BarcodeDetector({
+        formats: ['code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e'],
+      })
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      const loop = async () => {
+        if (!videoRef.current || !scanning) return
+        const video = videoRef.current
+        if (video.readyState === 4 && ctx) {
+          canvas.width = video.videoWidth
+          canvas.height = video.videoHeight
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+          try {
+            const barcodes = await detector.detect(canvas)
+            if (barcodes && barcodes[0]?.rawValue) {
+              const code = String(barcodes[0].rawValue).trim()
+              if (code) {
+                setText((prev) => (prev ? `Scanned barcode: ${code}\n${prev}` : `Scanned barcode: ${code}`))
+                stopScanner()
+                toast.success(`Scanned barcode: ${code}`)
+                return
+              }
+            }
+          } catch (err) {
+            console.error('Barcode detection failed', err)
+          }
+        }
+        requestAnimationFrame(loop)
+      }
+      requestAnimationFrame(loop)
+    } catch (err) {
+      console.error(err)
+      setScannerError('Unable to access camera. Please check browser permissions.')
+    }
+  }
+
+  function stopScanner() {
+    setScanning(false)
+    setScannerOpen(false)
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((t) => t.stop())
+      streamRef.current = null
+    }
+  }
 
   async function loadRecent() {
     setLoadingRecent(true)
@@ -85,7 +162,6 @@ export function ChatPage() {
       const { activities } = await api.activities.list({ limit: 20 })
       setRecentActivities(activities)
     } catch {
-      // ignore list errors here; the right-hand flow still works
     } finally {
       setLoadingRecent(false)
     }
@@ -99,7 +175,6 @@ export function ChatPage() {
         const { customers } = await api.customers.list()
         setCustomers(customers)
       } catch {
-        // ignore customers load error for now; chat still works without dropdown
       } finally {
         setLoadingCustomers(false)
       }
@@ -355,8 +430,62 @@ export function ChatPage() {
               <Tag className="w-4 h-4" />
               All customers
             </button>
+            <button
+              type="button"
+              onClick={() => void startScanner()}
+              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-xs sm:text-sm text-[#444] hover:bg-black/[0.03]"
+            >
+              <ScanLine className="w-4 h-4" />
+              Scan barcode
+            </button>
           </div>
         </div>
+
+        {/* Scanner overlay */}
+        {scannerOpen && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-xl border border-[var(--color-border)] overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+                    <ScanLine className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#555]">Barcode scanner</p>
+                    <p className="text-[11px] text-[#777]">Point your camera at the barcode to capture it.</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={stopScanner}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-black/5 text-[#666]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="px-4 pt-3 pb-4 space-y-3">
+                <div className="relative w-full rounded-xl overflow-hidden bg-black/80 aspect-video flex items-center justify-center">
+                  <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+                  {!scanning && !scannerError && (
+                    <p className="absolute inset-x-0 bottom-3 text-center text-[11px] text-white/80">
+                      Initializing camera…
+                    </p>
+                  )}
+                </div>
+                {scannerError && (
+                  <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                    <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <p>{scannerError}</p>
+                  </div>
+                )}
+                <p className="text-[11px] text-[#777]">
+                  When a code is detected, it will be inserted into the activity text as{' '}
+                  <span className="font-mono text-[11px] text-[var(--color-primary)]">Scanned barcode: ...</span>.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Two-column layout */}
         <div className="grid gap-4 md:grid-cols-[minmax(0,_260px)_minmax(0,_1fr)]">

@@ -489,7 +489,7 @@ export function AdminActivityPage() {
                     <p className="text-[12px] text-[var(--color-text-secondary)]">
                       {new Date(a.createdAt).toLocaleString()}
                     </p>
-                    <p className="text-[13px] text-[var(--color-text)] line-clamp-2 md:line-clamp-3">
+                    <p className="text-[13px] text-[var(--color-text)] line-clamp-2">
                       {a.summary || 'No summary'}
                     </p>
                     {tab === 'archived' && (

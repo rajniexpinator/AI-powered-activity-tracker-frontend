@@ -252,6 +252,67 @@ export const api = {
       }>(`/api/reports/${id}`, { method: 'GET' }),
   },
 
+  ms365: {
+    status: () =>
+      request<{ configured: boolean; dbConnected: boolean }>('/api/ms365/status', {
+        method: 'GET',
+      }),
+
+    getDefaultRecipients: () =>
+      request<{ recipients: { to: string[]; cc: string[] } }>('/api/ms365/recipients/default', {
+        method: 'GET',
+      }),
+
+    setDefaultRecipients: (payload: { to?: string[]; cc?: string[] }) =>
+      request<{ recipients: { to: string[]; cc: string[] } }>('/api/ms365/recipients/default', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }),
+
+    createWeeklyReportDraft: (payload: {
+      reportId: string
+      to?: string[] | string
+      cc?: string[] | string
+      subject?: string
+      bodyText?: string
+    }) =>
+      request<{
+        draft: {
+          id: string
+          webLink?: string
+          createdDateTime?: string
+          subject?: string
+        }
+      }>('/api/ms365/drafts/weekly-report', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    createCustomerEmailDraft: (payload: {
+      customer?: string
+      weekEnding?: string
+      to?: string[] | string
+      cc?: string[] | string
+      extraContext?: string
+    }) =>
+      request<{
+        draft: {
+          id: string
+          webLink?: string
+          createdDateTime?: string
+          subject?: string
+        }
+      }>('/api/ms365/drafts/customer-email', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    sendDraft: (messageId: string) =>
+      request<{ success: boolean }>(`/api/ms365/drafts/${encodeURIComponent(messageId)}/send`, {
+        method: 'POST',
+      }),
+  },
+
   customers: {
     list: () =>
       request<{
