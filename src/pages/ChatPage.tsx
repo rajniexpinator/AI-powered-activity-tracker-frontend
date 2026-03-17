@@ -7,6 +7,7 @@ import {
   Send,
   AlertCircle,
   CheckCircle2,
+  Loader2,
   Image as ImageIcon,
   X,
   Plus,
@@ -95,6 +96,63 @@ export function ChatPage() {
   const [scanning, setScanning] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const [barcodeModal, setBarcodeModal] = useState<{
+    barcode: string
+    mode: 'new' | 'existing'
+    customer?: string
+    productName?: string
+    scanCount?: number
+  } | null>(null)
+  const [barcodeCustomer, setBarcodeCustomer] = useState('')
+  const [barcodeProductName, setBarcodeProductName] = useState('')
+  const [barcodeNotes, setBarcodeNotes] = useState('')
+  const [savingBarcode, setSavingBarcode] = useState(false)
+
+  function openBarcodeModal(payload: NonNullable<typeof barcodeModal>) {
+    setBarcodeModal(payload)
+    setBarcodeCustomer(payload.customer ?? '')
+    setBarcodeProductName(payload.productName ?? '')
+    setBarcodeNotes('')
+  }
+
+  function closeBarcodeModal() {
+    setBarcodeModal(null)
+    setBarcodeCustomer('')
+    setBarcodeProductName('')
+    setBarcodeNotes('')
+  }
+
+  async function handleBarcodeDetected(code: string) {
+    setText((prev) => (prev ? `Scanned barcode: ${code}\n${prev}` : `Scanned barcode: ${code}`))
+
+    try {
+      const res = await api.barcodes.scan(code)
+      const mapping = res.mapping
+      if (mapping?.customer) {
+        setCustomerHint((prev) => prev || String(mapping.customer))
+      }
+      toast.info(
+        mapping?.customer || mapping?.productName
+          ? `Barcode recognized: ${mapping.productName || ''}${mapping.customer ? ` (${mapping.customer})` : ''}`.trim()
+          : 'Barcode recognized.'
+      )
+      openBarcodeModal({
+        barcode: code,
+        mode: 'existing',
+        customer: mapping.customer,
+        productName: mapping.productName,
+        scanCount: mapping.scanCount,
+      })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : ''
+      if (msg.toLowerCase().includes('not found')) {
+        openBarcodeModal({ barcode: code, mode: 'new' })
+        toast.info('New barcode detected. Please map it to a customer and part number.')
+      } else {
+        toast.error(msg || 'Failed to look up barcode')
+      }
+    }
+  }
 
   async function startScanner() {
     setScannerError(null)
@@ -128,9 +186,8 @@ export function ChatPage() {
             if (barcodes && barcodes[0]?.rawValue) {
               const code = String(barcodes[0].rawValue).trim()
               if (code) {
-                setText((prev) => (prev ? `Scanned barcode: ${code}\n${prev}` : `Scanned barcode: ${code}`))
                 stopScanner()
-                toast.success(`Scanned barcode: ${code}`)
+                void handleBarcodeDetected(code)
                 return
               }
             }
@@ -482,6 +539,118 @@ export function ChatPage() {
                   When a code is detected, it will be inserted into the activity text as{' '}
                   <span className="font-mono text-[11px] text-[var(--color-primary)]">Scanned barcode: ...</span>.
                 </p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {barcodeModal && (
+          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60">
+            <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-[var(--color-border)] overflow-hidden">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+                    <ScanLine className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#555]">
+                      {barcodeModal.mode === 'new' ? 'New barcode' : 'Barcode recognized'}
+                    </p>
+                    <p className="text-[11px] text-[#777] font-mono break-all">{barcodeModal.barcode}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeBarcodeModal}
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-black/5 text-[#666]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="px-4 pt-4 pb-5 space-y-3">
+                <div className="grid gap-2">
+                  <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
+                    Customer
+                  </label>
+                  <input
+                    value={barcodeCustomer}
+                    onChange={(e) => setBarcodeCustomer(e.target.value)}
+                    placeholder="Bosch"
+                    className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
+                    Part number / product
+                  </label>
+                  <input
+                    value={barcodeProductName}
+                    onChange={(e) => setBarcodeProductName(e.target.value)}
+                    placeholder="BCZM Bosch"
+                    className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
+                    Notes (optional)
+                  </label>
+                  <textarea
+                    value={barcodeNotes}
+                    onChange={(e) => setBarcodeNotes(e.target.value)}
+                    rows={3}
+                    placeholder="Any notes regarding this part?"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 resize-y"
+                  />
+                </div>
+
+                <div className="flex flex-wrap items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={closeBarcodeModal}
+                    className="inline-flex items-center gap-2 h-9 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[#444] hover:bg-black/[0.03]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={savingBarcode}
+                    onClick={async () => {
+                      if (!barcodeModal?.barcode) return
+                      setSavingBarcode(true)
+                      try {
+                        const payload = {
+                          customer: barcodeCustomer.trim() || undefined,
+                          productName: barcodeProductName.trim() || undefined,
+                          metadata: barcodeNotes.trim() ? { notes: barcodeNotes.trim() } : undefined,
+                        }
+                        await api.barcodes.upsert(barcodeModal.barcode, payload)
+
+                        if (payload.customer) {
+                          setCustomerHint((prev) => prev || String(payload.customer))
+                        }
+                        if (payload.productName) {
+                          setText((prev) =>
+                            prev ? `Part: ${payload.productName}\n${prev}` : `Part: ${payload.productName}`
+                          )
+                        }
+
+                        toast.success('Barcode saved. It will be remembered next time.')
+                        closeBarcodeModal()
+                      } catch (err) {
+                        toast.error(err instanceof Error ? err.message : 'Failed to save barcode')
+                      } finally {
+                        setSavingBarcode(false)
+                      }
+                    }}
+                    className="inline-flex items-center gap-2 h-9 rounded-lg bg-[var(--color-primary)] px-3 text-[12px] font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-60"
+                  >
+                    {savingBarcode ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                    Save mapping
+                  </button>
+                </div>
               </div>
             </div>
           </div>

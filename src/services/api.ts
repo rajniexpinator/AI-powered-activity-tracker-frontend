@@ -346,6 +346,47 @@ export const api = {
       }),
   },
 
+  barcodes: {
+    getOne: (barcode: string) =>
+      request<{
+        mapping: {
+          barcode: string
+          productName?: string
+          customer?: string
+          scanCount?: number
+          updatedAt?: string
+          createdAt?: string
+        }
+      }>(`/api/barcodes/${encodeURIComponent(barcode)}`, { method: 'GET' }),
+
+    scan: (barcode: string) =>
+      request<{
+        mapping: {
+          barcode: string
+          productName?: string
+          customer?: string
+          scanCount?: number
+          updatedAt?: string
+          createdAt?: string
+        }
+      }>('/api/barcodes/scan', { method: 'POST', body: JSON.stringify({ barcode }) }),
+
+    upsert: (barcode: string, payload: { customer?: string; productName?: string; metadata?: unknown }) =>
+      request<{
+        mapping: {
+          barcode: string
+          productName?: string
+          customer?: string
+          scanCount?: number
+          updatedAt?: string
+          createdAt?: string
+        }
+      }>(`/api/barcodes/${encodeURIComponent(barcode)}`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      }),
+  },
+
   upload: {
     image: async (file: File) => {
       const formData = new FormData()
