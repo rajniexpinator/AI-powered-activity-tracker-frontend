@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { api } from '@/services/api'
-import { FileText, Loader2, AlertCircle, ChevronLeft, ChevronRight, Mail, ExternalLink, Send, Save } from 'lucide-react'
+import { FileText, Loader2, AlertCircle, ChevronLeft, ChevronRight, Mail, ExternalLink, Send, Save, Trash2 } from 'lucide-react'
 
 type ReportListItem = {
   _id: string
@@ -96,6 +96,36 @@ export function ReportsPage() {
       setError(err instanceof Error ? err.message : 'Failed to load report')
     } finally {
       setLoadingOne(false)
+    }
+  }
+
+  async function handleDeleteReport(id: string) {
+    setError('')
+    try {
+      await api.reports.deleteOne(id)
+      setReports((prev) => prev.filter((r) => r._id !== id))
+      if (selectedReportId === id) {
+        setSelectedReportId('')
+        setSelectedContent('')
+        setDraft(null)
+        setEmailSubject('')
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete report')
+    }
+  }
+
+  async function handleClearHistory() {
+    setError('')
+    try {
+      await api.reports.clearMine()
+      setReports([])
+      setSelectedReportId('')
+      setSelectedContent('')
+      setDraft(null)
+      setEmailSubject('')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to clear history')
     }
   }
 
@@ -197,6 +227,15 @@ export function ReportsPage() {
               <div className="flex items-center gap-1.5">
                 <button
                   type="button"
+                  onClick={() => void handleClearHistory()}
+                  disabled={loading || reports.length === 0}
+                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                  title="Clear history"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1 || loading}
                   className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
@@ -228,18 +267,18 @@ export function ReportsPage() {
                 </div>
               ) : (
                 reports.map((r) => (
-                  <button
+                  <div
                     key={r._id}
-                    type="button"
-                    onClick={() => void loadOne(r._id)}
-                    className={`w-full text-left px-5 sm:px-6 md:px-8 py-3 hover:bg-[var(--color-bg)]/60 transition-colors ${
-                      selectedReportId === r._id
-                        ? 'bg-[var(--color-primary)]/6 border-l-2 border-[var(--color-primary)]'
-                        : ''
+                    className={`group w-full px-5 sm:px-6 md:px-8 py-3 hover:bg-[var(--color-bg)]/60 transition-colors ${
+                      selectedReportId === r._id ? 'bg-[var(--color-primary)]/6 border-l-2 border-[var(--color-primary)]' : ''
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <button
+                        type="button"
+                        onClick={() => void loadOne(r._id)}
+                        className="min-w-0 flex-1 text-left"
+                      >
                         <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-[var(--color-text-secondary)] mb-0.5">
                           {r.customer ? r.customer : 'All customers'}
                         </p>
@@ -250,12 +289,23 @@ export function ReportsPage() {
                         <p className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">
                           {new Date(r.createdAt).toLocaleString()}
                         </p>
+                      </button>
+
+                      <div className="shrink-0 flex items-center gap-2">
+                        <span className="inline-flex items-center justify-center rounded-full bg-[var(--color-bg)] px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)]">
+                          {r.activityCount ?? 0} logs
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteReport(r._id)}
+                          className="inline-flex items-center justify-center rounded-lg border border-[var(--color-border)] p-2 text-[var(--color-text-secondary)] hover:text-red-600 hover:border-red-200 hover:bg-red-50"
+                          title="Delete report"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
                       </div>
-                      <span className="shrink-0 inline-flex items-center justify-center rounded-full bg-[var(--color-bg)] px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)]">
-                        {r.activityCount ?? 0} logs
-                      </span>
                     </div>
-                  </button>
+                  </div>
                 ))
               )}
             </div>

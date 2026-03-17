@@ -250,6 +250,12 @@ export const api = {
           content: string
         }
       }>(`/api/reports/${id}`, { method: 'GET' }),
+
+    deleteOne: (id: string) =>
+      request<{ success: boolean }>(`/api/reports/${id}`, { method: 'DELETE' }),
+
+    clearMine: () =>
+      request<{ success: boolean; deleted: number }>('/api/reports/clear', { method: 'POST' }),
   },
 
   ms365: {
