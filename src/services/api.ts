@@ -55,10 +55,17 @@ export const api = {
         body: JSON.stringify(data),
       }),
     getUsers: () => request<{ users: User[] }>('/api/auth/users', { method: 'GET' }),
-    updateUser: (id: string, data: { role?: User['role']; isActive?: boolean }) =>
+    updateUser: (
+      id: string,
+      data: { role?: User['role']; isActive?: boolean; name?: string; email?: string; resetPassword?: string }
+    ) =>
       request<{ user: User }>(`/api/auth/users/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(data),
+      }),
+    deleteUser: (id: string) =>
+      request<{ success: boolean }>(`/api/auth/users/${id}`, {
+        method: 'DELETE',
       }),
   },
 

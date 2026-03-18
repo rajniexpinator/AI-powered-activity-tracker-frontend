@@ -107,6 +107,8 @@ export function ChatPage() {
   const [barcodeProductName, setBarcodeProductName] = useState('')
   const [barcodeNotes, setBarcodeNotes] = useState('')
   const [savingBarcode, setSavingBarcode] = useState(false)
+  const [recentModalOpen, setRecentModalOpen] = useState(false)
+  const newLogButtonRef = useRef<HTMLButtonElement | null>(null)
 
   function openBarcodeModal(payload: NonNullable<typeof barcodeModal>) {
     setBarcodeModal(payload)
@@ -238,6 +240,26 @@ export function ChatPage() {
     }
     void loadCustomers()
   }, [])
+
+  function resetToNewLog() {
+    setSelectedActivityId(null)
+    setResult(null)
+    setValidation(null)
+    setError(null)
+    setSaveMessage(null)
+    setText('')
+    setEditSummary('')
+    setEditPartName('')
+    setEditIntent('')
+    setEditOutcome('')
+    setEditNextActions('')
+    setEditNotes('')
+    setImageUrls([])
+    setImageFile(null)
+    setImagePreview(null)
+    setSavedResultKey(null)
+    setCustomerHintTouched(false)
+  }
 
   async function handleExtract() {
     if (!text.trim()) {
@@ -444,10 +466,11 @@ export function ChatPage() {
     if (customerFilter && act.customer !== customerFilter) return false
     return true
   })
+  const mobileRecentPreview = filteredActivities.slice(0, 3)
 
   return (
     <AdminShell>
-      <main className="max-w-6xl mx-auto px-5 sm:px-6 md:px-8 py-4 md:py-6">
+      <main className="max-w-6xl mx-auto px-5 sm:px-6 md:px-8 py-4 md:py-6 overflow-x-hidden">
         {/* Header row */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div>
@@ -462,66 +485,66 @@ export function ChatPage() {
               dolore magna aliqua.
             </p>
           </div>
-          <div className="flex gap-2 justify-end">
+          <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto sm:justify-end">
             <button
               type="button"
               onClick={() => setDateFilter((prev) => (prev === 'today' ? 'all' : 'today'))}
-              className={`inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-xs sm:text-sm transition-colors ${
+              className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
                 dateFilter === 'today'
                   ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
                   : 'border-[var(--color-border)] text-[#444] hover:bg-black/[0.03]'
               }`}
             >
               <Clock className="w-4 h-4" />
-              Today
+              <span className="leading-none">Today</span>
             </button>
             <button
               type="button"
               onClick={() => setCustomerFilter('')}
-              className={`inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-xs sm:text-sm transition-colors ${
+              className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
                 !customerFilter
                   ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
                   : 'border-[var(--color-border)] text-[#444] hover:bg-black/[0.03]'
               }`}
             >
               <Tag className="w-4 h-4" />
-              All customers
+              <span className="leading-none">All customers</span>
             </button>
             <button
               type="button"
               onClick={() => void startScanner()}
-              className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border px-3 py-2 text-xs sm:text-sm text-[#444] hover:bg-black/[0.03]"
+              className="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold text-[#444] hover:bg-black/[0.03] transition-colors"
             >
               <ScanLine className="w-4 h-4" />
-              Scan barcode
+              <span className="leading-none">Scan barcode</span>
             </button>
           </div>
         </div>
 
         {/* Scanner overlay */}
         {scannerOpen && (
-          <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60">
-            <div className="w-full max-w-md rounded-2xl bg-white shadow-xl border border-[var(--color-border)] overflow-hidden">
-              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+          <div className="fixed inset-0 z-40 bg-black/60 flex items-center justify-center p-3 sm:p-4 md:p-6">
+            <div className="w-full max-w-md max-h-[90vh] bg-white rounded-2xl shadow-xl border border-[var(--color-border)] overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] sticky top-0 bg-white z-10">
                 <div className="flex items-center gap-2">
                   <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
                     <ScanLine className="w-4 h-4" />
                   </span>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#555]">Barcode scanner</p>
-                    <p className="text-[11px] text-[#777]">Point your camera at the barcode to capture it.</p>
+                    <p className="text-[12px] text-[#777]">Point your camera at the barcode to capture it.</p>
                   </div>
                 </div>
                 <button
                   type="button"
                   onClick={stopScanner}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full hover:bg-black/5 text-[#666]"
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full hover:bg-black/5 text-[#666]"
                 >
                   <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="px-4 pt-3 pb-4 space-y-3">
-                <div className="relative w-full rounded-xl overflow-hidden bg-black/80 aspect-video flex items-center justify-center">
+              <div className="px-4 pt-3 pb-4 space-y-3 flex-1 overflow-auto">
+                <div className="relative w-full rounded-xl overflow-hidden bg-black/80 aspect-video flex items-center justify-center md:aspect-video">
                   <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
                   {!scanning && !scannerError && (
                     <p className="absolute inset-x-0 bottom-3 text-center text-[11px] text-white/80">
@@ -535,7 +558,7 @@ export function ChatPage() {
                     <p>{scannerError}</p>
                   </div>
                 )}
-                <p className="text-[11px] text-[#777]">
+                <p className="text-[12px] text-[#777] leading-relaxed">
                   When a code is detected, it will be inserted into the activity text as{' '}
                   <span className="font-mono text-[11px] text-[var(--color-primary)]">Scanned barcode: ...</span>.
                 </p>
@@ -656,10 +679,154 @@ export function ChatPage() {
           </div>
         )}
 
+        {/* Mobile: recent logs modal */}
+        {recentModalOpen && (
+          <div className="fixed inset-0 z-40 bg-black/50 md:hidden">
+            <div className="absolute inset-x-0 bottom-0 top-12 rounded-t-2xl bg-white border border-[var(--color-border)] shadow-xl overflow-hidden flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#777]">Recent logs</p>
+                  <p className="text-[11px] text-[#777]">{filteredActivities.length} shown</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRecentModalOpen(false)
+                    }}
+                    className="inline-flex h-9 items-center justify-center rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[#444] hover:bg-black/[0.03]"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedActivityId(null)
+                    setResult(null)
+                    setValidation(null)
+                    setError(null)
+                    setSaveMessage(null)
+                    setText('')
+                    setEditSummary('')
+                    setEditPartName('')
+                    setEditIntent('')
+                    setEditOutcome('')
+                    setEditNextActions('')
+                    setEditNotes('')
+                    setImageUrls([])
+                    setImageFile(null)
+                    setImagePreview(null)
+                    setSavedResultKey(null)
+                    setCustomerHintTouched(false)
+                    setRecentModalOpen(false)
+                  }}
+                  className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[12px] font-semibold text-[#444] hover:bg-black/[0.03]"
+                >
+                  <Plus className="w-4 h-4" />
+                  New log
+                </button>
+
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!selectedActivityId) {
+                      setError('Select a log from the list before archiving.')
+                      return
+                    }
+                    setArchiving(true)
+                    setError(null)
+                    setSaveMessage(null)
+                    try {
+                      await api.activities.archive(selectedActivityId)
+                      setRecentActivities((prev) => prev.filter((a) => a._id !== selectedActivityId))
+                      setSelectedActivityId(null)
+                      setResult(null)
+                      setValidation(null)
+                      setText('')
+                      setEditSummary('')
+                      setEditPartName('')
+                      setEditIntent('')
+                      setEditOutcome('')
+                      setEditNextActions('')
+                      setEditNotes('')
+                      setImageUrls([])
+                      setImageFile(null)
+                      setImagePreview(null)
+                      setSavedResultKey(null)
+                      setRecentModalOpen(false)
+                    } catch (err) {
+                      const message = (err as Error).message || 'Failed to archive activity'
+                      setError(message)
+                    } finally {
+                      setArchiving(false)
+                    }
+                  }}
+                  disabled={!selectedActivityId || archiving}
+                  className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[12px] font-semibold text-[#666] hover:bg-black/[0.03] disabled:opacity-50"
+                >
+                  <Archive className="w-4 h-4" />
+                  {archiving ? 'Archiving…' : 'Archive'}
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-auto divide-y divide-[var(--color-border)]">
+                {loadingRecent ? (
+                  <div className="px-4 py-3 text-left text-xs text-[#777]">Loading recent logs…</div>
+                ) : filteredActivities.length > 0 ? (
+                  filteredActivities.map((act) => {
+                    const isSelected = act._id === selectedActivityId
+                    return (
+                      <button
+                        key={act._id}
+                        type="button"
+                        onClick={() => {
+                          void handleSelectRecent(act._id)
+                          setRecentModalOpen(false)
+                        }}
+                        className={`relative w-full text-left px-4 py-3 transition-colors ${
+                          isSelected ? 'bg-[var(--color-primary)]/6' : 'hover:bg-black/[0.025]'
+                        }`}
+                      >
+                        {isSelected && (
+                          <span
+                            aria-hidden
+                            className="absolute left-0 top-0 bottom-0 w-1 bg-[var(--color-primary)]"
+                          />
+                        )}
+                        <p className="text-xs font-medium text-[#999] mb-0.5 truncate">
+                          {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                        </p>
+                        <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
+                      </button>
+                    )
+                  })
+                ) : (
+                  <div className="px-4 py-6 text-left">
+                    <p className="text-xs font-medium text-[#999] mb-0.5">
+                      {recentActivities.length === 0 ? 'No activity yet' : 'No matching logs'}
+                    </p>
+                    <p className="text-sm text-[#666]">
+                      {recentActivities.length === 0
+                        ? 'Use the form to describe an activity. The AI will extract a structured log for you.'
+                        : dateFilter === 'today' || customerFilter
+                          ? 'Try "All customers" or show all dates.'
+                          : 'Use the form to add a new activity.'}
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Two-column layout */}
         <div className="grid gap-4 md:grid-cols-[minmax(0,_260px)_minmax(0,_1fr)]">
           {/* Left: recent activity list */}
-          <section className="rounded-[var(--radius-lg)] bg-white border border-[var(--color-border)] shadow-[var(--shadow-sm)] overflow-hidden">
+          <section className="rounded-[var(--radius-lg)] bg-white border border-[var(--color-border)] shadow-[var(--shadow-sm)] overflow-hidden hidden md:block">
             <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
               <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#777]">Recent logs</p>
               <div className="flex items-center gap-2 whitespace-nowrap">
@@ -684,7 +851,7 @@ export function ChatPage() {
                     setSavedResultKey(null)
                     setCustomerHintTouched(false)
                   }}
-                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium text-[#444] hover:bg-black/[0.03] border border-[var(--color-border)] bg-white"
+                  className="inline-flex items-center gap-1.5 h-8 rounded-full px-3 text-[11px] font-semibold text-[#444] hover:bg-black/[0.03] border border-[var(--color-border)] bg-white transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   New log
@@ -724,7 +891,7 @@ export function ChatPage() {
                     }
                   }}
                   disabled={!selectedActivityId || archiving}
-                  className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-medium text-[#666] hover:bg-black/[0.03] disabled:opacity-50 border border-[var(--color-border)] bg-white"
+                  className="inline-flex items-center gap-1.5 h-8 rounded-full px-3 text-[11px] font-semibold text-[#666] hover:bg-black/[0.03] disabled:opacity-50 border border-[var(--color-border)] bg-white transition-colors"
                 >
                   <Archive className="w-3.5 h-3.5" />
                   {archiving ? 'Archiving…' : 'Archive'}
@@ -748,10 +915,10 @@ export function ChatPage() {
                           : 'hover:bg-black/[0.025]'
                       }`}
                     >
-                      <p className="text-xs font-medium text-[#999] mb-0.5">
+                      <p className="text-xs font-medium text-[#999] mb-0.5 truncate">
                         {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
                       </p>
-                      <p className="text-sm text-[#222] line-clamp-2">{act.summary || 'No summary'}</p>
+                      <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
                     </button>
                   )
                 })
@@ -779,23 +946,101 @@ export function ChatPage() {
             )}
           </section>
 
+          {/* Mobile: recent logs preview */}
+          <section className="rounded-[var(--radius-lg)] bg-white border border-[var(--color-border)] shadow-[var(--shadow-sm)] overflow-hidden md:hidden">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
+              <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#777]">Recent logs</p>
+              <button
+                type="button"
+                onClick={() => setRecentModalOpen(true)}
+                className="inline-flex items-center gap-1.5 h-8 rounded-full px-3 text-[11px] font-semibold text-[#444] hover:bg-black/[0.03] border border-[var(--color-border)] bg-white transition-colors"
+              >
+                View all
+              </button>
+            </div>
+            <div className="divide-y divide-[var(--color-border)]">
+              {loadingRecent ? (
+                <div className="px-4 py-3 text-left text-xs text-[#777]">Loading recent logs…</div>
+              ) : mobileRecentPreview.length > 0 ? (
+                mobileRecentPreview.map((act) => {
+                  const isSelected = act._id === selectedActivityId
+                  return (
+                  <button
+                    key={act._id}
+                    type="button"
+                    onClick={() => void handleSelectRecent(act._id)}
+                    className={`relative w-full text-left px-4 py-3 transition-colors ${
+                      isSelected ? 'bg-[var(--color-primary)]/6' : 'hover:bg-black/[0.025]'
+                    }`}
+                  >
+                    {isSelected && (
+                      <span
+                        aria-hidden
+                        className="absolute left-0 top-0 bottom-0 w-1 bg-[var(--color-primary)]"
+                      />
+                    )}
+                    <p className="text-xs font-medium text-[#999] mb-0.5 truncate">
+                      {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                    </p>
+                    <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
+                  </button>
+                  )
+                })
+              ) : (
+                <div className="px-4 py-6 text-left">
+                  <p className="text-xs font-medium text-[#999] mb-0.5">
+                    {recentActivities.length === 0 ? 'No activity yet' : 'No matching logs'}
+                  </p>
+                  <p className="text-sm text-[#666]">
+                    {recentActivities.length === 0
+                      ? 'Use the form below to describe an activity.'
+                      : dateFilter === 'today' || customerFilter
+                        ? 'Try "All customers" or show all dates.'
+                        : 'Use the form below to add a new activity.'}
+                  </p>
+                </div>
+              )}
+            </div>
+            {filteredActivities.length > mobileRecentPreview.length && (
+              <div className="px-4 py-3 border-t border-[var(--color-border)] bg-[var(--color-bg)]">
+                <button
+                  type="button"
+                  onClick={() => setRecentModalOpen(true)}
+                  className="w-full inline-flex items-center justify-center h-9 rounded-lg border border-[var(--color-border)] bg-white text-[12px] font-semibold text-[#444] hover:bg-black/[0.03]"
+                >
+                  View all recent logs ({filteredActivities.length})
+                </button>
+              </div>
+            )}
+          </section>
+
           {/* Right: chat surface */}
           <section className="rounded-[var(--radius-lg)] bg-white border border-[var(--color-border)] shadow-[var(--shadow-sm)] flex flex-col min-h-[420px]">
             {/* Chat meta */}
-            <div className="px-4 sm:px-5 py-3 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
-              <div>
+            <div className="px-4 sm:px-5 py-3 border-b border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="min-w-0">
                 <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#777]">New activity</p>
                 <p className="text-sm text-[#333]">
                   Describe a call, issue, task, or conversation and we&apos;ll turn it into a structured activity.
                 </p>
               </div>
-              <div className="hidden sm:flex flex-col items-end gap-1 text-right">
-                <p className="text-xs text-[#777]">
-                  1) Extract JSON with AI, 2) validate, 3) save to tracker.
-                </p>
-                <Link to="/dashboard" className="text-[11px] font-medium text-[var(--color-primary)] hover:underline">
-                  View dashboard
-                </Link>
+              <div className="flex flex-col items-stretch sm:items-end gap-2">
+                <button
+                  ref={newLogButtonRef}
+                  type="button"
+                  onClick={() => resetToNewLog()}
+                  className="inline-flex sm:hidden w-full items-center justify-center h-9 rounded-lg bg-[var(--color-primary)] px-3 text-[12px] font-semibold text-white hover:bg-[var(--color-primary-hover)] transition-colors"
+                >
+                  New log
+                </button>
+                <div className="hidden sm:flex flex-col items-end gap-1 text-right">
+                  <p className="text-xs text-[#777]">
+                    1) Extract JSON with AI, 2) validate, 3) save to tracker.
+                  </p>
+                  <Link to="/dashboard" className="text-[11px] font-medium text-[var(--color-primary)] hover:underline">
+                    View dashboard
+                  </Link>
+                </div>
               </div>
             </div>
 
@@ -827,7 +1072,7 @@ export function ChatPage() {
                       </div>
                     )}
                   </div>
-                  <pre className="max-h-64 overflow-auto rounded-[var(--radius)] bg-[#0b1020] text-[11px] text-[#e5f0ff] px-3 py-2 border border-[#1f2937]">
+                  <pre className="max-h-64 overflow-auto rounded-[var(--radius)] bg-[#0b1020] text-[11px] text-[#e5f0ff] px-3 py-2 border border-[#1f2937] whitespace-pre-wrap break-words">
                     {JSON.stringify(result.structured, null, 2)}
                   </pre>
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -1070,37 +1315,50 @@ export function ChatPage() {
                 {uploadError && (
                   <p className="text-[11px] text-red-600">{uploadError}</p>
                 )}
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <p className="text-[11px] text-[#999] hidden sm:block">
                     1) Extract JSON, 2) validate the log, 3) save when you&apos;re satisfied.
                   </p>
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto sm:items-center">
                     <button
                       type="button"
                       onClick={handleExtract}
                       disabled={loadingExtract}
-                      className="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 px-4 py-1.5 text-xs sm:text-sm font-medium text-white transition-all disabled:opacity-70 disabled:cursor-not-allowed"
+                      className="inline-flex w-full flex-col items-center justify-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3 py-2.5 text-[12px] sm:text-sm font-semibold text-white transition-colors disabled:opacity-70 disabled:cursor-not-allowed min-h-12"
                     >
-                      <Send className="w-3.5 h-3.5" />
-                      {loadingExtract ? 'Extracting…' : 'Log with AI'}
+                      <Send className="w-4 h-4" />
+                      <span className="leading-tight text-center whitespace-nowrap">
+                        {loadingExtract ? (
+                          '…'
+                        ) : (
+                          <>
+                            <span className="sm:hidden">Log</span>
+                            <span className="hidden sm:inline">Log with AI</span>
+                          </>
+                        )}
+                      </span>
                     </button>
                     <button
                       type="button"
                       onClick={handleValidate}
                       disabled={!result || loadingValidate}
-                      className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-white hover:bg-black/[0.03] px-3 py-1.5 text-[11px] sm:text-xs font-medium text-[#444] transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="inline-flex w-full flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-white hover:bg-black/[0.03] px-3 py-2.5 text-[12px] sm:text-xs font-semibold text-[#444] transition-colors disabled:opacity-60 disabled:cursor-not-allowed min-h-12"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5 text-[var(--color-primary)]" />
-                      {loadingValidate ? 'Validating…' : 'Validate'}
+                      <CheckCircle2 className="w-4 h-4 text-[var(--color-primary)]" />
+                      <span className="leading-tight text-center whitespace-nowrap">
+                        {loadingValidate ? '…' : 'Validate'}
+                      </span>
                     </button>
                     <button
                       type="button"
                       onClick={handleSave}
                       disabled={!result || saving}
-                      className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600 px-3 py-1.5 text-[11px] sm:text-xs font-medium transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+                      className="inline-flex w-full flex-col items-center justify-center gap-1 rounded-[var(--radius)] border border-emerald-500 bg-emerald-500 text-white hover:bg-emerald-600 px-3 py-2.5 text-[12px] sm:text-xs font-semibold transition-colors disabled:opacity-60 disabled:cursor-not-allowed min-h-12"
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5" />
-                      {saving ? 'Saving…' : 'Save to tracker'}
+                      <CheckCircle2 className="w-4 h-4" />
+                      <span className="leading-tight text-center whitespace-nowrap">
+                        {saving ? '…' : 'Save'}
+                      </span>
                     </button>
                   </div>
                 </div>

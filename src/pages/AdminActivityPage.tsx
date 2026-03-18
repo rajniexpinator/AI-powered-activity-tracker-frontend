@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { api, getToken } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import type { User } from '@/types/auth'
@@ -28,7 +28,7 @@ export function AdminActivityPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
-  const pageSize = 50
+  const pageSize = 3
 
   const [loading, setLoading] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
@@ -38,14 +38,19 @@ export function AdminActivityPage() {
   const [error, setError] = useState<string>('')
   const [includeCustomerSummaries, setIncludeCustomerSummaries] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
-
-  useEffect(() => {
-    const now = new Date()
-    const weekAgo = new Date()
-    weekAgo.setDate(now.getDate() - 7)
-    setFrom(weekAgo.toISOString().slice(0, 10))
-    setTo(now.toISOString().slice(0, 10))
-  }, [])
+  const requestSeq = useRef(0)
+  const pageNumbers = useMemo(() => {
+    const maxButtons = 5
+    const safeTotal = Math.max(1, totalPages || 1)
+    const safePage = Math.min(Math.max(page, 1), safeTotal)
+    const half = Math.floor(maxButtons / 2)
+    let start = Math.max(1, safePage - half)
+    let end = Math.min(safeTotal, start + maxButtons - 1)
+    start = Math.max(1, end - maxButtons + 1)
+    const nums: number[] = []
+    for (let p = start; p <= end; p++) nums.push(p)
+    return nums
+  }, [page, totalPages])
 
   useEffect(() => {
     const loadFilterData = async () => {
@@ -77,24 +82,28 @@ export function AdminActivityPage() {
   )
 
   async function loadActivities() {
+    const seq = ++requestSeq.current
     setLoading(true)
     setError('')
     try {
       if (tab === 'archived') {
         const res = await api.activities.adminArchivedList(appliedFilters)
+        if (seq !== requestSeq.current) return
         setActivities(res.activities)
         setTotal(res.total)
         setTotalPages(res.totalPages)
       } else {
         const res = await api.activities.adminList(appliedFilters)
+        if (seq !== requestSeq.current) return
         setActivities(res.activities)
         setTotal(res.total)
         setTotalPages(res.totalPages)
       }
     } catch (err) {
+      if (seq !== requestSeq.current) return
       setError(err instanceof Error ? err.message : 'Failed to load activity')
     } finally {
-      setLoading(false)
+      if (seq === requestSeq.current) setLoading(false)
     }
   }
 
@@ -385,11 +394,14 @@ export function AdminActivityPage() {
                   {tab === 'archived' ? 'Archived activity' : 'All employee activity'}
                 </h2>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:gap-3">
                 <div className="flex rounded-xl border border-[var(--color-border)] p-0.5 bg-[var(--color-bg)]">
                   <button
                     type="button"
-                    onClick={() => setTab('active')}
+                    onClick={() => {
+                      setPage(1)
+                      setTab('active')
+                    }}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
                       tab === 'active'
                         ? 'bg-white text-[var(--color-primary)] shadow-sm'
@@ -401,7 +413,10 @@ export function AdminActivityPage() {
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTab('archived')}
+                    onClick={() => {
+                      setPage(1)
+                      setTab('archived')
+                    }}
                     className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
                       tab === 'archived'
                         ? 'bg-white text-[var(--color-primary)] shadow-sm'
@@ -412,18 +427,6 @@ export function AdminActivityPage() {
                     Archived
                   </button>
                 </div>
-                <p className="text-[12px] text-[var(--color-text-secondary)]">
-                  {loading ? (
-                    <span className="inline-flex items-center gap-1.5">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Loading…
-                    </span>
-                  ) : (
-                    <>
-                      {total} total · page {page} of {totalPages || 1}
-                    </>
-                  )}
-                </p>
               </div>
             </div>
 
@@ -508,30 +511,66 @@ export function AdminActivityPage() {
                 ))
               )}
             </div>
-            {totalPages > 1 && (
-              <div className="px-5 sm:px-6 md:px-8 py-3 border-t border-[var(--color-border)] flex items-center justify-between gap-3">
-                <p className="text-[12px] text-[var(--color-text-secondary)]">
-                  Page {page} of {totalPages} ({total} total)
+            {(totalPages || 1) > 1 && (
+              <div className="px-5 sm:px-6 md:px-8 py-3 border-t border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+                <p className="text-[12px] text-[var(--color-text-secondary)] order-2 sm:order-1">
+                  Page {page} of {totalPages || 1} ({total} total)
                 </p>
-                <div className="flex gap-2">
+                <div className="order-1 sm:order-2 w-full sm:w-auto overflow-x-auto">
+                  <div className="flex items-center gap-1.5 justify-start sm:justify-end min-w-max pb-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setPage(1)}
+                    disabled={page <= 1 || loading}
+                    className="inline-flex items-center rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    title="First page"
+                  >
+                    First
+                  </button>
                   <button
                     type="button"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page <= 1 || loading}
-                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                   >
                     <ChevronLeft className="w-4 h-4" />
-                    Previous
+                    Prev
                   </button>
+                  {pageNumbers.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPage(p)}
+                      disabled={loading}
+                      className={`inline-flex items-center justify-center min-w-9 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50 whitespace-nowrap ${
+                        p === page
+                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                          : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)]'
+                      }`}
+                      aria-current={p === page ? 'page' : undefined}
+                    >
+                      {p}
+                    </button>
+                  ))}
                   <button
                     type="button"
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page >= totalPages || loading}
-                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-3 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
+                    onClick={() => setPage((p) => Math.min(totalPages || 1, p + 1))}
+                    disabled={page >= (totalPages || 1) || loading}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
                   >
                     Next
                     <ChevronRight className="w-4 h-4" />
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage(totalPages || 1)}
+                    disabled={page >= (totalPages || 1) || loading}
+                    className="inline-flex items-center rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    title="Last page"
+                  >
+                    Last
+                  </button>
+                  </div>
                 </div>
               </div>
             )}

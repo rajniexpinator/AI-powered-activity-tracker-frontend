@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { toast } from 'react-toastify'
-import { Mail, User as UserIcon, Plus, AlertCircle, Trash2 } from 'lucide-react'
+import { Mail, User as UserIcon, Plus, AlertCircle, Trash2, Pencil, X } from 'lucide-react'
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { useAuth } from '@/context/AuthContext'
@@ -25,6 +25,11 @@ export function CustomersPage() {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
+  const [editing, setEditing] = useState<Customer | null>(null)
+  const [editName, setEditName] = useState('')
+  const [editEmail, setEditEmail] = useState('')
+  const [editNotes, setEditNotes] = useState('')
+  const [updating, setUpdating] = useState(false)
 
   useEffect(() => {
     const load = async () => {
@@ -83,9 +88,121 @@ export function CustomersPage() {
     }
   }
 
+  function openEdit(c: Customer) {
+    setEditing(c)
+    setEditName(c.name || '')
+    setEditEmail(c.email || '')
+    setEditNotes(c.notes || '')
+  }
+
+  function closeEdit() {
+    setEditing(null)
+    setEditName('')
+    setEditEmail('')
+    setEditNotes('')
+  }
+
+  async function handleUpdateCustomer(e: React.FormEvent) {
+    e.preventDefault()
+    if (!editing) return
+    if (!editName.trim()) return
+    setUpdating(true)
+    setError('')
+    try {
+      const { customer } = await api.customers.update(editing._id, {
+        name: editName.trim(),
+        email: editEmail.trim() || undefined,
+        notes: editNotes.trim() || undefined,
+      })
+      setCustomers((prev) => prev.map((c) => (c._id === customer._id ? customer : c)))
+      toast.success('Customer updated.')
+      closeEdit()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update customer'
+      setError(msg)
+      toast.error(msg)
+    } finally {
+      setUpdating(false)
+    }
+  }
+
   return (
     <AdminShell>
       <main className="py-1 sm:py-0">
+        {editing && (
+          <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
+            <div className="w-full max-w-lg rounded-2xl bg-white border border-[var(--color-border)] shadow-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                    Edit customer
+                  </p>
+                  <p className="text-[14px] font-semibold text-[var(--color-text)] truncate">{editing.name}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeEdit}
+                  className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-[var(--color-border)] hover:bg-[var(--color-bg)]"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <form onSubmit={handleUpdateCustomer} className="p-5 space-y-4">
+                <div>
+                  <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                    Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                    Email (optional)
+                  </label>
+                  <input
+                    type="email"
+                    value={editEmail}
+                    onChange={(e) => setEditEmail(e.target.value)}
+                    className="w-full px-3 py-2.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                    Notes (optional)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[#222] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
+                  />
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={closeEdit}
+                    className="inline-flex items-center justify-center h-10 rounded-xl border border-[var(--color-border)] px-4 text-[13px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={updating}
+                    className="inline-flex items-center justify-center h-10 rounded-xl bg-[var(--color-primary)] px-4 text-[13px] font-semibold !text-white disabled:opacity-60"
+                  >
+                    {updating ? 'Saving…' : 'Save changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
         <section className="mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
             <div>
@@ -356,6 +473,14 @@ export function CustomersPage() {
                           {c.notes}
                         </p>
                       )}
+                      <button
+                        type="button"
+                        onClick={() => openEdit(c)}
+                        className="shrink-0 inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] border border-[var(--color-border)]"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        Edit
+                      </button>
                     </div>
                   ))
                 )}

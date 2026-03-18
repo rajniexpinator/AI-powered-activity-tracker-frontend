@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { api } from '@/services/api'
 import { FileText, Loader2, AlertCircle, ChevronLeft, ChevronRight, Mail, ExternalLink, Send, Save, Trash2 } from 'lucide-react'
+import { toast } from 'react-toastify'
 
 type ReportListItem = {
   _id: string
@@ -23,6 +24,7 @@ export function ReportsPage() {
   const [error, setError] = useState('')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [total, setTotal] = useState(0)
 
   const [ms365Configured, setMs365Configured] = useState<boolean | null>(null)
   const [recipientsTo, setRecipientsTo] = useState<string>('')
@@ -68,6 +70,7 @@ export function ReportsPage() {
     try {
       const res = await api.reports.list({ page: nextPage, limit: 20 })
       setReports(res.reports)
+      setTotal(res.total || 0)
       setTotalPages(res.totalPages || 1)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load reports')
@@ -138,8 +141,11 @@ export function ReportsPage() {
       const res = await api.ms365.setDefaultRecipients({ to, cc })
       setRecipientsTo((res.recipients.to || []).join(', '))
       setRecipientsCc((res.recipients.cc || []).join(', '))
+      toast.success('Default recipients saved.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to save default recipients')
+      const msg = err instanceof Error ? err.message : 'Failed to save default recipients'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setSavingRecipients(false)
     }
@@ -175,14 +181,29 @@ export function ReportsPage() {
     setError('')
     try {
       await api.ms365.sendDraft(draft.id)
+      toast.success('Email sent successfully.')
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send draft')
+      const msg = err instanceof Error ? err.message : 'Failed to send email'
+      setError(msg)
+      toast.error(msg)
     } finally {
       setSending(false)
     }
   }
 
   const selected = reports.find((r) => r._id === selectedReportId)
+  const pageNumbers = (() => {
+    const maxButtons = 5
+    const safeTotal = Math.max(1, totalPages || 1)
+    const safePage = Math.min(Math.max(page, 1), safeTotal)
+    const half = Math.floor(maxButtons / 2)
+    let start = Math.max(1, safePage - half)
+    let end = Math.min(safeTotal, start + maxButtons - 1)
+    start = Math.max(1, end - maxButtons + 1)
+    const nums: number[] = []
+    for (let p = start; p <= end; p++) nums.push(p)
+    return nums
+  })()
 
   return (
     <AdminShell>
@@ -221,7 +242,16 @@ export function ReportsPage() {
                   History
                 </p>
                 <p className="text-[12px] text-[var(--color-text-secondary)]">
-                  {reports.length} report{reports.length !== 1 ? 's' : ''} saved
+                  {loading ? (
+                    <span className="inline-flex items-center gap-1.5">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Loading…
+                    </span>
+                  ) : (
+                    <>
+                      {total} total · page {page} of {totalPages || 1}
+                    </>
+                  )}
                 </p>
               </div>
               <div className="flex items-center gap-1.5">
@@ -242,9 +272,6 @@ export function ReportsPage() {
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <p className="text-[11px] text-[var(--color-text-secondary)]">
-                  Page <span className="font-semibold text-[var(--color-text)]">{page}</span> / {totalPages}
-                </p>
                 <button
                   type="button"
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
@@ -309,6 +336,67 @@ export function ReportsPage() {
                 ))
               )}
             </div>
+            {totalPages > 1 && (
+              <div className="px-5 sm:px-6 md:px-8 py-3 border-t border-[var(--color-border)] flex items-center justify-between gap-3 bg-white">
+                <p className="text-[12px] text-[var(--color-text-secondary)]">
+                  Page {page} of {totalPages} ({total} total)
+                </p>
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setPage(1)}
+                    disabled={page <= 1 || loading}
+                    className="inline-flex items-center rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                    title="First page"
+                  >
+                    First
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.max(1, p - 1))}
+                    disabled={page <= 1 || loading}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Prev
+                  </button>
+                  {pageNumbers.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => setPage(p)}
+                      disabled={loading}
+                      className={`inline-flex items-center justify-center min-w-9 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50 ${
+                        p === page
+                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                          : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)]'
+                      }`}
+                      aria-current={p === page ? 'page' : undefined}
+                    >
+                      {p}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                    disabled={page >= totalPages || loading}
+                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                  >
+                    Next
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPage(totalPages)}
+                    disabled={page >= totalPages || loading}
+                    className="inline-flex items-center rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                    title="Last page"
+                  >
+                    Last
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Right: email + preview */}
