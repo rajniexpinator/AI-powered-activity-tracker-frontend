@@ -3,7 +3,8 @@ import { api, getToken } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import type { User } from '@/types/auth'
 import { AdminShell } from '@/components/layout/AdminShell'
-import { BarChart3, Filter, Users, Building2, Calendar, FileText, AlertCircle, Archive, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, Loader2 } from 'lucide-react'
+import { BarChart3, Filter, Users, Building2, Calendar, FileText, AlertCircle, Archive, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, Loader2, Trash2, MoreVertical } from 'lucide-react'
+import { toast } from 'react-toastify'
 
 type AdminActivity = {
   _id: string
@@ -33,6 +34,8 @@ export function AdminActivityPage() {
   const [loading, setLoading] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [actionMenuId, setActionMenuId] = useState<string | null>(null)
   const [report, setReport] = useState<string>('')
   const [reportId, setReportId] = useState<string>('')
   const [error, setError] = useState<string>('')
@@ -123,11 +126,31 @@ export function AdminActivityPage() {
   }
 
   async function handleRestore(id: string) {
+    setActionMenuId(null)
     try {
       await api.activities.restore(id)
       await loadActivities()
+      toast.success('Activity restored.')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to restore')
+      toast.error(err instanceof Error ? err.message : 'Failed to restore.')
+    }
+  }
+
+  async function handlePermanentDelete(id: string) {
+    const ok = window.confirm('Permanently delete this archived activity? This cannot be restored.')
+    if (!ok) return
+
+    setActionMenuId(null)
+    setDeletingId(id)
+    setError('')
+    try {
+      await api.activities.deleteArchived(id)
+      await loadActivities()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete activity')
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -136,6 +159,7 @@ export function AdminActivityPage() {
     setError('')
     setReport('')
     setReportId('')
+    setActionMenuId(null)
     try {
       const { report, reportId } = await api.activities.generateWeeklyReport({
         ...appliedFilters,
@@ -153,6 +177,7 @@ export function AdminActivityPage() {
   async function handleExportCsv() {
     try {
       setExporting(true)
+      setActionMenuId(null)
       const search = new URLSearchParams()
       if (appliedFilters.userId) search.set('userId', appliedFilters.userId)
       if (appliedFilters.customer) search.set('customer', appliedFilters.customer)
@@ -187,6 +212,25 @@ export function AdminActivityPage() {
       setExporting(false)
     }
   }
+
+  useEffect(() => {
+    if (!actionMenuId) return
+
+    const onMouseDown = (e: MouseEvent) => {
+      const menuEl = document.getElementById(`action-menu-${actionMenuId}`)
+      const btnEl = document.getElementById(`action-menu-btn-${actionMenuId}`)
+      const target = e.target as Node | null
+      if (!target) return
+
+      const clickedInside = Boolean(
+        (menuEl && menuEl.contains(target)) || (btnEl && btnEl.contains(target))
+      )
+      if (!clickedInside) setActionMenuId(null)
+    }
+
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [actionMenuId])
 
   return (
     <AdminShell>
@@ -433,7 +477,7 @@ export function AdminActivityPage() {
             <div
               className={`hidden md:grid px-5 sm:px-6 md:px-8 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)] bg-[var(--color-bg)] ${
                 tab === 'archived'
-                  ? 'grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,80px)]'
+                  ? 'grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,110px)]'
                   : 'grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2.2fr)]'
               }`}
             >
@@ -465,9 +509,9 @@ export function AdminActivityPage() {
                 activities.map((a) => (
                   <div
                     key={a._id}
-                    className={`px-5 sm:px-6 md:px-8 py-3.5 flex flex-col gap-2 md:grid md:items-center ${
+                    className={`px-5 sm:px-6 md:px-8 py-3.5 flex flex-col gap-2 md:grid md:items-center md:gap-x-0 md:gap-y-2 ${
                       tab === 'archived'
-                        ? 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,80px)]'
+                        ? 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,110px)]'
                         : 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2.2fr)]'
                     }`}
                   >
@@ -492,19 +536,61 @@ export function AdminActivityPage() {
                     <p className="text-[12px] text-[var(--color-text-secondary)]">
                       {new Date(a.createdAt).toLocaleString()}
                     </p>
-                    <p className="text-[13px] text-[var(--color-text)] line-clamp-2">
+                    <p
+                      className="text-[13px] text-[var(--color-text)] overflow-hidden"
+                      style={{
+                        display: '-webkit-box',
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: 'vertical',
+                      }}
+                    >
                       {a.summary || 'No summary'}
                     </p>
                     {tab === 'archived' && (
                       <div className="flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => handleRestore(a._id)}
-                          className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-primary)] bg-[var(--color-primary)]/5 px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                          Restore
-                        </button>
+                        <div className="relative">
+                          <button
+                            id={`action-menu-btn-${a._id}`}
+                            type="button"
+                            onClick={() => setActionMenuId((cur) => (cur === a._id ? null : a._id))}
+                            disabled={deletingId !== null}
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--color-border)] bg-white hover:bg-[var(--color-bg)] disabled:opacity-60"
+                            aria-haspopup="menu"
+                            aria-expanded={actionMenuId === a._id}
+                            title="Actions"
+                          >
+                            <MoreVertical className="w-4 h-4 text-[var(--color-text-secondary)]" />
+                          </button>
+
+                          {actionMenuId === a._id && (
+                            <div
+                              id={`action-menu-${a._id}`}
+                              className="absolute right-0 z-20 mt-2 w-36 rounded-xl border border-[var(--color-border)] bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)] overflow-hidden"
+                              role="menu"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => handleRestore(a._id)}
+                                disabled={deletingId !== null}
+                                className="w-full px-3 py-2 flex items-center gap-2 text-left text-[12px] font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-60"
+                                role="menuitem"
+                              >
+                                <RotateCcw className="w-4 h-4" />
+                                Restore
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handlePermanentDelete(a._id)}
+                                disabled={deletingId === a._id || deletingId !== null}
+                                className="w-full px-3 py-2 flex items-center gap-2 text-left text-[12px] font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                                role="menuitem"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     )}
                   </div>

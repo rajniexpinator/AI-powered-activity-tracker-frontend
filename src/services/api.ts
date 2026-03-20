@@ -138,6 +138,11 @@ export const api = {
         method: 'POST',
       }),
 
+    deleteArchived: (id: string) =>
+      request<{ success: boolean }>(`/api/activities/${id}`, {
+        method: 'DELETE',
+      }),
+
     adminList: (params: {
       userId?: string
       customer?: string

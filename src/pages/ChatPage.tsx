@@ -94,6 +94,8 @@ export function ChatPage() {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [scannerError, setScannerError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
+  const [manualBarcode, setManualBarcode] = useState('')
+  const [manualBarcodeSubmitting, setManualBarcodeSubmitting] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const [barcodeModal, setBarcodeModal] = useState<{
@@ -209,6 +211,8 @@ export function ChatPage() {
   function stopScanner() {
     setScanning(false)
     setScannerOpen(false)
+    setManualBarcode('')
+    setManualBarcodeSubmitting(false)
     if (streamRef.current) {
       streamRef.current.getTracks().forEach((t) => t.stop())
       streamRef.current = null
@@ -558,6 +562,37 @@ export function ChatPage() {
                     <p>{scannerError}</p>
                   </div>
                 )}
+                <div className="grid gap-2">
+                  <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
+                    Enter barcode manually
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      value={manualBarcode}
+                      onChange={(e) => setManualBarcode(e.target.value)}
+                      placeholder="Type barcode value"
+                      className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
+                    />
+                    <button
+                      type="button"
+                      disabled={manualBarcodeSubmitting || !manualBarcode.trim()}
+                      onClick={async () => {
+                        const code = manualBarcode.trim()
+                        if (!code) return
+                        setManualBarcodeSubmitting(true)
+                        stopScanner()
+                        try {
+                          await handleBarcodeDetected(code)
+                        } finally {
+                          setManualBarcodeSubmitting(false)
+                        }
+                      }}
+                      className="inline-flex items-center justify-center h-10 rounded-lg bg-[var(--color-primary)] px-3 text-[12px] font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-60 whitespace-nowrap"
+                    >
+                      Use code
+                    </button>
+                  </div>
+                </div>
                 <p className="text-[12px] text-[#777] leading-relaxed">
                   When a code is detected, it will be inserted into the activity text as{' '}
                   <span className="font-mono text-[11px] text-[var(--color-primary)]">Scanned barcode: ...</span>.
