@@ -102,11 +102,13 @@ export function ChatPage() {
     barcode: string
     mode: 'new' | 'existing'
     customer?: string
-    productName?: string
+    partName?: string
+    partNumber?: string
     scanCount?: number
   } | null>(null)
   const [barcodeCustomer, setBarcodeCustomer] = useState('')
-  const [barcodeProductName, setBarcodeProductName] = useState('')
+  const [barcodePartName, setBarcodePartName] = useState('')
+  const [barcodePartNumber, setBarcodePartNumber] = useState('')
   const [barcodeNotes, setBarcodeNotes] = useState('')
   const [savingBarcode, setSavingBarcode] = useState(false)
   const [recentModalOpen, setRecentModalOpen] = useState(false)
@@ -115,14 +117,16 @@ export function ChatPage() {
   function openBarcodeModal(payload: NonNullable<typeof barcodeModal>) {
     setBarcodeModal(payload)
     setBarcodeCustomer(payload.customer ?? '')
-    setBarcodeProductName(payload.productName ?? '')
+    setBarcodePartName(payload.partName ?? '')
+    setBarcodePartNumber(payload.partNumber ?? '')
     setBarcodeNotes('')
   }
 
   function closeBarcodeModal() {
     setBarcodeModal(null)
     setBarcodeCustomer('')
-    setBarcodeProductName('')
+    setBarcodePartName('')
+    setBarcodePartNumber('')
     setBarcodeNotes('')
   }
 
@@ -136,15 +140,16 @@ export function ChatPage() {
         setCustomerHint((prev) => prev || String(mapping.customer))
       }
       toast.info(
-        mapping?.customer || mapping?.productName
-          ? `Barcode recognized: ${mapping.productName || ''}${mapping.customer ? ` (${mapping.customer})` : ''}`.trim()
+        mapping?.customer || mapping?.partName || mapping?.partNumber || mapping?.productName
+          ? `Barcode recognized: ${mapping.partName || mapping.productName || ''}${mapping.partNumber ? ` [${mapping.partNumber}]` : ''}${mapping.customer ? ` (${mapping.customer})` : ''}`.trim()
           : 'Barcode recognized.'
       )
       openBarcodeModal({
         barcode: code,
         mode: 'existing',
         customer: mapping.customer,
-        productName: mapping.productName,
+        partName: mapping.partName || mapping.productName,
+        partNumber: mapping.partNumber,
         scanCount: mapping.scanCount,
       })
     } catch (err) {
@@ -641,12 +646,24 @@ export function ChatPage() {
 
                 <div className="grid gap-2">
                   <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
-                    Part number / product
+                    Part name
                   </label>
                   <input
-                    value={barcodeProductName}
-                    onChange={(e) => setBarcodeProductName(e.target.value)}
-                    placeholder="BCZM Bosch"
+                    value={barcodePartName}
+                    onChange={(e) => setBarcodePartName(e.target.value)}
+                    placeholder="Brake Housing"
+                    className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
+                    Part number
+                  </label>
+                  <input
+                    value={barcodePartNumber}
+                    onChange={(e) => setBarcodePartNumber(e.target.value)}
+                    placeholder="BCZM-1023"
                     className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
                   />
                 </div>
@@ -681,7 +698,8 @@ export function ChatPage() {
                       try {
                         const payload = {
                           customer: barcodeCustomer.trim() || undefined,
-                          productName: barcodeProductName.trim() || undefined,
+                          partName: barcodePartName.trim() || undefined,
+                          partNumber: barcodePartNumber.trim() || undefined,
                           metadata: barcodeNotes.trim() ? { notes: barcodeNotes.trim() } : undefined,
                         }
                         await api.barcodes.upsert(barcodeModal.barcode, payload)
@@ -689,9 +707,11 @@ export function ChatPage() {
                         if (payload.customer) {
                           setCustomerHint((prev) => prev || String(payload.customer))
                         }
-                        if (payload.productName) {
+                        if (payload.partName || payload.partNumber) {
                           setText((prev) =>
-                            prev ? `Part: ${payload.productName}\n${prev}` : `Part: ${payload.productName}`
+                            prev
+                              ? `Part: ${payload.partName || ''}${payload.partNumber ? ` (${payload.partNumber})` : ''}\n${prev}`
+                              : `Part: ${payload.partName || ''}${payload.partNumber ? ` (${payload.partNumber})` : ''}`
                           )
                         }
 

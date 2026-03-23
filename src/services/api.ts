@@ -369,6 +369,8 @@ export const api = {
       request<{
         mapping: {
           barcode: string
+          partName?: string
+          partNumber?: string
           productName?: string
           customer?: string
           scanCount?: number
@@ -381,6 +383,8 @@ export const api = {
       request<{
         mapping: {
           barcode: string
+          partName?: string
+          partNumber?: string
           productName?: string
           customer?: string
           scanCount?: number
@@ -389,10 +393,15 @@ export const api = {
         }
       }>('/api/barcodes/scan', { method: 'POST', body: JSON.stringify({ barcode }) }),
 
-    upsert: (barcode: string, payload: { customer?: string; productName?: string; metadata?: unknown }) =>
+    upsert: (
+      barcode: string,
+      payload: { customer?: string; partName?: string; partNumber?: string; productName?: string; metadata?: unknown }
+    ) =>
       request<{
         mapping: {
           barcode: string
+          partName?: string
+          partNumber?: string
           productName?: string
           customer?: string
           scanCount?: number
