@@ -99,6 +99,11 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
+    update: (id: string, payload: { rawText?: string; structured?: unknown; images?: string[] }) =>
+      request<{ activity: unknown }>(`/api/activities/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
 
     list: (params?: { limit?: number; page?: number }) => {
       const search = new URLSearchParams()

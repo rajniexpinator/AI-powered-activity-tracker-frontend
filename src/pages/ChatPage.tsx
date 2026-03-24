@@ -52,6 +52,8 @@ type ActivityDetail = {
   createdAt: string
 }
 
+const MAX_IMAGES_PER_ENTRY = 4
+
 export function ChatPage() {
   const { user } = useAuth()
   const isEmployee = user?.role === 'employee'
@@ -339,6 +341,11 @@ export function ChatPage() {
     setSaveMessage(null)
     setSaving(true)
     try {
+      if (imageUrls.length > MAX_IMAGES_PER_ENTRY) {
+        setError(`You can attach up to ${MAX_IMAGES_PER_ENTRY} images per entry.`)
+        return
+      }
+
       const base = (result.structured || {}) as any
       const resolvedSummary = editSummary || base.summary || ''
       const resolvedPartName = editPartName || base.part_name || ''
@@ -368,8 +375,8 @@ export function ChatPage() {
       ].join('||')
 
       if (savedResultKey && savedResultKey === currentKey) {
-        setSaveMessage('Already saved to tracker.')
-        toast.info('Already saved to tracker.')
+        setSaveMessage(selectedActivityId ? 'No changes to update.' : 'Already saved to tracker.')
+        toast.info(selectedActivityId ? 'No changes to update.' : 'Already saved to tracker.')
         return
       }
 
@@ -383,24 +390,36 @@ export function ChatPage() {
         notes: resolvedNotes || base.notes,
       }
 
-      const { activity } = await api.activities.create({
-        rawText: result.rawText,
-        structured: editedStructured,
-        images: imageUrls.length ? imageUrls : undefined,
-      })
-      setSaveMessage('Activity saved to tracker.')
-      toast.success('Saved to tracker.')
+      const resolvedRawText = text.trim() || result.rawText
+
+      const { activity } = selectedActivityId
+        ? await api.activities.update(selectedActivityId, {
+            rawText: resolvedRawText,
+            structured: editedStructured,
+            images: imageUrls.length ? imageUrls : [],
+          })
+        : await api.activities.create({
+            rawText: resolvedRawText,
+            structured: editedStructured,
+            images: imageUrls.length ? imageUrls : undefined,
+          })
+
+      setSaveMessage(selectedActivityId ? 'Activity updated.' : 'Activity saved to tracker.')
+      toast.success(selectedActivityId ? 'Updated successfully.' : 'Saved to tracker.')
       setSavedResultKey(currentKey)
-      // Refresh recent list with the new activity at the top
-      setRecentActivities((prev) => [
-        {
+      // Keep recent list in sync after create/update.
+      setRecentActivities((prev) => {
+        const nextItem = {
           _id: (activity as any)._id,
           customer: (activity as any).customer,
           summary: (activity as any).summary,
           createdAt: (activity as any).createdAt,
-        },
-        ...prev,
-      ])
+        }
+        if (selectedActivityId) {
+          return prev.map((item) => (item._id === selectedActivityId ? nextItem : item))
+        }
+        return [nextItem, ...prev]
+      })
     } catch (err) {
       const message = (err as Error).message || 'Failed to save activity'
       setError(message)
@@ -1333,6 +1352,10 @@ export function ChatPage() {
                         type="button"
                         onClick={async () => {
                           if (!imageFile) return
+                          if (imageUrls.length >= MAX_IMAGES_PER_ENTRY) {
+                            setUploadError(`You can attach up to ${MAX_IMAGES_PER_ENTRY} images per entry.`)
+                            return
+                          }
                           setUploadingImage(true)
                           setUploadError(null)
                           try {
@@ -1347,10 +1370,14 @@ export function ChatPage() {
                             setUploadingImage(false)
                           }
                         }}
-                        disabled={uploadingImage}
+                        disabled={uploadingImage || imageUrls.length >= MAX_IMAGES_PER_ENTRY}
                         className="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)] px-3 py-1 text-[11px] sm:text-xs font-medium hover:bg-[var(--color-primary)]/15 disabled:opacity-60"
                       >
-                        {uploadingImage ? 'Uploading…' : 'Upload image'}
+                        {uploadingImage
+                          ? 'Uploading…'
+                          : imageUrls.length >= MAX_IMAGES_PER_ENTRY
+                            ? 'Max images reached'
+                            : 'Upload image'}
                       </button>
                     )}
                   </div>
@@ -1362,7 +1389,7 @@ export function ChatPage() {
                     )}
                     {imageUrls.length > 0 && (
                       <p className="text-[10px] text-[#777]">
-                        {imageUrls.length} image{imageUrls.length !== 1 ? 's' : ''} attached
+                        {imageUrls.length}/{MAX_IMAGES_PER_ENTRY} image{imageUrls.length !== 1 ? 's' : ''} attached
                       </p>
                     )}
                   </div>
@@ -1370,6 +1397,10 @@ export function ChatPage() {
                 {uploadError && (
                   <p className="text-[11px] text-red-600">{uploadError}</p>
                 )}
+                <p className="text-[11px] text-[#777] leading-relaxed">
+                  Upload up to 4 photos as evidence for this activity (defect, part label/barcode, workstation
+                  condition, or before/after repair). Use clear images that help explain the issue and resolution.
+                </p>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <p className="text-[11px] text-[#999] hidden sm:block">
                     1) Extract JSON, 2) validate the log, 3) save when you&apos;re satisfied.

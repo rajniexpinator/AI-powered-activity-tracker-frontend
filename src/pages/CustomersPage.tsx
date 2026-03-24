@@ -1,9 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'react-toastify'
-import { Mail, User as UserIcon, Plus, AlertCircle, Trash2, Pencil, X } from 'lucide-react'
+import { Mail, User as UserIcon, Plus, AlertCircle, Trash2, Pencil, X, Search, SlidersHorizontal } from 'lucide-react'
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { useAuth } from '@/context/AuthContext'
+
+const PAGE_SIZE = 5
 
 type Customer = {
   _id: string
@@ -17,14 +19,19 @@ type Customer = {
 export function CustomersPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
+  const isEmployee = user?.role === 'employee'
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [notes, setNotes] = useState('')
+  const [search, setSearch] = useState('')
+  const [emailFilter, setEmailFilter] = useState<'all' | 'with' | 'without'>('all')
+  const [page, setPage] = useState(1)
   const [editing, setEditing] = useState<Customer | null>(null)
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
@@ -46,9 +53,53 @@ export function CustomersPage() {
     void load()
   }, [])
 
+  useEffect(() => {
+    if (showAddModal || editing) {
+      document.body.style.overflow = 'hidden'
+    } else {
+      document.body.style.overflow = ''
+    }
+    return () => {
+      document.body.style.overflow = ''
+    }
+  }, [showAddModal, editing])
+
+  const filteredCustomers = useMemo(() => {
+    return customers.filter((c) => {
+      const q = search.trim().toLowerCase()
+      const matchesSearch =
+        !q ||
+        c.name.toLowerCase().includes(q) ||
+        (c.email || '').toLowerCase().includes(q)
+
+      const hasEmail = Boolean(c.email && c.email.trim())
+      const matchesEmail =
+        emailFilter === 'all' || (emailFilter === 'with' ? hasEmail : !hasEmail)
+
+      return matchesSearch && matchesEmail
+    })
+  }, [customers, search, emailFilter])
+
+  useEffect(() => {
+    setPage(1)
+  }, [search, emailFilter])
+
+  const totalPages = Math.max(1, Math.ceil(filteredCustomers.length / PAGE_SIZE))
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages)
+    }
+  }, [page, totalPages])
+
+  const paginatedCustomers = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE
+    return filteredCustomers.slice(start, start + PAGE_SIZE)
+  }, [filteredCustomers, page])
+
   async function handleAddCustomer(e: React.FormEvent) {
     e.preventDefault()
-    if (!name.trim()) return
+    if (!isAdmin || !name.trim()) return
     setError('')
     setSaving(true)
     try {
@@ -61,6 +112,7 @@ export function CustomersPage() {
       setName('')
       setEmail('')
       setNotes('')
+      setShowAddModal(false)
       toast.success('Customer added successfully.')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to add customer'
@@ -89,6 +141,7 @@ export function CustomersPage() {
   }
 
   function openEdit(c: Customer) {
+    if (!isAdmin) return
     setEditing(c)
     setEditName(c.name || '')
     setEditEmail(c.email || '')
@@ -102,10 +155,16 @@ export function CustomersPage() {
     setEditNotes('')
   }
 
+  function closeAddModal() {
+    setShowAddModal(false)
+    setName('')
+    setEmail('')
+    setNotes('')
+  }
+
   async function handleUpdateCustomer(e: React.FormEvent) {
     e.preventDefault()
-    if (!editing) return
-    if (!editName.trim()) return
+    if (!isAdmin || !editing || !editName.trim()) return
     setUpdating(true)
     setError('')
     try {
@@ -203,79 +262,251 @@ export function CustomersPage() {
             </div>
           </div>
         )}
+
+        {showAddModal && isAdmin && (
+          <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
+            <div className="w-full max-w-2xl rounded-2xl bg-white border border-[var(--color-border)] shadow-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                    New customer
+                  </p>
+                  <p className="text-[14px] font-semibold text-[var(--color-text)]">
+                    Add customer details
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeAddModal}
+                  className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-[var(--color-border)] hover:bg-[var(--color-bg)]"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <form onSubmit={handleAddCustomer} className="p-5 space-y-4">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="md:col-span-2">
+                    <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                      Customer name
+                    </label>
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      placeholder="Bosch"
+                      className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2.5 text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                      Email (optional)
+                    </label>
+                    <input
+                      type="email"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      placeholder="team@customer.com"
+                      className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2.5 text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                      Notes (optional)
+                    </label>
+                    <input
+                      type="text"
+                      value={notes}
+                      onChange={(e) => setNotes(e.target.value)}
+                      placeholder="Plant, context, internal note"
+                      className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2.5 text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={closeAddModal}
+                    className="inline-flex items-center justify-center h-10 rounded-xl border border-[var(--color-border)] px-4 text-[13px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    className="inline-flex items-center justify-center h-10 rounded-xl bg-[var(--color-primary)] px-4 text-[13px] font-semibold !text-white disabled:opacity-60"
+                  >
+                    {saving ? 'Saving…' : 'Add customer'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
         <section className="mb-6 sm:mb-8">
-          <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl sm:text-[28px] md:text-[32px] font-bold tracking-tight text-[var(--color-text)] flex items-center gap-3">
-                <span className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
-                  <UserIcon className="w-5 h-5 sm:w-6 sm:h-6" />
-                </span>
-                Customers
-              </h1>
-              <p className="mt-2 text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] max-w-md">
-                Keep a simple list of customer contacts you interact with in the plant.
-              </p>
+          <div className="rounded-2xl border border-[var(--color-primary)]/15 bg-gradient-to-r from-[var(--color-primary)]/10 via-white to-white p-5 sm:p-6">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <h1 className="text-2xl sm:text-[28px] md:text-[32px] font-bold tracking-tight text-[var(--color-text)] flex items-center gap-3">
+                  <span className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[var(--color-primary)]/15 text-[var(--color-primary)]">
+                    <UserIcon className="w-5 h-5 sm:w-6 sm:h-6" />
+                  </span>
+                  Customers
+                </h1>
+                <p className="mt-2 text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] max-w-2xl">
+                  {isAdmin
+                    ? 'Manage customer directory for your internal activity and reporting workflow.'
+                    : 'Read-only customer directory for activity logging.'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(true)}
+                    className="inline-flex items-center justify-center gap-2 h-10 rounded-xl bg-[var(--color-primary)] px-4 text-[13px] font-semibold !text-white hover:bg-[var(--color-primary-hover)] shadow-sm"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add customer
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="mt-4 grid gap-2 md:grid-cols-[minmax(0,1fr)_220px]">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search by customer name or email"
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-white pl-9 pr-3 py-2.5 text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
+                />
+              </div>
+              <div className="relative">
+                <SlidersHorizontal className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]" />
+                <select
+                  value={emailFilter}
+                  onChange={(e) => setEmailFilter(e.target.value as 'all' | 'with' | 'without')}
+                  className="w-full appearance-none rounded-xl border border-[var(--color-border)] bg-white pl-9 pr-3 py-2.5 text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
+                >
+                  <option value="all">All emails</option>
+                  <option value="with">With email</option>
+                  <option value="without">Without email</option>
+                </select>
+              </div>
             </div>
           </div>
         </section>
 
-        {/* Layout differs for admin vs employee to avoid empty space */}
-        {isAdmin ? (
-          <section className="mt-2">
-            <div className="rounded-2xl bg-white border border-[var(--color-primary)]/10 shadow-[0_4px_24px_rgba(63,75,157,0.08)] overflow-hidden">
-              <div className="px-5 sm:px-6 md:px-8 py-4 sm:py-5 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <UserIcon className="w-4 h-4 text-[var(--color-primary)]" />
-                  <h2 className="text-[15px] font-semibold text-[var(--color-text)]">All customers</h2>
-                </div>
-                <p className="text-[12px] text-[var(--color-text-secondary)]">
-                  {customers.length} customer{customers.length !== 1 ? 's' : ''}
-                </p>
-              </div>
+        {error && (
+          <div className="mb-4 flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-700">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {error}
+          </div>
+        )}
 
-              <div className="max-h-[420px] overflow-y-auto overflow-x-auto">
-                {loading ? (
-                  <div className="px-4 sm:px-6 md:px-8 py-6 sm:py-8 text-[13px] text-[var(--color-text-secondary)]">
-                    Loading customers…
-                  </div>
-                ) : customers.length === 0 ? (
-                  <div className="px-4 sm:px-6 md:px-8 py-10 sm:py-12 text-center text-[13px] text-[var(--color-text-secondary)]">
-                    No customers yet.
-                  </div>
-                ) : (
-                  <>
-                    {/* Mobile/tablet: card layout (< lg) */}
-                    <div className="divide-y divide-[var(--color-border)] md:hidden">
-                      {customers.map((c) => (
-                        <div
-                          key={c._id}
-                          className="px-4 sm:px-6 py-4 hover:bg-[var(--color-bg)]/50 transition-colors"
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="flex min-w-0 flex-1 items-center gap-3">
-                              <span className="flex shrink-0 items-center justify-center w-10 h-10 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[14px] font-semibold">
-                                {c.name.charAt(0).toUpperCase()}
-                              </span>
-                              <div className="min-w-0 flex-1">
-                                <p className="text-[14px] font-medium text-[var(--color-text)]">{c.name}</p>
-                                {c.email && (
-                                  <p className="mt-0.5 text-[12px] text-[var(--color-text-secondary)] truncate">
-                                    {c.email}
-                                  </p>
-                                )}
-                                {c.notes && (
-                                  <p className="mt-0.5 text-[12px] text-[var(--color-text-secondary)] line-clamp-2">
-                                    {c.notes}
-                                  </p>
-                                )}
-                                {c.createdBy && (
-                                  <p className="mt-1 text-[11px] text-[var(--color-text-secondary)]/80">
-                                    Added by: {c.createdBy.name || c.createdBy.email || c.createdBy.role || '-'}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex shrink-0 flex-col gap-2 sm:flex-row">
+        <section className="rounded-2xl bg-white border border-[var(--color-primary)]/10 shadow-[0_4px_24px_rgba(63,75,157,0.08)] overflow-hidden">
+          <div className="px-5 sm:px-6 md:px-8 py-4 sm:py-5 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
+            <h2 className="text-[15px] font-semibold text-[var(--color-text)]">All customers</h2>
+            <p className="text-[12px] text-[var(--color-text-secondary)]">
+              {filteredCustomers.length} customer{filteredCustomers.length !== 1 ? 's' : ''} total
+            </p>
+          </div>
+          <div className="max-h-[520px] overflow-auto">
+            {loading ? (
+              <div className="px-5 sm:px-6 md:px-8 py-6 text-[13px] text-[var(--color-text-secondary)]">Loading customers…</div>
+            ) : filteredCustomers.length === 0 ? (
+              <div className="px-5 sm:px-6 md:px-8 py-10 text-center text-[13px] text-[var(--color-text-secondary)]">No customers match your filters.</div>
+            ) : (
+              <>
+                <div className="divide-y divide-[var(--color-border)] md:hidden">
+                  {paginatedCustomers.map((c) => (
+                    <div key={c._id} className="px-4 py-3.5 space-y-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-[14px] font-semibold text-[var(--color-text)] truncate">{c.name}</p>
+                          <p className="text-[12px] text-[var(--color-text-secondary)] break-all">{c.email || '-'}</p>
+                        </div>
+                        {isAdmin && (
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => openEdit(c)}
+                              className="inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] border border-[var(--color-border)]"
+                            >
+                              <Pencil className="w-3 h-3" />
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCustomer(c._id)}
+                              disabled={deletingId === c._id}
+                              className="inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium text-red-600 hover:bg-red-50 border border-red-100 disabled:opacity-60"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              {deletingId === c._id ? '…' : 'Delete'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      {!isEmployee && (
+                        <div className="rounded-lg bg-[var(--color-bg)] px-2.5 py-2">
+                          <p className="text-[11px] text-[var(--color-text-secondary)]">
+                            <span className="font-semibold">Notes:</span> {c.notes || '-'}
+                          </p>
+                          <p className="mt-1 text-[11px] text-[var(--color-text-secondary)]">
+                            <span className="font-semibold">Added by:</span>{' '}
+                            {c.createdBy?.name || c.createdBy?.email || c.createdBy?.role || '-'}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <table className="hidden md:table w-full table-auto">
+                  <thead className="sticky top-0 z-10 bg-[var(--color-bg)]">
+                    <tr>
+                      <th className="px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">Name</th>
+                      <th className="px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">Email</th>
+                      {!isEmployee && (
+                        <>
+                          <th className="px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">Notes</th>
+                          <th className="px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">Added by</th>
+                        </>
+                      )}
+                      {isAdmin && (
+                        <th className="px-4 lg:px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">Actions</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-[var(--color-border)]">
+                    {paginatedCustomers.map((c) => (
+                      <tr key={c._id} className="hover:bg-[var(--color-bg)]/50 transition-colors">
+                        <td className="px-4 lg:px-6 py-3 text-[14px] font-medium text-[var(--color-text)]">{c.name}</td>
+                        <td className="px-4 lg:px-6 py-3 text-[13px] text-[var(--color-text-secondary)]">{c.email || '-'}</td>
+                        {!isEmployee && (
+                          <>
+                            <td className="px-4 lg:px-6 py-3 text-[12px] text-[var(--color-text-secondary)]">{c.notes || '-'}</td>
+                            <td className="px-4 lg:px-6 py-3 text-[12px] text-[var(--color-text-secondary)]">
+                              {c.createdBy?.name || c.createdBy?.email || c.createdBy?.role || '-'}
+                            </td>
+                          </>
+                        )}
+                        {isAdmin && (
+                          <td className="px-4 lg:px-6 py-3 text-right whitespace-nowrap">
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={() => openEdit(c)}
+                                className="inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] border border-[var(--color-border)]"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                                Edit
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleDeleteCustomer(c._id)}
@@ -286,208 +517,44 @@ export function CustomersPage() {
                                 {deletingId === c._id ? '…' : 'Delete'}
                               </button>
                             </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Desktop: table layout (lg+) */}
-                    <table className="hidden md:table w-full min-w-[720px] table-auto">
-                      <thead className="sticky top-0 z-10 bg-[var(--color-bg)]">
-                        <tr>
-                          <th className="whitespace-nowrap px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
-                            Name
-                          </th>
-                          <th className="whitespace-nowrap px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
-                            Email
-                          </th>
-                          <th className="whitespace-nowrap px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
-                            Notes
-                          </th>
-                          <th className="whitespace-nowrap px-4 lg:px-6 py-3 text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
-                            Added by
-                          </th>
-                          <th className="whitespace-nowrap px-4 lg:px-6 py-3 text-right text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-[var(--color-border)]">
-                        {customers.map((c) => (
-                          <tr key={c._id} className="hover:bg-[var(--color-bg)]/50 transition-colors">
-                            <td className="px-4 lg:px-6 py-3 align-middle">
-                              <div className="flex items-center gap-3 min-w-0">
-                                <span className="flex shrink-0 items-center justify-center w-8 h-8 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[13px] font-semibold">
-                                  {c.name.charAt(0).toUpperCase()}
-                                </span>
-                                <p className="truncate text-[14px] font-medium text-[var(--color-text)]">{c.name}</p>
-                              </div>
-                            </td>
-                            <td className="px-4 lg:px-6 py-3 align-middle">
-                              <span className="truncate block max-w-[180px] text-[13px] text-[var(--color-text-secondary)]">
-                                {c.email || '-'}
-                              </span>
-                            </td>
-                            <td className="px-4 lg:px-6 py-3 align-middle">
-                              <span className="truncate block max-w-[200px] text-[12px] text-[var(--color-text-secondary)]">
-                                {c.notes || '-'}
-                              </span>
-                            </td>
-                            <td className="px-4 lg:px-6 py-3 align-middle">
-                              <span className="truncate block max-w-[130px] text-[12px] text-[var(--color-text-secondary)]">
-                                {c.createdBy?.name || c.createdBy?.email || c.createdBy?.role || '-'}
-                              </span>
-                            </td>
-                            <td className="px-4 lg:px-6 py-3 align-middle text-right whitespace-nowrap">
-                              <div className="flex justify-end gap-2">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteCustomer(c._id)}
-                                  disabled={deletingId === c._id}
-                                  className="inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 border border-red-100 disabled:opacity-60"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                  {deletingId === c._id ? '…' : 'Delete'}
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
-                )}
-              </div>
-            </div>
-          </section>
-        ) : (
-          <section className="grid gap-4 md:grid-cols-[minmax(0,_1.1fr)_minmax(0,_1.2fr)]">
-            {/* Add customer form - employees can add */}
-            <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-5 sm:p-6">
-              <h2 className="text-sm font-semibold text-[var(--color-text)] mb-1 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-[var(--color-primary)]" />
-                Add customer
-              </h2>
-              <p className="text-[13px] text-[var(--color-text-secondary)] mb-4">
-                Store the supplier name, email, and optional notes (e.g. plant focus, typical issues).
+                          </td>
+                        )}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </>
+            )}
+          </div>
+          {!loading && filteredCustomers.length > 0 && (
+            <div className="border-t border-[var(--color-border)] px-5 sm:px-6 md:px-8 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-[var(--color-bg)]/60">
+              <p className="text-[12px] text-[var(--color-text-secondary)]">
+                Showing {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, filteredCustomers.length)} of {filteredCustomers.length}
               </p>
-              {error && (
-                <div className="mb-3 flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-700">
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  {error}
-                </div>
-              )}
-              <form onSubmit={handleAddCustomer} className="space-y-4">
-                <div>
-                  <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
-                    Name
-                  </label>
-                  <div className="relative">
-                    <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-secondary)] opacity-60" />
-                    <input
-                      type="text"
-                      value={name}
-                      onChange={(e) => setName(e.target.value)}
-                      placeholder="Bosch, Inoac, etc."
-                      className="w-full pl-9 pr-3 py-2.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[14px] placeholder:text-[var(--color-text-secondary)]/70 focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
-                      required
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
-                    Email <span className="font-normal normal-case text-[var(--color-text-secondary)]/80">(optional)</span>
-                  </label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-secondary)] opacity-60" />
-                    <input
-                      type="email"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      placeholder="contact@customer.com"
-                      className="w-full pl-9 pr-3 py-2.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[14px] placeholder:text-[var(--color-text-secondary)]/70 focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
-                    />
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
-                    Notes <span className="font-normal normal-case text-[var(--color-text-secondary)]/80">(optional)</span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    placeholder="Plant, commodity, or any context you want to remember."
-                    className="w-full resize-none rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[#222] placeholder:text-[var(--color-text-secondary)]/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
-                  />
-                </div>
+              <div className="flex items-center gap-2">
                 <button
-                  type="submit"
-                  disabled={saving}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] text-[14px] font-semibold !text-white disabled:opacity-60"
+                  type="button"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="inline-flex items-center justify-center h-8 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-medium text-[var(--color-text)] hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {saving ? 'Saving…' : 'Add customer'}
+                  Previous
                 </button>
-              </form>
-            </div>
-
-            {/* Customers list (same card, without admin-only columns) */}
-            <div className="rounded-2xl bg-white border border-[var(--color-primary)]/10 shadow-[0_4px_24px_rgba(63,75,157,0.08)] overflow-hidden">
-              <div className="px-5 sm:px-6 md:px-8 py-4 sm:py-5 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
-                  <UserIcon className="w-4 h-4 text-[var(--color-primary)]" />
-                  <h2 className="text-[15px] font-semibold text-[var(--color-text)]">All customers</h2>
-                </div>
-                <p className="text-[12px] text-[var(--color-text-secondary)]">
-                  {customers.length} customer{customers.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <div className="divide-y divide-[var(--color-border)] max-h-[420px] overflow-auto">
-                {loading ? (
-                  <div className="px-5 sm:px-6 md:px-8 py-6 text-[13px] text-[var(--color-text-secondary)]">
-                    Loading customers…
-                  </div>
-                ) : customers.length === 0 ? (
-                  <div className="px-5 sm:px-6 md:px-8 py-10 text-center text-[13px] text-[var(--color-text-secondary)]">
-                    No customers yet. Add your first customer using the form on the left.
-                  </div>
-                ) : (
-                  customers.map((c) => (
-                    <div key={c._id} className="px-5 sm:px-6 md:px-8 py-3.5 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <span className="flex items-center justify-center w-8 h-8 rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)] text-[13px] font-semibold">
-                          {c.name.charAt(0).toUpperCase()}
-                        </span>
-                        <div className="min-w-0">
-                          <p className="text-[14px] font-medium text-[var(--color-text)] truncate">{c.name}</p>
-                          {c.email && (
-                            <p className="text-[12px] text-[var(--color-text-secondary)] truncate">{c.email}</p>
-                          )}
-                          <p className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]/80">
-                            Added by: {c.createdBy?.name || c.createdBy?.email || '-'}
-                          </p>
-                        </div>
-                      </div>
-                      {c.notes && (
-                        <p className="hidden sm:block text-[12px] text-[var(--color-text-secondary)] max-w-xs truncate">
-                          {c.notes}
-                        </p>
-                      )}
-                      <button
-                        type="button"
-                        onClick={() => openEdit(c)}
-                        className="shrink-0 inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] border border-[var(--color-border)]"
-                      >
-                        <Pencil className="w-3.5 h-3.5" />
-                        Edit
-                      </button>
-                    </div>
-                  ))
-                )}
+                <span className="text-[12px] text-[var(--color-text-secondary)]">
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages}
+                  className="inline-flex items-center justify-center h-8 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-medium text-[var(--color-text)] hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Next
+                </button>
               </div>
             </div>
-          </section>
-        )}
+          )}
+        </section>
       </main>
     </AdminShell>
   )

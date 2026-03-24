@@ -50,7 +50,7 @@ function App() {
             path="users"
             element={
               <ProtectedRoute>
-                <AdminRoute>
+                <AdminRoute roles={['admin']}>
                   <UserManagementPage />
                 </AdminRoute>
               </ProtectedRoute>

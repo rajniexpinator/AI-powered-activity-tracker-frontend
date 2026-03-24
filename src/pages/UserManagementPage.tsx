@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { ArrowLeft, Users, UserPlus, UserCircle, Shield, AlertCircle, Loader2, CheckCircle, XCircle, Mail, User as UserIcon, Lock, X, Pencil, Trash2, Eye, EyeOff } from 'lucide-react'
+import { ArrowLeft, Users, UserPlus, UserCircle, Shield, AlertCircle, Loader2, CheckCircle, XCircle, Mail, User as UserIcon, Lock, X, Pencil, Trash2, Eye, EyeOff, MoreVertical } from 'lucide-react'
 import type { User } from '@/types/auth'
 import { api } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
@@ -33,6 +33,7 @@ export function UserManagementPage() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [deleteUser, setDeleteUser] = useState<User | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [openActionsForUserId, setOpenActionsForUserId] = useState<string | null>(null)
 
   const loadUsers = useCallback(async () => {
     setError('')
@@ -55,6 +56,18 @@ export function UserManagementPage() {
     else document.body.style.overflow = ''
     return () => { document.body.style.overflow = '' }
   }, [showAddModal])
+
+  useEffect(() => {
+    function handleOutsideClick(event: MouseEvent) {
+      const target = event.target as HTMLElement | null
+      if (!target) return
+      if (!target.closest('[data-user-actions-menu-root="true"]')) {
+        setOpenActionsForUserId(null)
+      }
+    }
+    document.addEventListener('click', handleOutsideClick)
+    return () => document.removeEventListener('click', handleOutsideClick)
+  }, [])
 
   function closeAddModal() {
     setShowAddModal(false)
@@ -178,6 +191,10 @@ export function UserManagementPage() {
       setError(msg)
       toast.error(msg)
     }
+  }
+
+  function toggleActionsMenu(userId: string) {
+    setOpenActionsForUserId((prev) => (prev === userId ? null : userId))
   }
 
   return (
@@ -342,7 +359,7 @@ export function UserManagementPage() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(true)}
-                  className="shrink-0 inline-flex items-center justify-center gap-2 px-5 py-3 sm:px-6 sm:py-3.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 transition-all text-[14px] sm:text-[15px] font-semibold rounded-xl !text-white shadow-[0_4px_14px_rgba(63,75,157,0.25)]"
+                  className="self-start shrink-0 inline-flex items-center justify-center gap-2 px-4 py-2.5 sm:px-5 sm:py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] transition-all text-[13px] sm:text-[14px] font-semibold rounded-xl !text-white shadow-[0_4px_14px_rgba(63,75,157,0.25)]"
                 >
                   <UserPlus className="w-5 h-5" />
                   Add user
@@ -371,7 +388,128 @@ export function UserManagementPage() {
                     {users.length} user{users.length !== 1 ? 's' : ''}
                   </p>
                 </div>
-                <div className="overflow-x-auto">
+                <div className="md:hidden">
+                  {users.length === 0 ? (
+                    <div className="px-5 sm:px-6 py-12 text-center">
+                      <div className="flex flex-col items-center gap-4 text-[var(--color-text-secondary)]">
+                        <span className="flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-bg)]">
+                          <Users className="w-7 h-7 text-[var(--color-primary)]/50" />
+                        </span>
+                        <p className="text-[15px] font-medium text-[var(--color-text)]">No users yet</p>
+                        <p className="text-[14px] max-w-sm">Add your first user using the button above.</p>
+                        <button
+                          type="button"
+                          onClick={() => setShowAddModal(true)}
+                          className="mt-1 inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] text-white text-[13px] font-medium rounded-xl hover:bg-[var(--color-primary-hover)]"
+                        >
+                          <UserPlus className="w-4 h-4" />
+                          Add user
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-[var(--color-border)]">
+                      {users.map((u) => (
+                        <div key={u.id} className="px-4 py-3.5 space-y-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="font-medium text-[var(--color-text)] text-[14px] truncate">{u.email}</p>
+                              <p className="text-[12px] text-[var(--color-text-secondary)]">{u.name || '—'}</p>
+                            </div>
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium ${
+                                u.isActive !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-[var(--color-bg)] text-[var(--color-text-secondary)]'
+                              }`}
+                            >
+                              {u.isActive !== false ? 'Active' : 'Inactive'}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2">
+                            <div>
+                              {u.id === currentUser?.id ? (
+                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium ${ROLE_STYLES[u.role]}`}>
+                                  <Shield className="w-3 h-3" />
+                                  {u.role}
+                                </span>
+                              ) : (
+                                <select
+                                  value={u.role}
+                                  onChange={(e) => handleUpdateRole(u.id, e.target.value as User['role'])}
+                                  className="text-[12px] border border-[var(--color-border)] rounded-lg px-2.5 py-1.5 bg-white"
+                                >
+                                  {ROLES.map((r) => (
+                                    <option key={r} value={r}>
+                                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+
+                            {u.id === currentUser?.id ? (
+                              <span className="text-[12px] text-[var(--color-text-secondary)]">You</span>
+                            ) : (
+                              <div className="relative" data-user-actions-menu-root="true">
+                                <button
+                                  type="button"
+                                  onClick={() => toggleActionsMenu(u.id)}
+                                  className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]"
+                                  aria-label={`Open actions for ${u.email}`}
+                                >
+                                  <MoreVertical className="w-4 h-4" />
+                                </button>
+                                {openActionsForUserId === u.id && (
+                                  <div className="absolute right-0 top-9 z-20 w-44 rounded-xl border border-[var(--color-border)] bg-white shadow-lg p-1">
+                                    {u.role === 'employee' && (
+                                      <>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            openEditModal(u)
+                                            setOpenActionsForUserId(null)
+                                          }}
+                                          className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                                        >
+                                          <Pencil className="w-3.5 h-3.5" />
+                                          Edit
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            openDeleteModal(u)
+                                            setOpenActionsForUserId(null)
+                                          }}
+                                          className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-red-600 hover:bg-red-50"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                          Delete
+                                        </button>
+                                      </>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void handleToggleActive(u)
+                                        setOpenActionsForUserId(null)
+                                      }}
+                                      className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                                    >
+                                      {u.isActive !== false ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                                      {u.isActive !== false ? 'Deactivate' : 'Activate'}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="hidden md:block overflow-x-auto">
                   <table className="min-w-full">
                     <thead>
                       <tr className="bg-[var(--color-bg)]">
@@ -466,36 +604,57 @@ export function UserManagementPage() {
                       {u.id === currentUser?.id ? (
                         <span className="text-[13px] text-[var(--color-text-secondary)]">You</span>
                       ) : (
-                        <div className="inline-flex items-center gap-3 justify-end">
-                          {u.role === 'employee' && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => openEditModal(u)}
-                                className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-[var(--color-border)] text-[var(--color-primary)] hover:bg-[var(--color-bg)]"
-                                aria-label={`Edit ${u.email}`}
-                                title="Edit employee"
-                              >
-                                <Pencil className="w-4 h-4" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => openDeleteModal(u)}
-                                className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-[var(--color-border)] text-red-600 hover:bg-red-50"
-                                aria-label={`Delete ${u.email}`}
-                                title="Delete employee"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
+                        <div className="relative inline-flex" data-user-actions-menu-root="true">
                           <button
                             type="button"
-                            onClick={() => handleToggleActive(u)}
-                            className="text-[14px] font-medium text-[var(--color-primary)] hover:underline"
+                            onClick={() => toggleActionsMenu(u.id)}
+                            className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]"
+                            aria-label={`Open actions for ${u.email}`}
+                            title="Actions"
                           >
-                            {u.isActive !== false ? 'Deactivate' : 'Activate'}
+                            <MoreVertical className="w-4 h-4" />
                           </button>
+                          {openActionsForUserId === u.id && (
+                            <div className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-[var(--color-border)] bg-white shadow-lg p-1 text-left">
+                              {u.role === 'employee' && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      openEditModal(u)
+                                      setOpenActionsForUserId(null)
+                                    }}
+                                    className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                    Edit
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      openDeleteModal(u)
+                                      setOpenActionsForUserId(null)
+                                    }}
+                                    className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-red-600 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    Delete
+                                  </button>
+                                </>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void handleToggleActive(u)
+                                  setOpenActionsForUserId(null)
+                                }}
+                                className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                              >
+                                {u.isActive !== false ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                                {u.isActive !== false ? 'Deactivate' : 'Activate'}
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </td>
