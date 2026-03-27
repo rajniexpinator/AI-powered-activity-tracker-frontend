@@ -81,7 +81,7 @@ export const api = {
         body: JSON.stringify({ text, customerHint }),
       }),
 
-    validateActivity: (structured: unknown, rawText: string) =>
+    validateActivity: (structured: unknown, rawText: string, images?: string[]) =>
       request<{
         ok: boolean
         severity: 'ok' | 'minor' | 'warning' | 'critical'
@@ -89,7 +89,7 @@ export const api = {
         suggestions: string[]
       }>('/api/ai/validate-activity', {
         method: 'POST',
-        body: JSON.stringify({ structured, rawText }),
+        body: JSON.stringify({ structured, rawText, images }),
       }),
   },
 
@@ -370,6 +370,27 @@ export const api = {
   },
 
   barcodes: {
+    clarify: (barcode: string) =>
+      request<{
+        barcode: string
+        mode: 'known' | 'unknown'
+        prompt: string
+        fields: string[]
+        mapping: {
+          barcode: string
+          partName?: string
+          partNumber?: string
+          productName?: string
+          customer?: string
+          scanCount?: number
+          updatedAt?: string
+          createdAt?: string
+        } | null
+      }>('/api/barcodes/clarify', {
+        method: 'POST',
+        body: JSON.stringify({ barcode }),
+      }),
+
     getOne: (barcode: string) =>
       request<{
         mapping: {

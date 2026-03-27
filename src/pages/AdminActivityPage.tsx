@@ -374,7 +374,7 @@ export function AdminActivityPage() {
                 <div className="relative">
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]">
                     <Calendar className="w-3.5 h-3.5" />
-                  </span>
+                  </span> 
                   <input
                     type="date"
                     value={from}
@@ -446,10 +446,10 @@ export function AdminActivityPage() {
                       setPage(1)
                       setTab('active')
                     }}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
                       tab === 'active'
-                        ? 'bg-white text-[var(--color-primary)] shadow-sm'
-                        : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
+                        ? 'bg-[var(--color-primary)] text-white shadow-sm'
+                        : 'bg-transparent text-[var(--color-text-secondary)] hover:bg-white hover:text-[var(--color-text)]'
                     }`}
                   >
                     <BarChart3 className="w-3.5 h-3.5" />
@@ -461,10 +461,10 @@ export function AdminActivityPage() {
                       setPage(1)
                       setTab('archived')
                     }}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
                       tab === 'archived'
-                        ? 'bg-white text-[var(--color-primary)] shadow-sm'
-                        : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
+                        ? 'bg-[var(--color-primary)] text-white shadow-sm'
+                        : 'bg-transparent text-[var(--color-text-secondary)] hover:bg-white hover:text-[var(--color-text)]'
                     }`}
                   >
                     <Archive className="w-3.5 h-3.5" />

@@ -16,6 +16,7 @@ type ReportListItem = {
 }
 
 export function ReportsPage() {
+  const PAGE_SIZE = 4
   const [reports, setReports] = useState<ReportListItem[]>([])
   const [selectedReportId, setSelectedReportId] = useState<string>('')
   const [selectedContent, setSelectedContent] = useState<string>('')
@@ -68,7 +69,7 @@ export function ReportsPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await api.reports.list({ page: nextPage, limit: 20 })
+      const res = await api.reports.list({ page: nextPage, limit: PAGE_SIZE })
       setReports(res.reports)
       setTotal(res.total || 0)
       setTotalPages(res.totalPages || 1)
@@ -103,16 +104,20 @@ export function ReportsPage() {
   }
 
   async function handleDeleteReport(id: string) {
+    const ok = window.confirm('Are you sure you want to delete this report? This action cannot be undone.')
+    if (!ok) return
     setError('')
     try {
       await api.reports.deleteOne(id)
-      setReports((prev) => prev.filter((r) => r._id !== id))
+      const nextPage = reports.length === 1 && page > 1 ? page - 1 : page
       if (selectedReportId === id) {
         setSelectedReportId('')
         setSelectedContent('')
         setDraft(null)
         setEmailSubject('')
       }
+      setPage(nextPage)
+      await loadList(nextPage)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete report')
     }
@@ -127,6 +132,9 @@ export function ReportsPage() {
       setSelectedContent('')
       setDraft(null)
       setEmailSubject('')
+      setPage(1)
+      setTotal(0)
+      setTotalPages(1)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to clear history')
     }
@@ -325,7 +333,7 @@ export function ReportsPage() {
                         <button
                           type="button"
                           onClick={() => void handleDeleteReport(r._id)}
-                          className="inline-flex items-center justify-center rounded-lg border border-[var(--color-border)] p-2 text-[var(--color-text-secondary)] hover:text-red-600 hover:border-red-200 hover:bg-red-50"
+                          className="inline-flex items-center justify-center rounded-lg border border-red-300 bg-red-50 p-2 text-red-700 shadow-sm hover:bg-red-600 hover:text-white hover:border-red-700"
                           title="Delete report"
                         >
                           <Trash2 className="w-4 h-4" />

@@ -96,6 +96,8 @@ export function ChatPage() {
   const [scannerOpen, setScannerOpen] = useState(false)
   const [scannerError, setScannerError] = useState<string | null>(null)
   const [scanning, setScanning] = useState(false)
+  const scanningRef = useRef(false)
+  const zxingLoadPromiseRef = useRef<Promise<any> | null>(null)
   const [manualBarcode, setManualBarcode] = useState('')
   const [manualBarcodeSubmitting, setManualBarcodeSubmitting] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
@@ -107,6 +109,8 @@ export function ChatPage() {
     partName?: string
     partNumber?: string
     scanCount?: number
+    prompt?: string
+    fields?: string[]
   } | null>(null)
   const [barcodeCustomer, setBarcodeCustomer] = useState('')
   const [barcodePartName, setBarcodePartName] = useState('')
@@ -132,36 +136,73 @@ export function ChatPage() {
     setBarcodeNotes('')
   }
 
+  async function loadZXingFromCDN() {
+    if ((window as any).ZXing) return (window as any).ZXing
+    if (!zxingLoadPromiseRef.current) {
+      zxingLoadPromiseRef.current = new Promise((resolve, reject) => {
+        const existing = document.querySelector('script[data-zxing="true"]') as HTMLScriptElement | null
+        if (existing) {
+          // In case the script tag exists but hasn't loaded yet.
+          existing.addEventListener('load', () => resolve((window as any).ZXing))
+          existing.addEventListener('error', reject)
+          return
+        }
+
+        const script = document.createElement('script')
+        script.setAttribute('data-zxing', 'true')
+        script.src = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js'
+        script.async = true
+        script.onload = () => resolve((window as any).ZXing)
+        script.onerror = () => reject(new Error('Failed to load ZXing fallback scanner'))
+        document.head.appendChild(script)
+      })
+    }
+    return zxingLoadPromiseRef.current
+  }
+
   async function handleBarcodeDetected(code: string) {
     setText((prev) => (prev ? `Scanned barcode: ${code}\n${prev}` : `Scanned barcode: ${code}`))
 
     try {
-      const res = await api.barcodes.scan(code)
-      const mapping = res.mapping
+      const clarification = await api.barcodes.clarify(code)
+      const mapping = clarification.mapping
       if (mapping?.customer) {
         setCustomerHint((prev) => prev || String(mapping.customer))
       }
-      toast.info(
-        mapping?.customer || mapping?.partName || mapping?.partNumber || mapping?.productName
-          ? `Barcode recognized: ${mapping.partName || mapping.productName || ''}${mapping.partNumber ? ` [${mapping.partNumber}]` : ''}${mapping.customer ? ` (${mapping.customer})` : ''}`.trim()
-          : 'Barcode recognized.'
-      )
+
+      const readablePart = mapping?.partName || mapping?.productName || ''
+      if (clarification.mode === 'known') {
+        toast.info(
+          readablePart || mapping?.partNumber || mapping?.customer
+            ? `Known barcode: ${readablePart}${mapping?.partNumber ? ` [${mapping.partNumber}]` : ''}${mapping?.customer ? ` (${mapping.customer})` : ''}`.trim()
+            : 'Known barcode recognized.'
+        )
+      } else {
+        toast.info('New barcode detected. Please confirm customer/part once so it is reused next time.')
+      }
+
+      // Keep scan counts in memory fresh for known barcodes.
+      if (clarification.mode === 'known') {
+        try {
+          await api.barcodes.scan(code)
+        } catch {
+          // Non-blocking: clarification UX should still continue if scan-count update fails.
+        }
+      }
+
       openBarcodeModal({
         barcode: code,
-        mode: 'existing',
-        customer: mapping.customer,
-        partName: mapping.partName || mapping.productName,
-        partNumber: mapping.partNumber,
-        scanCount: mapping.scanCount,
+        mode: clarification.mode === 'known' ? 'existing' : 'new',
+        customer: mapping?.customer,
+        partName: mapping?.partName || mapping?.productName,
+        partNumber: mapping?.partNumber,
+        scanCount: mapping?.scanCount,
+        prompt: clarification.prompt,
+        fields: Array.isArray(clarification.fields) ? clarification.fields : [],
       })
     } catch (err) {
-      const msg = err instanceof Error ? err.message : ''
-      if (msg.toLowerCase().includes('not found')) {
-        openBarcodeModal({ barcode: code, mode: 'new' })
-        toast.info('New barcode detected. Please map it to a customer and part number.')
-      } else {
-        toast.error(msg || 'Failed to look up barcode')
-      }
+      const msg = err instanceof Error ? err.message : 'Failed to check barcode'
+      toast.error(msg)
     }
   }
 
@@ -169,37 +210,164 @@ export function ChatPage() {
     setScannerError(null)
     setScannerOpen(true)
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+      let stream: MediaStream
+      try {
+        // Prefer back camera on mobile, but some browsers/devices reject this constraint.
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+      } catch {
+        // Fallback: request any available camera.
+        stream = await navigator.mediaDevices.getUserMedia({ video: true })
+      }
       streamRef.current = stream
       if (videoRef.current) {
         videoRef.current.srcObject = stream
         await videoRef.current.play()
       }
-      if (!(window as any).BarcodeDetector) {
-        setScannerError('This browser does not support live barcode detection. You can still type the code manually.')
-        return
-      }
+      const hasBarcodeDetector = Boolean((window as any).BarcodeDetector)
       setScanning(true)
-      const detector = new (window as any).BarcodeDetector({
-        formats: ['code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e'],
-      })
+      scanningRef.current = true
+
+      // Create a primary detector only if the browser supports it.
+      // If not supported (common on some iPhones), we will rely on the ZXing fallback.
+      let detector: any = null
+      if (hasBarcodeDetector) {
+        const desiredFormats = ['qr_code', 'data_matrix', 'code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e']
+        const supportedFormats =
+          typeof (window as any).BarcodeDetector.getSupportedFormats === 'function'
+            ? await (window as any).BarcodeDetector.getSupportedFormats()
+            : desiredFormats
+
+        const formats = desiredFormats.filter((f) => supportedFormats.includes(f))
+        // Some Android browsers may report a partial/odd supported format list.
+        // If filtering results in nothing, fall back to "detect all" to avoid scanning a blank list.
+        detector = formats.length
+          ? new (window as any).BarcodeDetector({ formats })
+          : new (window as any).BarcodeDetector()
+      }
       const canvas = document.createElement('canvas')
       const ctx = canvas.getContext('2d')
+      const scanStartedAt = Date.now()
+      let primaryDetected = false
+      // If BarcodeDetector doesn't exist, start fallback immediately.
+      let fallbackStarted = !hasBarcodeDetector
+      let zxingBusy = false
+      let lastPrimaryDetectAt = 0
+      let lastZxingAttemptAt = 0
       const loop = async () => {
-        if (!videoRef.current || !scanning) return
+        if (!videoRef.current || !scanningRef.current) return
         const video = videoRef.current
-        if (video.readyState === 4 && ctx) {
-          canvas.width = video.videoWidth
-          canvas.height = video.videoHeight
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0 && ctx) {
           try {
-            const barcodes = await detector.detect(canvas)
-            if (barcodes && barcodes[0]?.rawValue) {
-              const code = String(barcodes[0].rawValue).trim()
+            const now = Date.now()
+            // Downscale for faster decoding on mobile devices.
+            const maxDim = 900
+            const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight))
+            const drawW = Math.max(1, Math.floor(video.videoWidth * scale))
+            const drawH = Math.max(1, Math.floor(video.videoHeight * scale))
+            canvas.width = drawW
+            canvas.height = drawH
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+
+            const shouldTryPrimary = now - lastPrimaryDetectAt > 350
+            if (shouldTryPrimary) lastPrimaryDetectAt = now
+
+            let barcodes: any[] | undefined
+            if (shouldTryPrimary) {
+              barcodes = detector ? await detector.detect(canvas) : undefined
+            }
+
+            if (barcodes && barcodes.length) {
+              primaryDetected = true
+              const decoded = (b: any) => {
+                const value = b?.rawValue ?? b?.value
+                return typeof value === 'string' ? value.trim() : ''
+              }
+
+              // If multiple codes are found, prefer QR first (as requested by client).
+              // Different browsers may use different field names and format identifiers.
+              const qr = barcodes.find((b: any) => {
+                const fmt = String(b?.format ?? '').toLowerCase()
+                return fmt.includes('qr') && decoded(b)
+              })
+              const chosen = qr ?? barcodes.find((b: any) => decoded(b))
+              const code = decoded(chosen)
               if (code) {
+                primaryDetected = true
                 stopScanner()
                 void handleBarcodeDetected(code)
                 return
+              }
+            }
+            // Fallback if BarcodeDetector returns nothing for a while on this device/browser.
+            const shouldStartFallback = !primaryDetected && !fallbackStarted && now - scanStartedAt > 2500
+            if (shouldStartFallback) {
+              fallbackStarted = true
+            }
+
+            const shouldTryZxing = fallbackStarted && !primaryDetected && now - lastZxingAttemptAt > 1200 && !zxingBusy
+            if (shouldTryZxing) {
+              zxingBusy = true
+              lastZxingAttemptAt = now
+
+              const decodeWithZXing = async (mode: 'qr' | 'barcode') => {
+                const ZXing = await loadZXingFromCDN()
+                const {
+                  MultiFormatReader,
+                  DecodeHintType,
+                  BarcodeFormat,
+                  BinaryBitmap,
+                  HybridBinarizer,
+                  RGBLuminanceSource,
+                } = ZXing
+
+                const hints = new Map()
+                const qrFormats = [BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX]
+                const barcodeFormats = [
+                  BarcodeFormat.CODE_128,
+                  BarcodeFormat.EAN_13,
+                  BarcodeFormat.EAN_8,
+                  BarcodeFormat.UPC_A,
+                  BarcodeFormat.UPC_E,
+                ]
+                hints.set(DecodeHintType.POSSIBLE_FORMATS, mode === 'qr' ? qrFormats : barcodeFormats)
+
+                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+                const luminanceSource = new RGBLuminanceSource(
+                  new Uint8ClampedArray(imageData.data),
+                  canvas.width,
+                  canvas.height
+                )
+                const binaryBitmap = new BinaryBitmap(new HybridBinarizer(luminanceSource))
+
+                const reader = new MultiFormatReader()
+                reader.setHints(hints)
+                const result = reader.decode(binaryBitmap)
+                const text = typeof result.getText === 'function' ? result.getText() : result.text
+                const format =
+                  typeof result.getBarcodeFormat === 'function' ? result.getBarcodeFormat().toString() : ''
+                return { text: String(text || '').trim(), format }
+              }
+
+              try {
+                // QR first, as requested by the client.
+                const qrResult = await decodeWithZXing('qr')
+                if (qrResult?.text) {
+                  stopScanner()
+                  void handleBarcodeDetected(qrResult.text)
+                  return
+                }
+
+                const bcResult = await decodeWithZXing('barcode')
+                if (bcResult?.text) {
+                  stopScanner()
+                  void handleBarcodeDetected(bcResult.text)
+                  return
+                }
+              } catch (e) {
+                // NotFound or decode failure: ignore and try again later.
+                console.debug('ZXing fallback decode not found/failed', e)
+              } finally {
+                zxingBusy = false
               }
             }
           } catch (err) {
@@ -211,12 +379,22 @@ export function ChatPage() {
       requestAnimationFrame(loop)
     } catch (err) {
       console.error(err)
-      setScannerError('Unable to access camera. Please check browser permissions.')
+      const name = (err as { name?: string })?.name || ''
+      if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+        setScannerError('Camera permission denied. Please allow camera access in browser site settings.')
+      } else if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+        setScannerError('No camera found on this device.')
+      } else if (name === 'NotReadableError' || name === 'TrackStartError') {
+        setScannerError('Camera is busy in another app. Please close other camera apps and try again.')
+      } else {
+        setScannerError('Unable to access camera. Please check browser permissions.')
+      }
     }
   }
 
   function stopScanner() {
     setScanning(false)
+    scanningRef.current = false
     setScannerOpen(false)
     setManualBarcode('')
     setManualBarcodeSubmitting(false)
@@ -316,7 +494,7 @@ export function ChatPage() {
     setSaveMessage(null)
     setLoadingValidate(true)
     try {
-      const data = await api.ai.validateActivity(result.structured, result.rawText)
+      const data = await api.ai.validateActivity(result.structured, result.rawText, imageUrls)
       setValidation(data)
     } catch (err) {
       const message = (err as Error).message || 'Failed to validate activity'
@@ -498,6 +676,13 @@ export function ChatPage() {
 
   return (
     <AdminShell>
+      <style>{`
+        @keyframes scanner-sweep {
+          0% { top: 0; opacity: 0.55; }
+          50% { opacity: 1; }
+          100% { top: calc(100% - 2px); opacity: 0.55; }
+        }
+      `}</style>
       <main className="max-w-6xl mx-auto px-5 sm:px-6 md:px-8 py-4 md:py-6 overflow-x-hidden">
         {/* Header row */}
         <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -574,6 +759,21 @@ export function ChatPage() {
               <div className="px-4 pt-3 pb-4 space-y-3 flex-1 overflow-auto">
                 <div className="relative w-full rounded-xl overflow-hidden bg-black/80 aspect-video flex items-center justify-center md:aspect-video">
                   <video ref={videoRef} className="w-full h-full object-cover" muted playsInline />
+                  {scanning && !scannerError && (
+                    <>
+                      <div className="pointer-events-none absolute inset-4 rounded-lg border-2 border-white/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.18)_inset]" />
+                      <div className="pointer-events-none absolute inset-x-6 top-6 bottom-6 overflow-hidden">
+                        <div
+                          className="absolute left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-emerald-300 to-transparent shadow-[0_0_12px_rgba(16,185,129,0.95)]"
+                          style={{ animation: 'scanner-sweep 1.7s linear infinite alternate' }}
+                        />
+                      </div>
+                      <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full border border-white/35 bg-black/45 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white">
+                        <span className="inline-flex h-1.5 w-1.5 rounded-full bg-emerald-300 animate-pulse" />
+                        Scanning...
+                      </div>
+                    </>
+                  )}
                   {!scanning && !scannerError && (
                     <p className="absolute inset-x-0 bottom-3 text-center text-[11px] text-white/80">
                       Initializing camera…
@@ -653,6 +853,16 @@ export function ChatPage() {
               <div className="px-4 pt-4 pb-5 space-y-3">
                 <div className="grid gap-2">
                   <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
+                    AI follow-up
+                  </label>
+                  <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-[12px] text-[#444] leading-relaxed">
+                    {barcodeModal.prompt ||
+                      'Please confirm customer and part details so this barcode can be reused automatically.'}
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
                     Customer
                   </label>
                   <input
@@ -661,6 +871,9 @@ export function ChatPage() {
                     placeholder="Bosch"
                     className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
                   />
+                  {barcodeModal.fields?.includes('customer') && !barcodeCustomer.trim() ? (
+                    <p className="text-[11px] text-amber-700">Required for first-time barcode mapping.</p>
+                  ) : null}
                 </div>
 
                 <div className="grid gap-2">
@@ -673,6 +886,9 @@ export function ChatPage() {
                     placeholder="Brake Housing"
                     className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
                   />
+                  {barcodeModal.fields?.includes('partName') && !barcodePartName.trim() ? (
+                    <p className="text-[11px] text-amber-700">Required for first-time barcode mapping.</p>
+                  ) : null}
                 </div>
 
                 <div className="grid gap-2">
@@ -713,6 +929,16 @@ export function ChatPage() {
                     disabled={savingBarcode}
                     onClick={async () => {
                       if (!barcodeModal?.barcode) return
+                      const needsCustomer = barcodeModal.fields?.includes('customer')
+                      const needsPartName = barcodeModal.fields?.includes('partName')
+                      if (needsCustomer && !barcodeCustomer.trim()) {
+                        toast.error('Please provide customer for this barcode.')
+                        return
+                      }
+                      if (needsPartName && !barcodePartName.trim()) {
+                        toast.error('Please provide part name for this barcode.')
+                        return
+                      }
                       setSavingBarcode(true)
                       try {
                         const payload = {
@@ -840,7 +1066,8 @@ export function ChatPage() {
                     }
                   }}
                   disabled={!selectedActivityId || archiving}
-                  className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[12px] font-semibold text-[#666] hover:bg-black/[0.03] disabled:opacity-50"
+                  title={!selectedActivityId ? 'Select a log first to enable Archive' : 'Archive selected log'}
+                  className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-red-700 bg-red-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-red-700 disabled:bg-red-100 disabled:text-red-600 disabled:border-red-300 disabled:shadow-none"
                 >
                   <Archive className="w-4 h-4" />
                   {archiving ? 'Archiving…' : 'Archive'}
@@ -965,7 +1192,8 @@ export function ChatPage() {
                     }
                   }}
                   disabled={!selectedActivityId || archiving}
-                  className="inline-flex items-center gap-1.5 h-8 rounded-full px-3 text-[11px] font-semibold text-[#666] hover:bg-black/[0.03] disabled:opacity-50 border border-[var(--color-border)] bg-white transition-colors"
+                  title={!selectedActivityId ? 'Select a log first to enable Archive' : 'Archive selected log'}
+                  className="inline-flex items-center gap-1.5 h-8 rounded-full px-3 text-[11px] font-semibold text-white border border-red-700 bg-red-600 shadow-sm hover:bg-red-700 disabled:bg-red-100 disabled:text-red-600 disabled:border-red-300 disabled:shadow-none transition-colors"
                 >
                   <Archive className="w-3.5 h-3.5" />
                   {archiving ? 'Archiving…' : 'Archive'}
