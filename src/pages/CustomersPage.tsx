@@ -37,6 +37,7 @@ export function CustomersPage() {
   const [editEmail, setEditEmail] = useState('')
   const [editNotes, setEditNotes] = useState('')
   const [updating, setUpdating] = useState(false)
+  const [deleteCandidate, setDeleteCandidate] = useState<Customer | null>(null)
 
   useEffect(() => {
     const load = async () => {
@@ -138,6 +139,15 @@ export function CustomersPage() {
     } finally {
       setDeletingId(null)
     }
+  }
+
+  function openDeleteConfirm(customer: Customer) {
+    if (!isAdmin) return
+    setDeleteCandidate(customer)
+  }
+
+  function closeDeleteConfirm() {
+    setDeleteCandidate(null)
   }
 
   function openEdit(c: Customer) {
@@ -345,6 +355,59 @@ export function CustomersPage() {
           </div>
         )}
 
+        {deleteCandidate && isAdmin && (
+          <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
+            <div className="w-full max-w-md rounded-2xl bg-white border border-[var(--color-border)] shadow-xl overflow-hidden">
+              <div className="px-5 py-4 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                    Confirm delete
+                  </p>
+                  <p className="text-[14px] font-semibold text-[var(--color-text)] truncate">
+                    Delete customer
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={closeDeleteConfirm}
+                  className="inline-flex items-center justify-center h-9 w-9 rounded-full border border-[var(--color-border)] hover:bg-[var(--color-bg)]"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-5 space-y-4">
+                <p className="text-[14px] text-[var(--color-text)]">
+                  Are you sure you want to delete <span className="font-semibold">{deleteCandidate.name}</span>?
+                </p>
+                <p className="text-[12px] text-[var(--color-text-secondary)]">
+                  This action cannot be undone.
+                </p>
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={closeDeleteConfirm}
+                    className="inline-flex items-center justify-center h-10 rounded-xl border border-[var(--color-border)] px-4 text-[13px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deletingId === deleteCandidate._id}
+                    onClick={async () => {
+                      await handleDeleteCustomer(deleteCandidate._id)
+                      closeDeleteConfirm()
+                    }}
+                    className="inline-flex items-center justify-center h-10 rounded-xl bg-red-600 hover:bg-red-700 px-4 text-[13px] font-semibold text-white disabled:opacity-60"
+                  >
+                    {deletingId === deleteCandidate._id ? 'Deleting…' : 'Delete'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <section className="mb-6 sm:mb-8">
           <div className="rounded-2xl border border-[var(--color-primary)]/15 bg-gradient-to-r from-[v`ar(--color-primary)]/10 via-white to-white p-5 sm:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -442,7 +505,7 @@ export function CustomersPage() {
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteCustomer(c._id)}
+                              onClick={() => openDeleteConfirm(c)}
                               disabled={deletingId === c._id}
                               className="inline-flex items-center justify-center gap-1 rounded-lg px-2 py-1.5 text-[11px] font-medium text-red-600 hover:bg-red-50 border border-red-100 disabled:opacity-60"
                             >
@@ -509,7 +572,7 @@ export function CustomersPage() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleDeleteCustomer(c._id)}
+                                onClick={() => openDeleteConfirm(c)}
                                 disabled={deletingId === c._id}
                                 className="inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-[12px] font-medium text-red-600 hover:bg-red-50 border border-red-100 disabled:opacity-60"
                               >

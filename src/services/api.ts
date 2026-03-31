@@ -22,13 +22,48 @@ async function request<T>(path: string, options?: RequestInit & { skipAuth?: boo
     const token = getToken()
     if (token) headers['Authorization'] = `Bearer ${token}`
   }
-  const res = await fetch(url, { ...options, headers })
-  const data = await res.json().catch(() => ({}))
+  let res: Response
+  try {
+    res = await fetch(url, { ...options, headers })
+  } catch (e) {
+    // Covers network failures (including CORS / backend not reachable)
+    const baseMessage = e instanceof Error ? e.message : 'Network request failed'
+    const isFetchFailure = baseMessage.toLowerCase().includes('failed to fetch')
+    const message = isFetchFailure
+      ? 'Network error: could not reach the server. Check backend URL, CORS, and server status.'
+      : baseMessage
+
+    throw new Error(message)
+  }
+
+  let data: unknown = {}
+  try {
+    data = await res.json()
+  } catch {
+    // If backend doesn't return JSON (or empty body), fall back to text for better error messages
+    try {
+      const text = await res.text()
+      data = { error: text }
+    } catch {
+      data = {}
+    }
+  }
+
   if (!res.ok) {
-    const err = new Error((data as { error?: string }).error || res.statusText) as Error & { status?: number }
+    const asAny = data as { error?: unknown; message?: unknown }
+    const serverMessage =
+      (typeof asAny?.error === 'string' && asAny.error.trim()) ||
+      (typeof asAny?.message === 'string' && asAny.message.trim())
+
+    const message = serverMessage
+      ? `HTTP ${res.status}: ${serverMessage}`
+      : `HTTP ${res.status}: ${res.statusText}`
+
+    const err = new Error(message) as Error & { status?: number }
     err.status = res.status
     throw err
   }
+
   return data as T
 }
 
@@ -222,6 +257,32 @@ export const api = {
       includeCustomerSummaries?: boolean
     }) =>
       request<{ report: string; reportId: string }>('/api/reports/generate', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    /** Natural-language search (admin). Example: "Show me all Bosch issues last week". */
+    adminAiQuery: (payload: { question: string; limit?: number }) =>
+      request<{
+        interpretation: string
+        count: number
+        answer?: string
+        activities: {
+          _id: string
+          customer?: string
+          summary?: string
+          createdAt: string
+          isArchived?: boolean
+          userId?: { _id: string; name?: string; email?: string; role?: string }
+        }[]
+      }>('/api/activities/admin/ai-query', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    /** Generate a weekly report narrative from an admin question (AI -> filters -> weekly report). */
+    adminAiWeeklyReport: (payload: { question: string; limit?: number }) =>
+      request<{ report: string; reportId: string }>('/api/activities/admin/ai-weekly-report', {
         method: 'POST',
         body: JSON.stringify(payload),
       }),

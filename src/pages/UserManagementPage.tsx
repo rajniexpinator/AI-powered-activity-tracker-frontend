@@ -8,6 +8,7 @@ import { useAuth } from '@/context/AuthContext'
 import { AdminShell } from '@/components/layout/AdminShell'
 
 const ROLES: User['role'][] = ['admin', 'employee']
+const PAGE_SIZE = 5
 
 const ROLE_STYLES: Record<User['role'], string> = {
   admin: 'bg-[var(--color-primary)] !text-white',
@@ -34,6 +35,7 @@ export function UserManagementPage() {
   const [deleteUser, setDeleteUser] = useState<User | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [openActionsForUserId, setOpenActionsForUserId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
 
   const loadUsers = useCallback(async () => {
     setError('')
@@ -50,6 +52,10 @@ export function UserManagementPage() {
   useEffect(() => {
     loadUsers()
   }, [loadUsers])
+
+  useEffect(() => {
+    setPage(1)
+  }, [users.length])
 
   useEffect(() => {
     if (showAddModal) document.body.style.overflow = 'hidden'
@@ -196,6 +202,9 @@ export function UserManagementPage() {
   function toggleActionsMenu(userId: string) {
     setOpenActionsForUserId((prev) => (prev === userId ? null : userId))
   }
+
+  const totalPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE))
+  const paginatedUsers = users.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <AdminShell>
@@ -389,7 +398,7 @@ export function UserManagementPage() {
                   </p>
                 </div>
                 <div className="md:hidden">
-                  {users.length === 0 ? (
+                  {paginatedUsers.length === 0 ? (
                     <div className="px-5 sm:px-6 py-12 text-center">
                       <div className="flex flex-col items-center gap-4 text-[var(--color-text-secondary)]">
                         <span className="flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-bg)]">
@@ -409,7 +418,7 @@ export function UserManagementPage() {
                     </div>
                   ) : (
                     <div className="divide-y divide-[var(--color-border)]">
-                      {users.map((u) => (
+                      {paginatedUsers.map((u) => (
                         <div key={u.id} className="px-4 py-3.5 space-y-3">
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -528,7 +537,7 @@ export function UserManagementPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[var(--color-border)]">
-              {users.length === 0 ? (
+              {paginatedUsers.length === 0 ? (
                 <tr>
                   <td colSpan={4} className="px-5 sm:px-6 md:px-8 py-16 sm:py-20 text-center">
                     <div className="flex flex-col items-center gap-4 text-[var(--color-text-secondary)]">
@@ -549,7 +558,7 @@ export function UserManagementPage() {
                   </td>
                 </tr>
               ) : (
-                users.map((u) => (
+                paginatedUsers.map((u) => (
                   <tr key={u.id} className="hover:bg-[var(--color-bg)]/60 transition-colors">
                     <td className="px-5 sm:px-6 md:px-8 py-4">
                       <div className="flex items-center gap-3">
@@ -664,6 +673,34 @@ export function UserManagementPage() {
                     </tbody>
                   </table>
                 </div>
+                {users.length > 0 && (
+                  <div className="border-t border-[var(--color-border)] px-5 sm:px-6 md:px-8 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-[var(--color-bg)]/60">
+                    <p className="text-[12px] text-[var(--color-text-secondary)]">
+                      Showing {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, users.length)} of {users.length}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        disabled={page === 1}
+                        className="inline-flex items-center justify-center h-8 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-medium text-[var(--color-text)] hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Previous
+                      </button>
+                      <span className="text-[12px] text-[var(--color-text-secondary)]">
+                        Page {page} of {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        disabled={page >= totalPages}
+                        className="inline-flex items-center justify-center h-8 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-medium text-[var(--color-text)] hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                )}
               </section>
 
       {/* Add User Modal */}

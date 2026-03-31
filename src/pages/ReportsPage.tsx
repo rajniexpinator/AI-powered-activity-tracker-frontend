@@ -61,7 +61,10 @@ export function ReportsPage() {
       setRecipientsTo((recipientsRes.recipients.to || []).join(', '))
       setRecipientsCc((recipientsRes.recipients.cc || []).join(', '))
     } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to refresh Microsoft 365 settings'
+      setError(msg)
       setMs365Configured(false)
+      toast.error(msg)
     }
   }
 

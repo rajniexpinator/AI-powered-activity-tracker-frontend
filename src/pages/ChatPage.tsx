@@ -34,6 +34,7 @@ type ValidationResult = {
 }
 
 type StructuredActivity = {
+  customer?: string
   summary?: string
   part_name?: string
   intent?: string
@@ -52,7 +53,7 @@ type ActivityDetail = {
   createdAt: string
 }
 
-const MAX_IMAGES_PER_ENTRY = 4
+const MAX_IMAGES_PER_ENTRY = 8
 
 export function ChatPage() {
   const { user } = useAuth()
@@ -120,6 +121,10 @@ export function ChatPage() {
   const [recentModalOpen, setRecentModalOpen] = useState(false)
   const newLogButtonRef = useRef<HTMLButtonElement | null>(null)
 
+  function normalizeCustomerName(value: string) {
+    return value.trim().toLowerCase().replace(/\s+/g, ' ')
+  }
+
   function openBarcodeModal(payload: NonNullable<typeof barcodeModal>) {
     setBarcodeModal(payload)
     setBarcodeCustomer(payload.customer ?? '')
@@ -134,6 +139,15 @@ export function ChatPage() {
     setBarcodePartName('')
     setBarcodePartNumber('')
     setBarcodeNotes('')
+  }
+
+  /** iPhone / iPad browsers (including Chrome on iOS) use WebKit; BarcodeDetector is often missing or unreliable. */
+  function isAppleMobileWebKit() {
+    if (typeof navigator === 'undefined') return false
+    const ua = navigator.userAgent || ''
+    if (/iPhone|iPad|iPod/i.test(ua)) return true
+    const nav = navigator as Navigator & { maxTouchPoints?: number }
+    return nav.platform === 'MacIntel' && (nav.maxTouchPoints ?? 0) > 1
   }
 
   async function loadZXingFromCDN() {
@@ -224,13 +238,17 @@ export function ChatPage() {
         await videoRef.current.play()
       }
       const hasBarcodeDetector = Boolean((window as any).BarcodeDetector)
+      const useZxingOnApple = isAppleMobileWebKit()
+      // On Apple mobile WebKit, run ZXing immediately — native detector is often absent or never returns results.
+      const preferZxingImmediately = !hasBarcodeDetector || useZxingOnApple
+      const zxingIntervalMs = preferZxingImmediately ? 400 : 1200
       setScanning(true)
       scanningRef.current = true
 
       // Create a primary detector only if the browser supports it.
       // If not supported (common on some iPhones), we will rely on the ZXing fallback.
       let detector: any = null
-      if (hasBarcodeDetector) {
+      if (hasBarcodeDetector && !useZxingOnApple) {
         const desiredFormats = ['qr_code', 'data_matrix', 'code_128', 'ean_13', 'ean_8', 'upc_a', 'upc_e']
         const supportedFormats =
           typeof (window as any).BarcodeDetector.getSupportedFormats === 'function'
@@ -248,8 +266,7 @@ export function ChatPage() {
       const ctx = canvas.getContext('2d')
       const scanStartedAt = Date.now()
       let primaryDetected = false
-      // If BarcodeDetector doesn't exist, start fallback immediately.
-      let fallbackStarted = !hasBarcodeDetector
+      let fallbackStarted = preferZxingImmediately
       let zxingBusy = false
       let lastPrimaryDetectAt = 0
       let lastZxingAttemptAt = 0
@@ -259,8 +276,8 @@ export function ChatPage() {
         if (video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0 && ctx) {
           try {
             const now = Date.now()
-            // Downscale for faster decoding on mobile devices.
-            const maxDim = 900
+            // Slightly higher resolution on Apple mobile helps ZXing; still capped for performance.
+            const maxDim = preferZxingImmediately ? 1024 : 900
             const scale = Math.min(1, maxDim / Math.max(video.videoWidth, video.videoHeight))
             const drawW = Math.max(1, Math.floor(video.videoWidth * scale))
             const drawH = Math.max(1, Math.floor(video.videoHeight * scale))
@@ -304,7 +321,8 @@ export function ChatPage() {
               fallbackStarted = true
             }
 
-            const shouldTryZxing = fallbackStarted && !primaryDetected && now - lastZxingAttemptAt > 1200 && !zxingBusy
+            const shouldTryZxing =
+              fallbackStarted && !primaryDetected && now - lastZxingAttemptAt > zxingIntervalMs && !zxingBusy
             if (shouldTryZxing) {
               zxingBusy = true
               lastZxingAttemptAt = now
@@ -317,35 +335,71 @@ export function ChatPage() {
                   BarcodeFormat,
                   BinaryBitmap,
                   HybridBinarizer,
+                  GlobalHistogramBinarizer,
                   RGBLuminanceSource,
+                  HTMLCanvasElementLuminanceSource,
+                  InvertedLuminanceSource,
                 } = ZXing
 
                 const hints = new Map()
-                const qrFormats = [BarcodeFormat.QR_CODE, BarcodeFormat.DATA_MATRIX]
+                hints.set(DecodeHintType.TRY_HARDER, true)
+
+                const qrFormats = [
+                  BarcodeFormat.QR_CODE,
+                  BarcodeFormat.DATA_MATRIX,
+                  BarcodeFormat.AZTEC,
+                ].filter(Boolean)
                 const barcodeFormats = [
                   BarcodeFormat.CODE_128,
                   BarcodeFormat.EAN_13,
                   BarcodeFormat.EAN_8,
                   BarcodeFormat.UPC_A,
                   BarcodeFormat.UPC_E,
-                ]
+                  BarcodeFormat.CODE_39,
+                  BarcodeFormat.CODE_93,
+                  BarcodeFormat.ITF,
+                  BarcodeFormat.PDF_417,
+                  BarcodeFormat.CODABAR,
+                ].filter(Boolean)
                 hints.set(DecodeHintType.POSSIBLE_FORMATS, mode === 'qr' ? qrFormats : barcodeFormats)
 
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
-                const luminanceSource = new RGBLuminanceSource(
-                  new Uint8ClampedArray(imageData.data),
-                  canvas.width,
-                  canvas.height
-                )
-                const binaryBitmap = new BinaryBitmap(new HybridBinarizer(luminanceSource))
+                let luminanceSource: any
+                if (typeof HTMLCanvasElementLuminanceSource === 'function') {
+                  luminanceSource = new HTMLCanvasElementLuminanceSource(canvas)
+                } else {
+                  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height)
+                  const grey = new Uint8ClampedArray(canvas.width * canvas.height)
+                  const d = imageData.data
+                  let j = 0
+                  for (let i = 0; i < d.length; i += 4) {
+                    grey[j++] = ((d[i] * 299 + d[i + 1] * 587 + d[i + 2] * 114 + 500) / 1000) | 0
+                  }
+                  luminanceSource = new RGBLuminanceSource(grey, canvas.width, canvas.height)
+                }
 
-                const reader = new MultiFormatReader()
-                reader.setHints(hints)
-                const result = reader.decode(binaryBitmap)
-                const text = typeof result.getText === 'function' ? result.getText() : result.text
-                const format =
-                  typeof result.getBarcodeFormat === 'function' ? result.getBarcodeFormat().toString() : ''
-                return { text: String(text || '').trim(), format }
+                const trySources = [luminanceSource]
+                if (typeof InvertedLuminanceSource === 'function') {
+                  trySources.push(new InvertedLuminanceSource(luminanceSource))
+                }
+
+                for (const source of trySources) {
+                  for (const Binarizer of [HybridBinarizer, GlobalHistogramBinarizer]) {
+                    if (typeof Binarizer !== 'function') continue
+                    try {
+                      const reader = new MultiFormatReader()
+                      reader.setHints(hints)
+                      const binaryBitmap = new BinaryBitmap(new Binarizer(source))
+                      const result = reader.decode(binaryBitmap)
+                      const text = typeof result.getText === 'function' ? result.getText() : result.text
+                      const format =
+                        typeof result.getBarcodeFormat === 'function' ? result.getBarcodeFormat().toString() : ''
+                      return { text: String(text || '').trim(), format }
+                    } catch {
+                      // NotFoundException: try next binarizer / source
+                    }
+                  }
+                }
+                return { text: '', format: '' }
               }
 
               try {
@@ -429,6 +483,15 @@ export function ChatPage() {
     }
     void loadCustomers()
   }, [])
+
+  useEffect(() => {
+    if (selectedCustomerId || !customerHint.trim() || customers.length === 0) return
+    const normalized = normalizeCustomerName(customerHint)
+    const matched = customers.find((c) => normalizeCustomerName(c.name) === normalized)
+    if (matched?._id) {
+      setSelectedCustomerId(matched._id)
+    }
+  }, [customers, customerHint, selectedCustomerId])
 
   function resetToNewLog() {
     setSelectedActivityId(null)
@@ -525,6 +588,14 @@ export function ChatPage() {
       }
 
       const base = (result.structured || {}) as any
+      const selectedCustomerName =
+        selectedCustomerId && customers.length > 0
+          ? customers.find((c) => c._id === selectedCustomerId)?.name?.trim() || ''
+          : ''
+      const resolvedCustomer =
+        selectedCustomerName ||
+        customerHint.trim() ||
+        (typeof base.customer === 'string' && base.customer.trim() ? base.customer.trim() : '')
       const resolvedSummary = editSummary || base.summary || ''
       const resolvedPartName = editPartName || base.part_name || ''
       const resolvedIntent = editIntent || base.intent || ''
@@ -549,6 +620,7 @@ export function ChatPage() {
         String(resolvedOutcome).trim(),
         String(nextActionsKey).trim(),
         String(resolvedNotes).trim(),
+        String(resolvedCustomer).trim(),
         String(imagesKey),
       ].join('||')
 
@@ -560,6 +632,7 @@ export function ChatPage() {
 
       const editedStructured = {
         ...base,
+        customer: resolvedCustomer || base.customer,
         summary: resolvedSummary || base.summary,
         part_name: resolvedPartName || base.part_name,
         intent: resolvedIntent || base.intent,
@@ -615,6 +688,8 @@ export function ChatPage() {
     setSavedResultKey(null)
     setCustomerHintTouched(false)
     try {
+      const recentListCustomer =
+        recentActivities.find((a) => a._id === id)?.customer?.trim() || ''
       const { activity } = await api.activities.getOne(id)
       const detail = activity as ActivityDetail
 
@@ -636,6 +711,23 @@ export function ChatPage() {
       setImageUrls(detail.images ?? [])
       setImageFile(null)
       setImagePreview(null)
+      const detailCustomer =
+        (typeof detail.customer === 'string' && detail.customer.trim()) ||
+        (typeof structured.customer === 'string' && structured.customer.trim()) ||
+        recentListCustomer ||
+        ''
+      if (detailCustomer) {
+        const normalizedDetailCustomer = normalizeCustomerName(detailCustomer)
+        const matchedCustomer = customers.find(
+          (c) => normalizeCustomerName(c.name) === normalizedDetailCustomer
+        )
+        setSelectedCustomerId(matchedCustomer?._id ?? '')
+        setCustomerHint(detailCustomer)
+      } else {
+        setSelectedCustomerId('')
+        setCustomerHint('')
+      }
+      setCustomerHintTouched(false)
 
       // Prevent re-saving an existing activity from history
       const existingKey = [
@@ -745,7 +837,15 @@ export function ChatPage() {
                   </span>
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#555]">Barcode scanner</p>
-                    <p className="text-[12px] text-[#777]">Point your camera at the barcode to capture it.</p>
+                    <p className="text-[12px] text-[#777]">
+                      Point your camera at the barcode to capture it.
+                      {isAppleMobileWebKit() && (
+                        <span className="block mt-1 text-[11px] text-[#999]">
+                          On iPhone, use bright light, hold steady, and fill the frame. Safari and Chrome on iOS use the
+                          same camera; the site must be opened over HTTPS (not HTTP) except on localhost.
+                        </span>
+                      )}
+                    </p>
                   </div>
                 </div>
                 <button
@@ -1625,8 +1725,37 @@ export function ChatPage() {
                 {uploadError && (
                   <p className="text-[11px] text-red-600">{uploadError}</p>
                 )}
+                {imageUrls.length > 0 && (
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                    {imageUrls.map((url, idx) => (
+                      <div
+                        key={`${url}-${idx}`}
+                        className="relative rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)] group"
+                      >
+                        <a href={url} target="_blank" rel="noreferrer" title="Open image">
+                          <img
+                            src={url}
+                            alt={`Uploaded activity ${idx + 1}`}
+                            className="h-20 w-full object-cover transition-transform group-hover:scale-[1.02]"
+                          />
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setImageUrls((prev) => prev.filter((_, imageIdx) => imageIdx !== idx))
+                          }
+                          className="absolute top-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80"
+                          aria-label={`Remove image ${idx + 1}`}
+                          title="Remove image"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <p className="text-[11px] text-[#777] leading-relaxed">
-                  Upload up to 4 photos as evidence for this activity (defect, part label/barcode, workstation
+                  Upload up to 8 photos as evidence for this activity (defect, part label/barcode, workstation
                   condition, or before/after repair). Use clear images that help explain the issue and resolution.
                 </p>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">

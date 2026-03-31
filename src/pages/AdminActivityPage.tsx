@@ -3,7 +3,7 @@ import { api, getToken } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import type { User } from '@/types/auth'
 import { AdminShell } from '@/components/layout/AdminShell'
-import { BarChart3, Filter, Users, Building2, Calendar, FileText, AlertCircle, Archive, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, Loader2, Trash2, MoreVertical } from 'lucide-react'
+import { BarChart3, Filter, Users, Building2, Calendar, FileText, AlertCircle, Archive, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, Loader2, Trash2, MoreVertical, Sparkles } from 'lucide-react'
 import { toast } from 'react-toastify'
 
 type AdminActivity = {
@@ -33,6 +33,7 @@ export function AdminActivityPage() {
 
   const [loading, setLoading] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
+  const [loadingAiWeeklyReport, setLoadingAiWeeklyReport] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [actionMenuId, setActionMenuId] = useState<string | null>(null)
@@ -41,6 +42,9 @@ export function AdminActivityPage() {
   const [error, setError] = useState<string>('')
   const [includeCustomerSummaries, setIncludeCustomerSummaries] = useState(false)
   const [filtersOpen, setFiltersOpen] = useState(false)
+  const [aiOverlay, setAiOverlay] = useState<{ interpretation: string; activities: AdminActivity[]; answer?: string } | null>(null)
+  const [aiQuestion, setAiQuestion] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
   const requestSeq = useRef(0)
   const pageNumbers = useMemo(() => {
     const maxButtons = 5
@@ -112,6 +116,7 @@ export function AdminActivityPage() {
 
   useEffect(() => {
     setPage(1)
+    setAiOverlay(null)
   }, [tab, selectedUserId, selectedCustomer, from, to])
 
   useEffect(() => {
@@ -151,6 +156,60 @@ export function AdminActivityPage() {
       setError(err instanceof Error ? err.message : 'Failed to delete activity')
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  async function handleAiAsk() {
+    const q = aiQuestion.trim()
+    if (!q) {
+      toast.error('Type a question first.')
+      return
+    }
+    setAiLoading(true)
+    setError('')
+    try {
+      const res = await api.activities.adminAiQuery({ question: q, limit: 50 })
+      setAiOverlay({
+        interpretation: res.interpretation || 'Here are the closest matches from your activity logs.',
+        activities: res.activities as AdminActivity[],
+        answer: res.answer,
+      })
+      toast.success(
+        res.count === 0
+          ? 'No matching activities found.'
+          : `Found ${res.count} matching ${res.count === 1 ? 'log' : 'logs'}.`
+      )
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'AI search failed'
+      setError(msg)
+      toast.error(msg)
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  async function handleAiWeeklyReport() {
+    const q = aiQuestion.trim()
+    if (!q) {
+      toast.error('Type a question first.')
+      return
+    }
+    setLoadingAiWeeklyReport(true)
+    setError('')
+    try {
+      const { report: nextReport, reportId } = await api.activities.adminAiWeeklyReport({
+        question: q,
+        limit: 200,
+      })
+      setReport(nextReport)
+      setReportId(reportId)
+      toast.success('Weekly report generated from your AI question.')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to generate weekly report'
+      setError(msg)
+      toast.error(msg)
+    } finally {
+      setLoadingAiWeeklyReport(false)
     }
   }
 
@@ -232,6 +291,8 @@ export function AdminActivityPage() {
     return () => document.removeEventListener('mousedown', onMouseDown)
   }, [actionMenuId])
 
+  const displayActivities = aiOverlay?.activities ?? activities
+
   return (
     <AdminShell>
       <main className="py-1 sm:py-0">
@@ -244,8 +305,10 @@ export function AdminActivityPage() {
                 </span>
                 Activity overview
               </h1>
-              <p className="mt-2 text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] max-w-xl">
-                View all AI-logged activities across employees and generate weekly quality reports for suppliers.
+              <p className="mt-2 text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
+                Use filters for exact lists. Ask AI below to query logs in plain English (for example, &quot;Show me
+                all Bosch issues last week&quot;). Generate weekly AI report builds a supplier-style narrative from
+                the current filters; finished reports are stored under Reports.
               </p>
             </div>
             {user && (
@@ -425,6 +488,73 @@ export function AdminActivityPage() {
               {error}
             </div>
           )}
+
+          <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary)]/[0.06] to-[var(--color-bg)] p-4 sm:p-5">
+            <div className="flex items-start gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)]/15 text-[var(--color-primary)]">
+                <Sparkles className="w-5 h-5" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-[13px] font-semibold text-[var(--color-text)]">Ask AI about activity</h3>
+                <p className="mt-1 text-[12px] text-[var(--color-text-secondary)] leading-relaxed">
+                  Type a question in plain English. The assistant maps it to customer names, dates, and keywords,
+                  then searches your database. This is different from the weekly report, which writes one long
+                  narrative from the filtered table.
+                </p>
+                <div className="mt-3 flex flex-col sm:flex-row gap-2 sm:items-end">
+                  <label className="sr-only" htmlFor="admin-ai-question">
+                    Question
+                  </label>
+                  <textarea
+                    id="admin-ai-question"
+                    rows={2}
+                    value={aiQuestion}
+                    onChange={(e) => setAiQuestion(e.target.value)}
+                    placeholder='Example: Show me all Bosch issues last week'
+                    className="w-full flex-1 resize-none rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] text-[var(--color-text)] placeholder:text-[var(--color-text-secondary)]/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleAiAsk()}
+                    disabled={aiLoading || !aiQuestion.trim()}
+                    className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-[13px] font-semibold !text-white shadow-sm hover:opacity-95 disabled:opacity-50 sm:shrink-0"
+                  >
+                    {aiLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Searching…
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-4 h-4" />
+                        Search with AI
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleAiWeeklyReport()}
+                    disabled={loadingAiWeeklyReport || !aiOverlay}
+                    className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl border border-[var(--color-primary)] bg-white px-4 py-2.5 text-[13px] font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-60 disabled:cursor-not-allowed sm:shrink-0"
+                    title="Generate a supplier-style weekly report from the same AI question"
+                  >
+                    {loadingAiWeeklyReport ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Generating…
+                      </>
+                    ) : (
+                      <>
+                        <FileText className="w-4 h-4" />
+                        Generate report
+                      </>
+                    )}
+                  </button>
+                </div>
+             
+              </div>
+            </div>
+          </div>
         </section>
 
         {/* Activity table + weekly report */}
@@ -474,6 +604,30 @@ export function AdminActivityPage() {
               </div>
             </div>
 
+            {aiOverlay && (
+              <div className="px-5 sm:px-6 md:px-8 py-3 border-b border-[var(--color-border)] bg-[var(--color-primary)]/8">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+                  <p className="text-[12px] text-[var(--color-text)] pr-1">
+                    <span className="font-semibold text-[var(--color-primary)]">AI search: </span>
+                    {aiOverlay.interpretation}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setAiOverlay(null)}
+                    className="inline-flex items-center justify-center rounded-lg border border-[var(--color-border)] bg-white px-3 py-1.5 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] shrink-0"
+                  >
+                    Back to filtered list
+                  </button>
+                </div>
+
+                {aiOverlay.answer && (
+                  <div className="mt-2 rounded-xl border border-[var(--color-border)] bg-white/60 px-3 py-2 text-[12px] text-[var(--color-text-secondary)] leading-relaxed whitespace-pre-wrap max-h-[200px] overflow-auto">
+                    {aiOverlay.answer}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div
               className={`hidden md:grid px-5 sm:px-6 md:px-8 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)] bg-[var(--color-bg)] ${
                 tab === 'archived'
@@ -497,16 +651,18 @@ export function AdminActivityPage() {
                   </div>
                 </div>
               )}
-              {loading && activities.length === 0 ? (
+              {loading && displayActivities.length === 0 ? (
                 <div className="px-5 sm:px-6 md:px-8 py-6 text-[13px] text-[var(--color-text-secondary)]">
                   Loading activity…
                 </div>
-              ) : activities.length === 0 ? (
+              ) : displayActivities.length === 0 ? (
                 <div className="px-5 sm:px-6 md:px-8 py-10 text-center text-[13px] text-[var(--color-text-secondary)]">
-                  No activity found for the selected filters.
+                  {aiOverlay
+                    ? 'No activities matched this question. Try broader wording or a different time range.'
+                    : 'No activity found for the selected filters.'}
                 </div>
               ) : (
-                activities.map((a) => (
+                displayActivities.map((a) => (
                   <div
                     key={a._id}
                     className={`px-5 sm:px-6 md:px-8 py-3.5 flex flex-col gap-2 md:grid md:items-center md:gap-x-0 md:gap-y-2 ${
@@ -597,7 +753,7 @@ export function AdminActivityPage() {
                 ))
               )}
             </div>
-            {(totalPages || 1) > 1 && (
+            {!aiOverlay && (totalPages || 1) > 1 && (
               <div className="px-5 sm:px-6 md:px-8 py-3 border-t border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
                 <p className="text-[12px] text-[var(--color-text-secondary)] order-2 sm:order-1">
                   Page {page} of {totalPages || 1} ({total} total)
@@ -670,9 +826,10 @@ export function AdminActivityPage() {
                 Weekly quality report
               </h2>
             </div>
-            <p className="text-[12px] text-[var(--color-text-secondary)] mb-3">
-              AI-generated summary of the filtered activity logs. Use it as a starting point for
-              supplier or management updates.
+            <p className="text-[12px] text-[var(--color-text-secondary)] mb-3 leading-relaxed">
+              One narrative document built from the filtered table (not a Q&amp;A). For questions like &quot;which
+              Bosch issues were logged last week?&quot;, use Ask AI above; you can still paste this report into email
+              or Outlook from the Reports page.
             </p>
             {reportId && (
               <p className="mb-2 text-[11px] text-[var(--color-text-secondary)]">
