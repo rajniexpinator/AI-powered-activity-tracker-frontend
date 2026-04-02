@@ -54,6 +54,8 @@ type ActivityDetail = {
 }
 
 const MAX_IMAGES_PER_ENTRY = 8
+const MAX_IMAGE_FILE_BYTES = 10 * 1024 * 1024 // 10 MB — keep in sync with Backend upload middleware
+const MAX_IMAGE_FILE_ERROR = 'Maximum file size up to 10 MB.'
 
 export function ChatPage() {
   const { user } = useAuth()
@@ -86,6 +88,8 @@ export function ChatPage() {
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
   const [imageUrls, setImageUrls] = useState<string[]>([])
+  const [previewLoadFailed, setPreviewLoadFailed] = useState(false)
+  const [failedUploadedImages, setFailedUploadedImages] = useState<Record<string, boolean>>({})
   const [uploadingImage, setUploadingImage] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [loadingSelected, setLoadingSelected] = useState(false)
@@ -103,6 +107,7 @@ export function ChatPage() {
   const [manualBarcodeSubmitting, setManualBarcodeSubmitting] = useState(false)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const imageInputRef = useRef<HTMLInputElement | null>(null)
   const [barcodeModal, setBarcodeModal] = useState<{
     barcode: string
     mode: 'new' | 'existing'
@@ -123,6 +128,12 @@ export function ChatPage() {
 
   function normalizeCustomerName(value: string) {
     return value.trim().toLowerCase().replace(/\s+/g, ' ')
+  }
+
+  function isUnsupportedIphoneImage(file: File) {
+    const type = (file.type || '').toLowerCase()
+    const name = (file.name || '').toLowerCase()
+    return type.includes('heic') || type.includes('heif') || name.endsWith('.heic') || name.endsWith('.heif')
   }
 
   function openBarcodeModal(payload: NonNullable<typeof barcodeModal>) {
@@ -509,6 +520,9 @@ export function ChatPage() {
     setImageUrls([])
     setImageFile(null)
     setImagePreview(null)
+    setPreviewLoadFailed(false)
+    setFailedUploadedImages({})
+    if (imageInputRef.current) imageInputRef.current.value = ''
     setSavedResultKey(null)
     setCustomerHintTouched(false)
   }
@@ -711,6 +725,9 @@ export function ChatPage() {
       setImageUrls(detail.images ?? [])
       setImageFile(null)
       setImagePreview(null)
+      setPreviewLoadFailed(false)
+      setFailedUploadedImages({})
+      if (imageInputRef.current) imageInputRef.current.value = ''
       const detailCustomer =
         (typeof detail.customer === 'string' && detail.customer.trim()) ||
         (typeof structured.customer === 'string' && structured.customer.trim()) ||
@@ -1649,14 +1666,34 @@ export function ChatPage() {
                       <ImageIcon className="w-3.5 h-3.5" />
                       <span>{imageFile ? 'Change image' : 'Attach image (optional)'}</span>
                       <input
+                        ref={imageInputRef}
                         type="file"
                         accept="image/*"
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0]
                           if (file) {
+                            if (isUnsupportedIphoneImage(file)) {
+                              setUploadError(
+                                'This iPhone image format (HEIC/HEIF) may not display reliably in web preview. Please use JPG/PNG, or set iPhone Camera > Formats > Most Compatible.'
+                              )
+                              if (imageInputRef.current) imageInputRef.current.value = ''
+                              setImageFile(null)
+                              setImagePreview(null)
+                              setPreviewLoadFailed(false)
+                              return
+                            }
+                            if (file.size > MAX_IMAGE_FILE_BYTES) {
+                              setUploadError(MAX_IMAGE_FILE_ERROR)
+                              if (imageInputRef.current) imageInputRef.current.value = ''
+                              setImageFile(null)
+                              setImagePreview(null)
+                              setPreviewLoadFailed(false)
+                              return
+                            }
                             setImageFile(file)
                             setImagePreview(URL.createObjectURL(file))
+                            setPreviewLoadFailed(false)
                             setUploadError(null)
                           }
                         }}
@@ -1668,6 +1705,8 @@ export function ChatPage() {
                         onClick={() => {
                           setImageFile(null)
                           setImagePreview(null)
+                          setPreviewLoadFailed(false)
+                          if (imageInputRef.current) imageInputRef.current.value = ''
                         }}
                         className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] text-[#666] hover:bg-black/[0.03]"
                       >
@@ -1680,6 +1719,10 @@ export function ChatPage() {
                         type="button"
                         onClick={async () => {
                           if (!imageFile) return
+                          if (imageFile.size > MAX_IMAGE_FILE_BYTES) {
+                            setUploadError(MAX_IMAGE_FILE_ERROR)
+                            return
+                          }
                           if (imageUrls.length >= MAX_IMAGES_PER_ENTRY) {
                             setUploadError(`You can attach up to ${MAX_IMAGES_PER_ENTRY} images per entry.`)
                             return
@@ -1691,6 +1734,8 @@ export function ChatPage() {
                             setImageUrls((prev) => [...prev, url])
                             setImageFile(null)
                             setImagePreview(null)
+                            setPreviewLoadFailed(false)
+                            if (imageInputRef.current) imageInputRef.current.value = ''
                           } catch (err) {
                             const msg = (err as Error).message || 'Failed to upload image'
                             setUploadError(msg)
@@ -1712,7 +1757,18 @@ export function ChatPage() {
                   <div className="flex items-center gap-2">
                     {imagePreview && (
                       <div className="h-10 w-10 rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)]">
-                        <img src={imagePreview} alt="Preview" className="h-full w-full object-cover" />
+                        {!previewLoadFailed ? (
+                          <img
+                            src={imagePreview}
+                            alt="Preview"
+                            className="h-full w-full object-cover"
+                            onError={() => setPreviewLoadFailed(true)}
+                          />
+                        ) : (
+                          <div className="h-full w-full flex items-center justify-center text-[9px] text-red-600 px-1 text-center">
+                            Load failed
+                          </div>
+                        )}
                       </div>
                     )}
                     {imageUrls.length > 0 && (
@@ -1733,11 +1789,23 @@ export function ChatPage() {
                         className="relative rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)] group"
                       >
                         <a href={url} target="_blank" rel="noreferrer" title="Open image">
-                          <img
-                            src={url}
-                            alt={`Uploaded activity ${idx + 1}`}
-                            className="h-20 w-full object-cover transition-transform group-hover:scale-[1.02]"
-                          />
+                          {!failedUploadedImages[url] ? (
+                            <img
+                              src={url}
+                              alt={`Uploaded activity ${idx + 1}`}
+                              className="h-20 w-full object-cover transition-transform group-hover:scale-[1.02]"
+                              onError={() =>
+                                setFailedUploadedImages((prev) => ({
+                                  ...prev,
+                                  [url]: true,
+                                }))
+                              }
+                            />
+                          ) : (
+                            <div className="h-20 w-full flex items-center justify-center text-[10px] text-red-600 px-2 text-center bg-[var(--color-bg)]">
+                              Image load failed
+                            </div>
+                          )}
                         </a>
                         <button
                           type="button"
@@ -1756,7 +1824,8 @@ export function ChatPage() {
                 )}
                 <p className="text-[11px] text-[#777] leading-relaxed">
                   Upload up to 8 photos as evidence for this activity (defect, part label/barcode, workstation
-                  condition, or before/after repair). Use clear images that help explain the issue and resolution.
+                  condition, or before/after repair). Each image may be up to 10 MB. Use clear images that help explain
+                  the issue and resolution.
                 </p>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <p className="text-[11px] text-[#999] hidden sm:block">
