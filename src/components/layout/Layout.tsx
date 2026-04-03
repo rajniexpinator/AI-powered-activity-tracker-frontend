@@ -15,7 +15,9 @@ export function Layout() {
     location.pathname === '/activity' ||
     location.pathname.startsWith('/activity/') ||
     location.pathname === '/reports' ||
-    location.pathname.startsWith('/reports/')
+    location.pathname.startsWith('/reports/') ||
+    location.pathname === '/barcode-reports' ||
+    location.pathname.startsWith('/barcode-reports/')
 
   return (
     <div className="min-h-screen flex flex-col bg-[var(--color-bg)]">

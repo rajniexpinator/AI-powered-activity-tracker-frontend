@@ -14,6 +14,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { CustomersPage } from './pages/CustomersPage'
 import { AdminActivityPage } from './pages/AdminActivityPage'
 import { ReportsPage } from './pages/ReportsPage'
+import { BarcodeReportsPage } from './pages/BarcodeReportsPage'
 
 function App() {
   return (
@@ -80,6 +81,16 @@ function App() {
               <ProtectedRoute>
                 <AdminRoute roles={['admin']}>
                   <ReportsPage />
+                </AdminRoute>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="barcode-reports"
+            element={
+              <ProtectedRoute>
+                <AdminRoute roles={['admin']}>
+                  <BarcodeReportsPage />
                 </AdminRoute>
               </ProtectedRoute>
             }

@@ -11,13 +11,23 @@ export function DashboardPage() {
   const { user } = useAuth()
   const [activities, setActivities] = useState<ActivitySummary[]>([])
   const [loading, setLoading] = useState(false)
+  const [todayCount, setTodayCount] = useState<number | null>(null)
+  const [recentLogsTotal, setRecentLogsTotal] = useState<number | null>(null)
+  const [phase, setPhase] = useState<number | null>(null)
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
       try {
-        const { activities } = await api.activities.list({ limit: 5 })
+        const [{ activities, total }, today, apiInfo] = await Promise.all([
+          api.activities.list({ limit: 5 }),
+          api.activities.todayCount(),
+          api.getApiInfo(),
+        ])
         setActivities(activities)
+        setTodayCount(today.todayCount)
+        setRecentLogsTotal(total)
+        setPhase(apiInfo.phase)
       } catch {
         // ignore errors; dashboard still renders
       } finally {
@@ -44,24 +54,35 @@ export function DashboardPage() {
                     View today&apos;s AI logs, jump into chat, and manage your team in one place.
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-2 sm:gap-3 min-w-[220px] max-w-sm">
+                <div className="grid grid-cols-3 gap-2 sm:gap-3 min-w-[280px] max-w-md">
                   <div className="rounded-xl bg-white border border-[var(--color-border)] px-3.5 py-3">
                     <p className="text-[11px] font-medium text-[#777] flex items-center gap-1">
                       <Clock className="w-3.5 h-3.5" />
                       Today
                     </p>
                     <p className="mt-1 text-lg font-semibold text-[#111]">
-                      {activities.length > 0 ? activities.length : '—'}
+                      {typeof todayCount === 'number' ? todayCount : '—'}
                     </p>
-                    <p className="text-[11px] text-[#777]">Recent logs</p>
                   </div>
+
                   <div className="rounded-xl bg-white border border-[var(--color-border)] px-3.5 py-3">
                     <p className="text-[11px] font-medium text-[#777] flex items-center gap-1">
                       <BarChart3 className="w-3.5 h-3.5" />
-                      Phase
+                      Recent logs
                     </p>
-                    <p className="mt-1 text-lg font-semibold text-[#111]">3</p>
-                    <p className="text-[11px] text-[#777]">AI Chat Logging</p>
+                    <p className="mt-1 text-lg font-semibold text-[#111]">
+                      {typeof recentLogsTotal === 'number' ? recentLogsTotal : '—'}
+                    </p>
+                  </div>
+
+                  <div className="rounded-xl bg-white border border-[var(--color-border)] px-3.5 py-3">
+                    <p className="text-[11px] font-medium text-[#777] flex items-center gap-1">
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      AI Chat Logging
+                    </p>
+                    <p className="mt-1 text-lg font-semibold text-[#111]">
+                      {typeof phase === 'number' ? phase : '—'}
+                    </p>
                   </div>
                 </div>
               </div>

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, MessageSquare, Users, Building2, LogOut, Menu, X, BarChart3, UserCircle, FileText } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Users, Building2, LogOut, Menu, X, BarChart3, UserCircle, FileText, ScanLine } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 
 interface AdminShellProps {
@@ -100,6 +100,19 @@ export function AdminShell({ children }: AdminShellProps) {
               </Link>
             )}
             {isAdmin && (
+              <Link
+                to="/barcode-reports"
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                  isActive('/barcode-reports')
+                    ? 'bg-[#3F4B9D] text-white'
+                    : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                }`}
+              >
+                <ScanLine className="w-4 h-4 opacity-80" />
+                Barcode reports
+              </Link>
+            )}
+            {isAdmin && (
               <div className="flex flex-col gap-0.5 mt-2">
                 <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
                   People
@@ -168,7 +181,7 @@ export function AdminShell({ children }: AdminShellProps) {
         </aside>
 
         {/* Main content */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-w-0">
           {/* Mobile top bar with toggle */}
           <div className="md:hidden mb-4 flex items-center justify-between">
             <button
@@ -271,6 +284,20 @@ export function AdminShell({ children }: AdminShellProps) {
                 >
                   <FileText className="w-4 h-4 opacity-80" />
                   Reports
+                </Link>
+              )}
+              {isAdmin && (
+                <Link
+                  to="/barcode-reports"
+                  onClick={() => setMobileOpen(false)}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                    isActive('/barcode-reports')
+                      ? 'bg-[#3F4B9D] text-white'
+                      : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                  }`}
+                >
+                  <ScanLine className="w-4 h-4 opacity-80" />
+                  Barcode reports
                 </Link>
               )}
               {isAdmin && (

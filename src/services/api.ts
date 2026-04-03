@@ -153,6 +153,11 @@ export const api = {
       }>(`/api/activities?${search.toString()}`, { method: 'GET' })
     },
 
+    todayCount: () =>
+      request<{ todayCount: number }>('/api/activities/today-count', {
+        method: 'GET',
+      }),
+
     getOne: (id: string) =>
       request<{
         activity: {
@@ -499,6 +504,33 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify(payload),
       }),
+
+    adminList: (params?: { q?: string; limit?: number; page?: number }) => {
+      const search = new URLSearchParams()
+      if (params?.q?.trim()) search.set('q', params.q.trim())
+      if (typeof params?.limit === 'number') search.set('limit', String(params.limit))
+      if (typeof params?.page === 'number') search.set('page', String(params.page))
+      const qs = search.toString()
+      return request<{
+        mappings: {
+          _id: string
+          barcode: string
+          partName?: string
+          partNumber?: string
+          productName?: string
+          customer?: string
+          scanCount: number
+          metadata?: unknown
+          lastScannedBy: { _id: string; name?: string; email?: string } | null
+          createdAt: string
+          updatedAt: string
+        }[]
+        total: number
+        page: number
+        limit: number
+        totalPages: number
+      }>(`/api/barcodes/admin${qs ? `?${qs}` : ''}`, { method: 'GET' })
+    },
   },
 
   upload: {
