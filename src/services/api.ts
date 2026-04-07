@@ -129,12 +129,25 @@ export const api = {
   },
 
   activities: {
-    create: (payload: { rawText: string; structured: unknown; images?: string[] }) =>
+    create: (payload: {
+      rawText: string
+      structured: unknown
+      images?: string[]
+      attachments?: { url: string; name: string; mime?: string; size?: number }[]
+    }) =>
       request<{ activity: unknown }>('/api/activities', {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
-    update: (id: string, payload: { rawText?: string; structured?: unknown; images?: string[] }) =>
+    update: (
+      id: string,
+      payload: {
+        rawText?: string
+        structured?: unknown
+        images?: string[]
+        attachments?: { url: string; name: string; mime?: string; size?: number }[]
+      }
+    ) =>
       request<{ activity: unknown }>(`/api/activities/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(payload),
@@ -167,6 +180,7 @@ export const api = {
           rawConversation?: string
           structuredData?: unknown
           images?: string[]
+          attachments?: { url: string; name: string; mime?: string; size?: number }[]
           createdAt: string
         }
       }>(`/api/activities/${id}`, {
@@ -554,6 +568,28 @@ export const api = {
         throw err
       }
       return data as { key: string; url: string }
+    },
+
+    attachment: async (file: File) => {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const headers: HeadersInit = {}
+      const token = getToken()
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const res = await fetch(`${BASE}/api/upload/attachment`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const err = new Error((data as { error?: string }).error || res.statusText) as Error & { status?: number }
+        err.status = res.status
+        throw err
+      }
+      return data as { key: string; url: string; name: string; mime: string; size: number }
     },
   },
 }

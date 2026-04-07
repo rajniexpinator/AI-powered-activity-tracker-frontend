@@ -3,7 +3,25 @@ import { api, getToken } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import type { User } from '@/types/auth'
 import { AdminShell } from '@/components/layout/AdminShell'
-import { BarChart3, Filter, Users, Building2, Calendar, FileText, AlertCircle, Archive, RotateCcw, ChevronLeft, ChevronRight, ChevronDown, Loader2, Trash2, MoreVertical, Sparkles } from 'lucide-react'
+import {
+  BarChart3,
+  Filter,
+  Users,
+  Building2,
+  Calendar,
+  FileText,
+  AlertCircle,
+  Archive,
+  RotateCcw,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  Loader2,
+  Trash2,
+  MoreVertical,
+  Sparkles,
+  Image as ImageIcon,
+} from 'lucide-react'
 import { toast } from 'react-toastify'
 
 type AdminActivity = {
@@ -13,6 +31,38 @@ type AdminActivity = {
   createdAt: string
   archivedAt?: string
   userId?: { _id: string; name?: string; email?: string; role?: string }
+}
+
+type ActivityAttachment = {
+  url: string
+  name: string
+  mime?: string
+  size?: number
+}
+
+type ActivityDetail = {
+  _id: string
+  customer?: string
+  summary?: string
+  rawConversation?: string
+  structuredData?: { summary?: string; notes?: string } | Record<string, unknown>
+  images?: string[]
+  attachments?: ActivityAttachment[]
+  createdAt: string
+}
+
+function formatFileSize(bytes?: number) {
+  if (bytes == null || Number.isNaN(bytes)) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function isVideoAttachment(a: ActivityAttachment): boolean {
+  const mime = (a.mime ?? '').toLowerCase()
+  if (mime.startsWith('video/')) return true
+  const path = `${a.name ?? ''} ${a.url ?? ''}`.toLowerCase()
+  return /\.(mp4|mov|webm|m4v|ogv|ogg)(\?|#|$)/.test(path)
 }
 
 export function AdminActivityPage() {
@@ -29,7 +79,7 @@ export function AdminActivityPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
-  const pageSize = 3
+  const pageSize = 5
 
   const [loading, setLoading] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
@@ -45,6 +95,12 @@ export function AdminActivityPage() {
   const [aiOverlay, setAiOverlay] = useState<{ interpretation: string; activities: AdminActivity[]; answer?: string } | null>(null)
   const [aiQuestion, setAiQuestion] = useState('')
   const [aiLoading, setAiLoading] = useState(false)
+  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null)
+  const [selectedActivityDetail, setSelectedActivityDetail] = useState<ActivityDetail | null>(null)
+  const [loadingSelectedActivity, setLoadingSelectedActivity] = useState(false)
+  const [selectedDetailError, setSelectedDetailError] = useState('')
+  const [failedSelectedImages, setFailedSelectedImages] = useState<Record<string, boolean>>({})
+  const mediaPanelRef = useRef<HTMLDivElement | null>(null)
   const requestSeq = useRef(0)
   const pageNumbers = useMemo(() => {
     const maxButtons = 5
@@ -117,12 +173,38 @@ export function AdminActivityPage() {
   useEffect(() => {
     setPage(1)
     setAiOverlay(null)
+    setSelectedActivityId(null)
+    setSelectedActivityDetail(null)
+    setSelectedDetailError('')
+    setFailedSelectedImages({})
   }, [tab, selectedUserId, selectedCustomer, from, to])
 
   useEffect(() => {
     void loadActivities()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab, page])
+
+  async function handleSelectActivity(id: string) {
+    setSelectedActivityId(id)
+    setLoadingSelectedActivity(true)
+    setSelectedDetailError('')
+    setFailedSelectedImages({})
+    try {
+      const res = await api.activities.getOne(id)
+      setSelectedActivityDetail(res.activity as ActivityDetail)
+    } catch (err) {
+      setSelectedActivityDetail(null)
+      setSelectedDetailError(err instanceof Error ? err.message : 'Failed to load selected activity')
+    } finally {
+      setLoadingSelectedActivity(false)
+      // On phones, jump to details/media so selected images are immediately visible.
+      if (typeof window !== 'undefined' && window.innerWidth < 1024) {
+        requestAnimationFrame(() => {
+          mediaPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+        })
+      }
+    }
+  }
 
   async function handleApplyFilters(e: React.FormEvent) {
     e.preventDefault()
@@ -665,10 +747,23 @@ export function AdminActivityPage() {
                 displayActivities.map((a) => (
                   <div
                     key={a._id}
-                    className={`px-5 sm:px-6 md:px-8 py-3.5 flex flex-col gap-2 md:grid md:items-center md:gap-x-0 md:gap-y-2 ${
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => void handleSelectActivity(a._id)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        void handleSelectActivity(a._id)
+                      }
+                    }}
+                    className={`px-5 sm:px-6 md:px-8 py-3.5 flex flex-col gap-2 md:grid md:items-center md:gap-x-0 md:gap-y-2 cursor-pointer transition-colors ${
                       tab === 'archived'
                         ? 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,110px)]'
                         : 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2.2fr)]'
+                    } ${
+                      selectedActivityId === a._id
+                        ? 'bg-[var(--color-primary)]/8'
+                        : 'hover:bg-[var(--color-primary)]/4'
                     }`}
                   >
                     <div className="flex items-center gap-3 min-w-0">
@@ -818,28 +913,117 @@ export function AdminActivityPage() {
             )}
           </div>
 
-          {/* Weekly AI report */}
-          <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-4 sm:p-5 flex flex-col">
-            <div className="flex items-center justify-between gap-3 mb-2">
-              <h2 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
-                <FileText className="w-4 h-4 text-[var(--color-primary)]" />
-                Weekly quality report
-              </h2>
+          <div className="flex flex-col gap-4">
+            <div
+              ref={mediaPanelRef}
+              className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-4 sm:p-5"
+            >
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <h2 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-[var(--color-primary)]" />
+                  Activity details & media
+                </h2>
+              </div>
+              {!selectedActivityId ? (
+                <p className="text-[12px] text-[var(--color-text-secondary)]">
+                  Click any activity on the left to preview related images and files.
+                </p>
+              ) : loadingSelectedActivity ? (
+                <p className="text-[12px] text-[var(--color-text-secondary)]">Loading selected activity…</p>
+              ) : !selectedActivityDetail ? (
+                <p className="text-[12px] text-red-600">{selectedDetailError || 'Unable to load details.'}</p>
+              ) : (
+                <div className="space-y-3">
+                  <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2">
+                    <p className="text-[12px] text-[var(--color-text)] font-medium">
+                      {selectedActivityDetail.summary ||
+                        (selectedActivityDetail.structuredData as { summary?: string } | undefined)?.summary ||
+                        'No summary'}
+                    </p>
+                    <p className="mt-1 text-[11px] text-[var(--color-text-secondary)]">
+                      {new Date(selectedActivityDetail.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+
+                  {selectedActivityDetail.images?.length ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {selectedActivityDetail.images.map((url, idx) => (
+                        <a
+                          key={`${url}-${idx}`}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)]"
+                          title={`Open image ${idx + 1}`}
+                        >
+                          {!failedSelectedImages[url] ? (
+                            <img
+                              src={url}
+                              alt={`Activity image ${idx + 1}`}
+                              className="h-28 sm:h-20 w-full object-cover"
+                              onError={() => setFailedSelectedImages((prev) => ({ ...prev, [url]: true }))}
+                            />
+                          ) : (
+                            <div className="h-28 sm:h-20 w-full flex items-center justify-center text-[10px] text-red-600 px-2 text-center bg-[var(--color-bg)]">
+                              Image load failed
+                            </div>
+                          )}
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-[var(--color-text-secondary)]">No image attached.</p>
+                  )}
+
+                  {selectedActivityDetail.attachments?.length ? (
+                    <div className="space-y-1.5">
+                      {selectedActivityDetail.attachments.map((a, idx) => (
+                        <a
+                          key={`${a.url}-${idx}`}
+                          href={a.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-white px-2 py-1 text-[11px] hover:bg-black/[0.02]"
+                          title={a.name}
+                        >
+                          <span className="truncate max-w-[75%]">
+                            {isVideoAttachment(a) ? 'Video: ' : 'File: '}
+                            {a.name}
+                          </span>
+                          <span className="text-[#999]">{formatFileSize(a.size)}</span>
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-[var(--color-text-secondary)]">No files or videos attached.</p>
+                  )}
+                </div>
+              )}
             </div>
-            <p className="text-[12px] text-[var(--color-text-secondary)] mb-3 leading-relaxed">
-              One narrative document built from the filtered table (not a Q&amp;A). For questions like &quot;which
-              Bosch issues were logged last week?&quot;, use Ask AI above; you can still paste this report into email
-              or Outlook from the Reports page.
-            </p>
-            {reportId && (
-              <p className="mb-2 text-[11px] text-[var(--color-text-secondary)]">
-                Saved to reports history.
+
+            {/* Weekly AI report */}
+            <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-4 sm:p-5 flex flex-col">
+              <div className="flex items-center justify-between gap-3 mb-2">
+                <h2 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-[var(--color-primary)]" />
+                  Weekly quality report
+                </h2>
+              </div>
+              <p className="text-[12px] text-[var(--color-text-secondary)] mb-3 leading-relaxed">
+                One narrative document built from the filtered table (not a Q&amp;A). For questions like &quot;which
+                Bosch issues were logged last week?&quot;, use Ask AI above; you can still paste this report into email
+                or Outlook from the Reports page.
               </p>
-            )}
-            <div className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3.5 py-3 text-[13px] text-[var(--color-text)] overflow-auto whitespace-pre-wrap">
-              {loadingReport && !report
-                ? 'Generating weekly report…'
-                : report || 'Click "Generate weekly AI report" above to create a summary.'}
+              {reportId && (
+                <p className="mb-2 text-[11px] text-[var(--color-text-secondary)]">
+                  Saved to reports history.
+                </p>
+              )}
+              <div className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3.5 py-3 text-[13px] text-[var(--color-text)] overflow-auto whitespace-pre-wrap">
+                {loadingReport && !report
+                  ? 'Generating weekly report…'
+                  : report || 'Click "Generate weekly AI report" above to create a summary.'}
+              </div>
             </div>
           </div>
         </section>

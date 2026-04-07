@@ -12,6 +12,8 @@ import {
   X,
   Plus,
   ScanLine,
+  Paperclip,
+  FileText,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
@@ -43,6 +45,13 @@ type StructuredActivity = {
   notes?: string
 }
 
+type ActivityAttachment = {
+  url: string
+  name: string
+  mime?: string
+  size?: number
+}
+
 type ActivityDetail = {
   _id: string
   customer?: string
@@ -50,12 +59,30 @@ type ActivityDetail = {
   rawConversation?: string
   structuredData?: StructuredActivity | (StructuredActivity & Record<string, unknown>)
   images?: string[]
+  attachments?: ActivityAttachment[]
   createdAt: string
 }
 
 const MAX_IMAGES_PER_ENTRY = 8
 const MAX_IMAGE_FILE_BYTES = 10 * 1024 * 1024 // 10 MB — keep in sync with Backend upload middleware
 const MAX_IMAGE_FILE_ERROR = 'Maximum file size up to 10 MB.'
+const MAX_ATTACHMENTS_PER_ENTRY = 10
+const MAX_ATTACHMENT_FILE_BYTES = 50 * 1024 * 1024 // 50 MB — keep in sync with Backend attachment middleware
+const MAX_ATTACHMENT_FILE_ERROR = 'Maximum attachment size is 50 MB.'
+
+function formatFileSize(bytes?: number) {
+  if (bytes == null || Number.isNaN(bytes)) return ''
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function isVideoAttachment(a: ActivityAttachment): boolean {
+  const mime = (a.mime ?? '').toLowerCase()
+  if (mime.startsWith('video/')) return true
+  const path = `${a.name ?? ''} ${a.url ?? ''}`.toLowerCase()
+  return /\.(mp4|mov|webm|m4v|ogv|ogg)(\?|#|$)/.test(path)
+}
 
 export function ChatPage() {
   const { user } = useAuth()
@@ -90,8 +117,13 @@ export function ChatPage() {
   const [imageUrls, setImageUrls] = useState<string[]>([])
   const [previewLoadFailed, setPreviewLoadFailed] = useState(false)
   const [failedUploadedImages, setFailedUploadedImages] = useState<Record<string, boolean>>({})
+  const [failedAttachmentVideos, setFailedAttachmentVideos] = useState<Record<string, boolean>>({})
   const [uploadingImage, setUploadingImage] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [attachments, setAttachments] = useState<ActivityAttachment[]>([])
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
+  const [uploadingAttachment, setUploadingAttachment] = useState(false)
+  const attachmentInputRef = useRef<HTMLInputElement | null>(null)
   const [loadingSelected, setLoadingSelected] = useState(false)
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null)
   const [archiving, setArchiving] = useState(false)
@@ -522,7 +554,11 @@ export function ChatPage() {
     setImagePreview(null)
     setPreviewLoadFailed(false)
     setFailedUploadedImages({})
+    setFailedAttachmentVideos({})
     if (imageInputRef.current) imageInputRef.current.value = ''
+    setAttachments([])
+    setAttachmentFile(null)
+    if (attachmentInputRef.current) attachmentInputRef.current.value = ''
     setSavedResultKey(null)
     setCustomerHintTouched(false)
   }
@@ -600,6 +636,10 @@ export function ChatPage() {
         setError(`You can attach up to ${MAX_IMAGES_PER_ENTRY} images per entry.`)
         return
       }
+      if (attachments.length > MAX_ATTACHMENTS_PER_ENTRY) {
+        setError(`You can attach up to ${MAX_ATTACHMENTS_PER_ENTRY} files (PDF, Office, video, etc.) per entry.`)
+        return
+      }
 
       const base = (result.structured || {}) as any
       const selectedCustomerName =
@@ -626,6 +666,11 @@ export function ChatPage() {
 
       const nextActionsKey = Array.isArray(resolvedNextActions) ? resolvedNextActions.join('\n') : ''
       const imagesKey = imageUrls.slice().join('|')
+      const attachmentsKey = attachments
+        .map((a) => a.url)
+        .slice()
+        .sort()
+        .join('|')
       const currentKey = [
         (result.rawText || '').trim(),
         String(resolvedSummary).trim(),
@@ -636,6 +681,7 @@ export function ChatPage() {
         String(resolvedNotes).trim(),
         String(resolvedCustomer).trim(),
         String(imagesKey),
+        String(attachmentsKey),
       ].join('||')
 
       if (savedResultKey && savedResultKey === currentKey) {
@@ -661,13 +707,22 @@ export function ChatPage() {
         ? await api.activities.update(selectedActivityId, {
             rawText: resolvedRawText,
             structured: editedStructured,
-            images: imageUrls.length ? imageUrls : [],
+            images: imageUrls,
+            attachments,
           })
         : await api.activities.create({
             rawText: resolvedRawText,
             structured: editedStructured,
             images: imageUrls.length ? imageUrls : undefined,
+            attachments: attachments.length ? attachments : undefined,
           })
+
+      const saved = activity as {
+        attachments?: ActivityAttachment[]
+        images?: string[]
+      }
+      if (Array.isArray(saved.attachments)) setAttachments(saved.attachments)
+      if (Array.isArray(saved.images)) setImageUrls(saved.images)
 
       setSaveMessage(selectedActivityId ? 'Activity updated.' : 'Activity saved to tracker.')
       toast.success(selectedActivityId ? 'Updated successfully.' : 'Saved to tracker.')
@@ -723,10 +778,14 @@ export function ChatPage() {
       setEditNextActions(structured.next_actions?.join('\n') ?? '')
       setEditNotes(structured.notes ?? '')
       setImageUrls(detail.images ?? [])
+      setAttachments(Array.isArray(detail.attachments) ? detail.attachments : [])
+      setAttachmentFile(null)
+      if (attachmentInputRef.current) attachmentInputRef.current.value = ''
       setImageFile(null)
       setImagePreview(null)
       setPreviewLoadFailed(false)
       setFailedUploadedImages({})
+      setFailedAttachmentVideos({})
       if (imageInputRef.current) imageInputRef.current.value = ''
       const detailCustomer =
         (typeof detail.customer === 'string' && detail.customer.trim()) ||
@@ -756,6 +815,13 @@ export function ChatPage() {
         String(structured.next_actions?.join('\n') ?? '').trim(),
         String(structured.notes ?? '').trim(),
         String((detail.images ?? []).join('|')),
+        String(
+          (detail.attachments ?? [])
+            .map((a) => a.url)
+            .slice()
+            .sort()
+            .join('|')
+        ),
       ].join('||')
       setSavedResultKey(existingKey)
     } catch (err) {
@@ -1137,6 +1203,12 @@ export function ChatPage() {
                     setImageUrls([])
                     setImageFile(null)
                     setImagePreview(null)
+                    setPreviewLoadFailed(false)
+                    setFailedUploadedImages({})
+                    setFailedAttachmentVideos({})
+                    setAttachments([])
+                    setAttachmentFile(null)
+                    if (attachmentInputRef.current) attachmentInputRef.current.value = ''
                     setSavedResultKey(null)
                     setCustomerHintTouched(false)
                     setRecentModalOpen(false)
@@ -1173,6 +1245,12 @@ export function ChatPage() {
                       setImageUrls([])
                       setImageFile(null)
                       setImagePreview(null)
+                      setPreviewLoadFailed(false)
+                      setFailedUploadedImages({})
+                      setFailedAttachmentVideos({})
+                      setAttachments([])
+                      setAttachmentFile(null)
+                      if (attachmentInputRef.current) attachmentInputRef.current.value = ''
                       setSavedResultKey(null)
                       setRecentModalOpen(false)
                     } catch (err) {
@@ -1266,6 +1344,12 @@ export function ChatPage() {
                     setImageUrls([])
                     setImageFile(null)
                     setImagePreview(null)
+                    setPreviewLoadFailed(false)
+                    setFailedUploadedImages({})
+                    setFailedAttachmentVideos({})
+                    setAttachments([])
+                    setAttachmentFile(null)
+                    if (attachmentInputRef.current) attachmentInputRef.current.value = ''
                     setSavedResultKey(null)
                     setCustomerHintTouched(false)
                   }}
@@ -1300,6 +1384,12 @@ export function ChatPage() {
                       setImageUrls([])
                       setImageFile(null)
                       setImagePreview(null)
+                      setPreviewLoadFailed(false)
+                      setFailedUploadedImages({})
+                      setFailedAttachmentVideos({})
+                      setAttachments([])
+                      setAttachmentFile(null)
+                      if (attachmentInputRef.current) attachmentInputRef.current.value = ''
                       setSavedResultKey(null)
                     } catch (err) {
                       const message = (err as Error).message || 'Failed to archive activity'
@@ -1822,10 +1912,155 @@ export function ChatPage() {
                     ))}
                   </div>
                 )}
+                {attachments.length > 0 && (
+                  <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                    {attachments.map((a, idx) => (
+                      <div
+                        key={`${a.url}-${idx}`}
+                        className={`relative rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] group ${
+                          isVideoAttachment(a) ? '' : 'overflow-hidden'
+                        }`}
+                      >
+                        {isVideoAttachment(a) ? (
+                          !failedAttachmentVideos[a.url] ? (
+                            <video
+                              src={a.url}
+                              controls
+                              playsInline
+                              preload="metadata"
+                              className="h-20 w-full object-cover bg-black"
+                              onError={() =>
+                                setFailedAttachmentVideos((prev) => ({ ...prev, [a.url]: true }))
+                              }
+                            />
+                          ) : (
+                            <div className="h-20 w-full flex items-center justify-center text-[10px] text-red-600 px-2 text-center bg-[var(--color-bg)]">
+                              Video load failed
+                            </div>
+                          )
+                        ) : (
+                          <a
+                            href={a.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={a.name}
+                            className="flex h-20 w-full flex-col items-center justify-center gap-0.5 px-2 py-1 text-center hover:bg-black/[0.02] transition-colors"
+                          >
+                            <FileText className="w-6 h-6 text-[var(--color-primary)] shrink-0" />
+                            <span className="text-[9px] font-medium text-[#444] truncate w-full leading-tight">
+                              {a.name}
+                            </span>
+                            {formatFileSize(a.size) ? (
+                              <span className="text-[8px] text-[#999]">{formatFileSize(a.size)}</span>
+                            ) : null}
+                          </a>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                          className="absolute top-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 z-10"
+                          aria-label={`Remove file ${idx + 1}`}
+                          title="Remove file"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* Documents & video (test reports, customer data files) */}
+                <div className="mt-3 flex flex-col gap-2 rounded-[var(--radius)] border border-[var(--color-border)]/80 bg-[var(--color-bg)]/50 px-3 py-2.5">
+                  <p className="text-[11px] font-semibold text-[#555] flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5 text-[var(--color-primary)]" />
+                    Attach files (optional)
+                  </p>
+                  <p className="text-[10px] text-[#777] leading-relaxed">
+                    PDF, Word, Excel, CSV, ZIP, JSON/XML/DAT, MP4/MOV/WebM — up to {MAX_ATTACHMENTS_PER_ENTRY} files,{' '}
+                    {MAX_ATTACHMENT_FILE_BYTES / (1024 * 1024)} MB each. For equipment test data or files you send to
+                    customers.
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-[11px] text-[#444] cursor-pointer hover:bg-black/[0.03]">
+                      <Paperclip className="w-3.5 h-3.5 shrink-0" />
+                      <span>{attachmentFile ? 'Change file' : 'Choose file'}</span>
+                      <input
+                        ref={attachmentInputRef}
+                        type="file"
+                        className="hidden"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip,.mp4,.mov,.webm,.m4v,.json,.xml,.dat,video/*,application/pdf"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0]
+                          if (file) {
+                            if (file.size > MAX_ATTACHMENT_FILE_BYTES) {
+                              setUploadError(MAX_ATTACHMENT_FILE_ERROR)
+                              if (attachmentInputRef.current) attachmentInputRef.current.value = ''
+                              setAttachmentFile(null)
+                              return
+                            }
+                            setAttachmentFile(file)
+                            setUploadError(null)
+                          }
+                        }}
+                      />
+                    </label>
+                    {attachmentFile && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttachmentFile(null)
+                          if (attachmentInputRef.current) attachmentInputRef.current.value = ''
+                        }}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] text-[#666] hover:bg-black/[0.03]"
+                      >
+                        <X className="w-3 h-3" />
+                        Clear
+                      </button>
+                    )}
+                    {attachmentFile && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!attachmentFile) return
+                          if (attachments.length >= MAX_ATTACHMENTS_PER_ENTRY) {
+                            setUploadError(`You can attach up to ${MAX_ATTACHMENTS_PER_ENTRY} files per entry.`)
+                            return
+                          }
+                          if (attachmentFile.size > MAX_ATTACHMENT_FILE_BYTES) {
+                            setUploadError(MAX_ATTACHMENT_FILE_ERROR)
+                            return
+                          }
+                          setUploadingAttachment(true)
+                          setUploadError(null)
+                          try {
+                            const res = await api.upload.attachment(attachmentFile)
+                            setAttachments((prev) => [
+                              ...prev,
+                              { url: res.url, name: res.name, mime: res.mime, size: res.size },
+                            ])
+                            setAttachmentFile(null)
+                            if (attachmentInputRef.current) attachmentInputRef.current.value = ''
+                          } catch (err) {
+                            setUploadError((err as Error).message || 'Failed to upload file')
+                          } finally {
+                            setUploadingAttachment(false)
+                          }
+                        }}
+                        disabled={uploadingAttachment || attachments.length >= MAX_ATTACHMENTS_PER_ENTRY}
+                        className="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)] px-3 py-1 text-[11px] font-medium hover:bg-[var(--color-primary)]/15 disabled:opacity-60"
+                      >
+                        {uploadingAttachment
+                          ? 'Uploading…'
+                          : attachments.length >= MAX_ATTACHMENTS_PER_ENTRY
+                            ? 'Max files reached'
+                            : 'Upload file'}
+                      </button>
+                    )}
+                  </div>
+                </div>
                 <p className="text-[11px] text-[#777] leading-relaxed">
-                  Upload up to 8 photos as evidence for this activity (defect, part label/barcode, workstation
-                  condition, or before/after repair). Each image may be up to 10 MB. Use clear images that help explain
-                  the issue and resolution.
+                  Upload up to {MAX_IMAGES_PER_ENTRY} photos as evidence for this activity (defect, part label/barcode,
+                  workstation condition, or before/after repair). Each image may be up to 10 MB. Use clear images that
+                  help explain the issue and resolution.
                 </p>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <p className="text-[11px] text-[#999] hidden sm:block">
