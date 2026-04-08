@@ -100,6 +100,7 @@ export function AdminActivityPage() {
   const [loadingSelectedActivity, setLoadingSelectedActivity] = useState(false)
   const [selectedDetailError, setSelectedDetailError] = useState('')
   const [failedSelectedImages, setFailedSelectedImages] = useState<Record<string, boolean>>({})
+  const [loadingSelectedImages, setLoadingSelectedImages] = useState<Record<string, boolean>>({})
   const mediaPanelRef = useRef<HTMLDivElement | null>(null)
   const requestSeq = useRef(0)
   const pageNumbers = useMemo(() => {
@@ -177,7 +178,21 @@ export function AdminActivityPage() {
     setSelectedActivityDetail(null)
     setSelectedDetailError('')
     setFailedSelectedImages({})
+    setLoadingSelectedImages({})
   }, [tab, selectedUserId, selectedCustomer, from, to])
+
+  useEffect(() => {
+    const urls = selectedActivityDetail?.images ?? []
+    if (!urls.length) {
+      setLoadingSelectedImages({})
+      return
+    }
+    const next = urls.reduce<Record<string, boolean>>((acc, url) => {
+      acc[url] = true
+      return acc
+    }, {})
+    setLoadingSelectedImages(next)
+  }, [selectedActivityDetail])
 
   useEffect(() => {
     void loadActivities()
@@ -189,12 +204,19 @@ export function AdminActivityPage() {
     setLoadingSelectedActivity(true)
     setSelectedDetailError('')
     setFailedSelectedImages({})
+    setLoadingSelectedImages({})
     try {
-      const res = await api.activities.getOne(id)
+      const res = tab === 'archived' ? await api.activities.adminGetOne(id) : await api.activities.getOne(id)
       setSelectedActivityDetail(res.activity as ActivityDetail)
     } catch (err) {
       setSelectedActivityDetail(null)
-      setSelectedDetailError(err instanceof Error ? err.message : 'Failed to load selected activity')
+      const rawMessage = err instanceof Error ? err.message : 'Failed to load selected activity'
+      const normalized = rawMessage.toLowerCase()
+      setSelectedDetailError(
+        normalized.includes('not found') || normalized.includes('404')
+          ? 'Activity not found'
+          : rawMessage
+      )
     } finally {
       setLoadingSelectedActivity(false)
       // On phones, jump to details/media so selected images are immediately visible.
@@ -642,7 +664,7 @@ export function AdminActivityPage() {
         {/* Activity table + weekly report */}
         <section className="grid gap-4 lg:grid-cols-[minmax(0,_1.4fr)_minmax(0,_1fr)]">
           {/* Activity table */}
-          <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] overflow-hidden">
+          <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] overflow-visible">
             <div className="px-5 sm:px-6 md:px-8 py-4 sm:py-5 border-b border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-[var(--color-primary)]" />
@@ -724,7 +746,7 @@ export function AdminActivityPage() {
               {tab === 'archived' && <span className="text-right">Action</span>}
             </div>
 
-            <div className="relative divide-y divide-[var(--color-border)] max-h-[480px] overflow-auto">
+            <div className="relative divide-y divide-[var(--color-border)] max-h-[480px] overflow-y-auto overflow-x-visible">
               {loading && activities.length > 0 && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-[1px]">
                   <div className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2 text-[13px] font-medium text-[var(--color-text)] shadow-sm">
@@ -744,7 +766,9 @@ export function AdminActivityPage() {
                     : 'No activity found for the selected filters.'}
                 </div>
               ) : (
-                displayActivities.map((a) => (
+                displayActivities.map((a, idx) => {
+                  const openMenuUp = idx >= displayActivities.length - 2
+                  return (
                   <div
                     key={a._id}
                     role="button"
@@ -816,7 +840,9 @@ export function AdminActivityPage() {
                           {actionMenuId === a._id && (
                             <div
                               id={`action-menu-${a._id}`}
-                              className="absolute right-0 z-20 mt-2 w-36 rounded-xl border border-[var(--color-border)] bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)] overflow-hidden"
+                              className={`absolute right-0 z-50 w-36 rounded-xl border border-[var(--color-border)] bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)] overflow-hidden ${
+                                openMenuUp ? 'bottom-full mb-2' : 'top-full mt-2'
+                              }`}
                               role="menu"
                             >
                               <button
@@ -845,7 +871,7 @@ export function AdminActivityPage() {
                       </div>
                     )}
                   </div>
-                ))
+                )})
               )}
             </div>
             {!aiOverlay && (totalPages || 1) > 1 && (
@@ -929,7 +955,12 @@ export function AdminActivityPage() {
                   Click any activity on the left to preview related images and files.
                 </p>
               ) : loadingSelectedActivity ? (
-                <p className="text-[12px] text-[var(--color-text-secondary)]">Loading selected activity…</p>
+                <div className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-3">
+                  <p className="inline-flex items-center gap-2 text-[12px] text-[var(--color-text-secondary)]">
+                    <Loader2 className="w-4 h-4 animate-spin text-[var(--color-primary)]" />
+                    Loading selected activity...
+                  </p>
+                </div>
               ) : !selectedActivityDetail ? (
                 <p className="text-[12px] text-red-600">{selectedDetailError || 'Unable to load details.'}</p>
               ) : (
@@ -953,16 +984,30 @@ export function AdminActivityPage() {
                           href={url}
                           target="_blank"
                           rel="noreferrer"
-                          className="block rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)]"
+                          className="relative block rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)]"
                           title={`Open image ${idx + 1}`}
                         >
                           {!failedSelectedImages[url] ? (
-                            <img
-                              src={url}
-                              alt={`Activity image ${idx + 1}`}
-                              className="h-28 sm:h-20 w-full object-cover"
-                              onError={() => setFailedSelectedImages((prev) => ({ ...prev, [url]: true }))}
-                            />
+                            <>
+                              <img
+                                src={url}
+                                alt={`Activity image ${idx + 1}`}
+                                className={`h-28 sm:h-20 w-full object-cover transition-opacity duration-300 ${
+                                  loadingSelectedImages[url] ? 'opacity-0' : 'opacity-100'
+                                }`}
+                                onLoad={() => setLoadingSelectedImages((prev) => ({ ...prev, [url]: false }))}
+                                onError={() => {
+                                  setFailedSelectedImages((prev) => ({ ...prev, [url]: true }))
+                                  setLoadingSelectedImages((prev) => ({ ...prev, [url]: false }))
+                                }}
+                              />
+                              {loadingSelectedImages[url] && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-slate-100/90">
+                                  <Loader2 className="w-4 h-4 animate-spin text-[var(--color-primary)]" />
+                                  <span className="text-[10px] text-[var(--color-text-secondary)]">Loading image...</span>
+                                </div>
+                              )}
+                            </>
                           ) : (
                             <div className="h-28 sm:h-20 w-full flex items-center justify-center text-[10px] text-red-600 px-2 text-center bg-[var(--color-bg)]">
                               Image load failed

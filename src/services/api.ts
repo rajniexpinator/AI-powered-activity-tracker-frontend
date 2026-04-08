@@ -187,6 +187,24 @@ export const api = {
         method: 'GET',
       }),
 
+    adminGetOne: (id: string) =>
+      request<{
+        activity: {
+          _id: string
+          customer?: string
+          summary?: string
+          rawConversation?: string
+          structuredData?: unknown
+          images?: string[]
+          attachments?: { url: string; name: string; mime?: string; size?: number }[]
+          createdAt: string
+          isArchived?: boolean
+          archivedAt?: string
+        }
+      }>(`/api/activities/admin/${id}`, {
+        method: 'GET',
+      }),
+
     archive: (id: string) =>
       request<{ success: boolean }>(`/api/activities/${id}/archive`, {
         method: 'POST',
