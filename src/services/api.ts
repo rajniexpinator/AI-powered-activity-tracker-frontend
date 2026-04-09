@@ -210,6 +210,19 @@ export const api = {
         method: 'POST',
       }),
 
+    sendEmail: (id: string, payload?: { to?: string[] | string; cc?: string[] | string; subject?: string }) =>
+      request<{
+        success: boolean
+        to: string[]
+        cc: string[]
+        attachedCount: number
+        sourceCount: number
+        skipped: { url: string; reason: string }[]
+      }>(`/api/activities/${id}/send-email`, {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {}),
+      }),
+
     restore: (id: string) =>
       request<{ success: boolean }>(`/api/activities/${id}/restore`, {
         method: 'POST',

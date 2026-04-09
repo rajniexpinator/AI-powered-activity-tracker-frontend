@@ -29,8 +29,8 @@ export function AdminShell({ children }: AdminShellProps) {
   }
 
   return (
-    <div className="flex min-h-screen bg-[var(--color-bg)]">
-      <div className="w-full flex-1 px-3 sm:px-4 md:px-6 py-5 sm:py-7 flex flex-col md:flex-row gap-4 md:gap-6">
+    <div className="flex min-h-screen bg-[var(--color-bg)] overflow-x-hidden">
+      <div className="w-full min-w-0 flex-1 px-3 sm:px-4 md:px-6 py-5 sm:py-7 flex flex-col md:flex-row gap-4 md:gap-6">
         {/* Sidebar (desktop) */}
         <aside className="hidden md:flex w-60 shrink-0 self-stretch flex-col rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_10px_30px_rgba(15,23,42,0.08)]">
           <div className="px-4 pt-4 pb-3 border-b border-[var(--color-border)] flex items-center gap-3">

@@ -5,6 +5,7 @@ import {
   Tag,
   Archive,
   Send,
+  Mail,
   AlertCircle,
   CheckCircle2,
   Loader2,
@@ -127,6 +128,7 @@ export function ChatPage() {
   const [loadingSelected, setLoadingSelected] = useState(false)
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null)
   const [archiving, setArchiving] = useState(false)
+  const [sendingEmail, setSendingEmail] = useState(false)
   const [dateFilter, setDateFilter] = useState<'all' | 'today'>('all')
   const [customerFilter, setCustomerFilter] = useState<string>('') // '' = all customers
   const [savedResultKey, setSavedResultKey] = useState<string | null>(null)
@@ -832,6 +834,32 @@ export function ChatPage() {
     }
   }
 
+  async function handleSendLogEmail() {
+    if (!selectedActivityId) {
+      setError('Select a log from the list before sending email.')
+      return
+    }
+    setSendingEmail(true)
+    setError(null)
+    setSaveMessage(null)
+    try {
+      const res = await api.activities.sendEmail(selectedActivityId)
+      const recipientLabel = res.to.length > 0 ? res.to.join(', ') : 'configured recipients'
+      const skippedCount = Array.isArray(res.skipped) ? res.skipped.length : 0
+      const extra =
+        skippedCount > 0
+          ? ` Sent ${res.attachedCount}/${res.sourceCount} files (${skippedCount} skipped due to download or size limits).`
+          : ` Sent with ${res.attachedCount} attached file(s).`
+      toast.success(`Email sent to ${recipientLabel}.${extra}`)
+    } catch (err) {
+      const message = (err as Error).message || 'Failed to send activity email'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSendingEmail(false)
+    }
+  }
+
   const filteredActivities = recentActivities.filter((act) => {
     if (dateFilter === 'today') {
       const actDate = new Date(act.createdAt)
@@ -869,8 +897,8 @@ export function ChatPage() {
               AI Chat Logging
             </h1>
             <p className="mt-1 text-sm text-[#666] max-w-xl">
-              Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et
-              dolore magna aliqua.
+              Turn site visits and quality notes into structured logs. Add photos, files, and barcodes, then save them
+              to your activity history. Admins can review everything from the Activity screen.
             </p>
           </div>
           <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto sm:justify-end">
@@ -1221,6 +1249,17 @@ export function ChatPage() {
 
                 <button
                   type="button"
+                  onClick={() => void handleSendLogEmail()}
+                  disabled={!selectedActivityId || sendingEmail || archiving}
+                  title={!selectedActivityId ? 'Select a log first to enable Send email' : 'Send selected log by email'}
+                  className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[12px] font-semibold text-[#444] hover:bg-black/[0.03] disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                  {sendingEmail ? 'Sending…' : 'Send email'}
+                </button>
+
+                <button
+                  type="button"
                   onClick={async () => {
                     if (!selectedActivityId) {
                       setError('Select a log from the list before archiving.')
@@ -1357,6 +1396,16 @@ export function ChatPage() {
                 >
                   <Plus className="w-3.5 h-3.5" />
                   New log
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSendLogEmail()}
+                  disabled={!selectedActivityId || sendingEmail || archiving}
+                  title={!selectedActivityId ? 'Select a log first to enable Send email' : 'Send selected log by email'}
+                  className="inline-flex items-center gap-1.5 h-8 rounded-full px-3 text-[11px] font-semibold text-[#444] hover:bg-black/[0.03] border border-[var(--color-border)] bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {sendingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
+                  {sendingEmail ? 'Sending…' : 'Send email'}
                 </button>
                 <button
                   type="button"

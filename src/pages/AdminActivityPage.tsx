@@ -15,6 +15,8 @@ import {
   RotateCcw,
   ChevronLeft,
   ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
   ChevronDown,
   Loader2,
   Trash2,
@@ -65,6 +67,24 @@ function isVideoAttachment(a: ActivityAttachment): boolean {
   return /\.(mp4|mov|webm|m4v|ogv|ogg)(\?|#|$)/.test(path)
 }
 
+/** First & last page, … gaps, and current ± 1 between (no “show all pages when total ≤ 7”). */
+function buildPaginationItems(current: number, total: number): Array<number | 'ellipsis'> {
+  const safeTotal = Math.max(1, total)
+  const c = Math.min(Math.max(current, 1), safeTotal)
+  if (safeTotal === 1) return [1]
+
+  const windowStart = Math.max(2, c - 1)
+  const windowEnd = Math.min(safeTotal - 1, c + 1)
+  const items: Array<number | 'ellipsis'> = [1]
+  if (windowStart > 2) items.push('ellipsis')
+  if (windowStart <= windowEnd) {
+    for (let p = windowStart; p <= windowEnd; p++) items.push(p)
+  }
+  if (windowEnd < safeTotal - 1) items.push('ellipsis')
+  items.push(safeTotal)
+  return items
+}
+
 export function AdminActivityPage() {
   const { user } = useAuth()
   const [activities, setActivities] = useState<AdminActivity[]>([])
@@ -85,6 +105,7 @@ export function AdminActivityPage() {
   const [loadingReport, setLoadingReport] = useState(false)
   const [loadingAiWeeklyReport, setLoadingAiWeeklyReport] = useState(false)
   const [exporting, setExporting] = useState(false)
+  const [exportingWeeklyExcel, setExportingWeeklyExcel] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [actionMenuId, setActionMenuId] = useState<string | null>(null)
   const [report, setReport] = useState<string>('')
@@ -103,18 +124,15 @@ export function AdminActivityPage() {
   const [loadingSelectedImages, setLoadingSelectedImages] = useState<Record<string, boolean>>({})
   const mediaPanelRef = useRef<HTMLDivElement | null>(null)
   const requestSeq = useRef(0)
-  const pageNumbers = useMemo(() => {
-    const maxButtons = 5
-    const safeTotal = Math.max(1, totalPages || 1)
-    const safePage = Math.min(Math.max(page, 1), safeTotal)
-    const half = Math.floor(maxButtons / 2)
-    let start = Math.max(1, safePage - half)
-    let end = Math.min(safeTotal, start + maxButtons - 1)
-    start = Math.max(1, end - maxButtons + 1)
-    const nums: number[] = []
-    for (let p = start; p <= end; p++) nums.push(p)
-    return nums
-  }, [page, totalPages])
+  const paginationItems = useMemo(
+    () => buildPaginationItems(page, totalPages || 1),
+    [page, totalPages]
+  )
+
+  const weeklyReportReady = useMemo(
+    () => Boolean(report?.trim()) || Boolean(reportId),
+    [report, reportId]
+  )
 
   useEffect(() => {
     const loadFilterData = async () => {
@@ -234,6 +252,39 @@ export function AdminActivityPage() {
     await loadActivities()
   }
 
+  async function handleResetFilters() {
+    setActionMenuId(null)
+    setSelectedUserId('all')
+    setSelectedCustomer('all')
+    setFrom('')
+    setTo('')
+    setPage(1)
+    setAiOverlay(null)
+    setError('')
+    const seq = ++requestSeq.current
+    setLoading(true)
+    try {
+      if (tab === 'archived') {
+        const res = await api.activities.adminArchivedList({ limit: pageSize, page: 1 })
+        if (seq !== requestSeq.current) return
+        setActivities(res.activities)
+        setTotal(res.total)
+        setTotalPages(res.totalPages)
+      } else {
+        const res = await api.activities.adminList({ limit: pageSize, page: 1 })
+        if (seq !== requestSeq.current) return
+        setActivities(res.activities)
+        setTotal(res.total)
+        setTotalPages(res.totalPages)
+      }
+    } catch (err) {
+      if (seq !== requestSeq.current) return
+      setError(err instanceof Error ? err.message : 'Failed to load activity')
+    } finally {
+      if (seq === requestSeq.current) setLoading(false)
+    }
+  }
+
   async function handleRestore(id: string) {
     setActionMenuId(null)
     try {
@@ -330,6 +381,9 @@ export function AdminActivityPage() {
       })
       setReport(report)
       setReportId(reportId)
+      toast.success(
+        'Weekly AI report is ready. Use “Download timesheet Excel” below for the spreadsheet layout — one tab per customer, same date filters.'
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate weekly report')
     } finally {
@@ -376,6 +430,57 @@ export function AdminActivityPage() {
     }
   }
 
+  async function handleExportWeeklyExcel() {
+    try {
+      setExportingWeeklyExcel(true)
+      setActionMenuId(null)
+      const search = new URLSearchParams()
+      if (appliedFilters.userId) search.set('userId', appliedFilters.userId)
+      if (appliedFilters.customer) search.set('customer', appliedFilters.customer)
+      if (appliedFilters.from) search.set('from', appliedFilters.from)
+      if (appliedFilters.to) search.set('to', appliedFilters.to)
+      if (tab === 'archived') search.set('archived', 'true')
+      const weekEnd =
+        appliedFilters.to ||
+        appliedFilters.from ||
+        new Date().toISOString().slice(0, 10)
+      search.set('weekEnd', weekEnd)
+
+      const qs = search.toString()
+      const base = import.meta.env.VITE_API_BASE_URL ?? ''
+      const url = `${base}/api/activities/admin/export/weekly-xlsx${qs ? `?${qs}` : ''}`
+
+      const headers: HeadersInit = {}
+      const token = getToken()
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const res = await fetch(url, { headers })
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '')
+        throw new Error(errText || 'Failed to export weekly Excel')
+      }
+      const blob = await res.blob()
+      const downloadUrl = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = downloadUrl
+      link.download =
+        appliedFilters.from && appliedFilters.to
+          ? `weekly-activity-report-${appliedFilters.from}_to_${appliedFilters.to}.xlsx`
+          : `weekly-activity-report-${weekEnd}.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      window.URL.revokeObjectURL(downloadUrl)
+      toast.success('Timesheet Excel downloaded (by customer).')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to export weekly Excel'
+      setError(msg)
+      toast.error(msg)
+    } finally {
+      setExportingWeeklyExcel(false)
+    }
+  }
+
   useEffect(() => {
     if (!actionMenuId) return
 
@@ -399,11 +504,11 @@ export function AdminActivityPage() {
 
   return (
     <AdminShell>
-      <main className="py-1 sm:py-0">
+      <main className="py-1 sm:py-0 w-full min-w-0 max-w-full overflow-x-hidden">
         <section className="mb-6 sm:mb-8">
           <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
-            <div>
-              <h1 className="text-2xl sm:text-[28px] md:text-[32px] font-bold tracking-tight text-[var(--color-text)] flex items-center gap-3">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-[28px] md:text-[32px] font-bold tracking-tight text-[var(--color-text)] flex flex-wrap items-center gap-2 sm:gap-3">
                 <span className="flex items-center justify-center w-10 h-10 sm:w-12 sm:h-12 rounded-xl bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
                   <BarChart3 className="w-5 h-5 sm:w-6 sm:h-6" />
                 </span>
@@ -411,25 +516,26 @@ export function AdminActivityPage() {
               </h1>
               <p className="mt-2 text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
                 Use filters for exact lists. Ask AI below to query logs in plain English (for example, &quot;Show me
-                all Bosch issues last week&quot;). Generate weekly AI report builds a supplier-style narrative from
-                the current filters; finished reports are stored under Reports.
+                all Bosch issues last week&quot;). Generate weekly AI report creates a narrative from the same filters;
+                the timesheet-style Excel (one tab per customer) lives in that weekly report panel. Saved reports are
+                under Reports.
               </p>
             </div>
             {user && (
-              <p className="text-[12px] text-[var(--color-text-secondary)]">
-                Signed in as <span className="font-medium">{user.email}</span>
+              <p className="text-[12px] text-[var(--color-text-secondary)] break-words max-w-full sm:max-w-xs md:max-w-none">
+                Signed in as <span className="font-medium break-all">{user.email}</span>
               </p>
             )}
           </div>
         </section>
 
         {/* Filters + report CTA */}
-        <section className="mb-5 rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-4 sm:p-5">
-          <div className="flex items-center justify-between gap-3 mb-2 sm:mb-3 flex-wrap">
+        <section className="mb-5 rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-3 sm:p-5 min-w-0">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 mb-2 sm:mb-3">
             <button
               type="button"
               onClick={() => setFiltersOpen((open) => !open)}
-              className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-text)]"
+              className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--color-text)] self-start"
             >
               <span className="flex items-center justify-center w-7 h-7 rounded-lg bg-[var(--color-primary)]/8 text-[var(--color-primary)]">
                 <Filter className="w-3.5 h-3.5" />
@@ -441,24 +547,30 @@ export function AdminActivityPage() {
                 }`}
               />
             </button>
-            <div className="flex items-center gap-3 flex-wrap justify-end">
-              <label className="inline-flex items-center gap-2 text-[12px] text-[var(--color-text-secondary)] select-none">
+            <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
+              <label className="inline-flex items-start gap-2 text-[12px] text-[var(--color-text-secondary)] select-none sm:items-center">
                 <input
                   type="checkbox"
+                  className="mt-0.5 sm:mt-0 shrink-0"
                   checked={includeCustomerSummaries}
                   onChange={(e) => setIncludeCustomerSummaries(e.target.checked)}
                   disabled={selectedCustomer !== 'all'}
                 />
-                Customer summaries
-                {selectedCustomer !== 'all' && (
-                  <span className="text-[11px] opacity-70">(select “All customers” to enable)</span>
-                )}
+                <span className="leading-snug">
+                  Customer summaries
+                  {selectedCustomer !== 'all' && (
+                    <span className="block text-[11px] opacity-70 sm:inline sm:ml-1">
+                      (select “All customers” to enable)
+                    </span>
+                  )}
+                </span>
               </label>
+              <div className="flex flex-col gap-2 w-full sm:flex-row sm:w-auto sm:flex-none">
               <button
                 type="button"
                 onClick={handleExportCsv}
-                disabled={exporting}
-                className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-60"
+                disabled={exporting || exportingWeeklyExcel}
+                className="inline-flex w-full sm:w-auto justify-center items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-60"
               >
                 {exporting ? (
                   <>
@@ -476,11 +588,12 @@ export function AdminActivityPage() {
                 type="button"
                 onClick={handleGenerateReport}
                 disabled={loadingReport}
-                className="inline-flex items-center gap-2 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3.5 py-2 text-[13px] font-semibold !text-white disabled:opacity-60"
+                className="inline-flex w-full sm:w-auto justify-center items-center gap-2 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3.5 py-2.5 sm:py-2 text-[12px] sm:text-[13px] font-semibold !text-white disabled:opacity-60 text-center"
               >
-                <FileText className="w-4 h-4" />
+                <FileText className="w-4 h-4 shrink-0" />
                 {loadingReport ? 'Generating report…' : 'Generate weekly AI report'}
               </button>
+              </div>
             </div>
           </div>
           {filtersOpen && (
@@ -568,7 +681,16 @@ export function AdminActivityPage() {
                 </div>
               </div>
 
-              <div className="sm:col-span-2 md:col-span-4 flex justify-end">
+              <div className="sm:col-span-2 md:col-span-4 flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleResetFilters()}
+                  disabled={loading}
+                  className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-3.5 py-2 text-[13px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-60"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Reset filters
+                </button>
                 <button
                   type="submit"
                   disabled={loading}
@@ -587,9 +709,9 @@ export function AdminActivityPage() {
             </form>
           )}
           {error && (
-            <div className="mt-3 flex items-center gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-700">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              {error}
+            <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-[13px] text-red-700 min-w-0">
+              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+              <span className="min-w-0 break-words">{error}</span>
             </div>
           )}
 
@@ -662,31 +784,31 @@ export function AdminActivityPage() {
         </section>
 
         {/* Activity table + weekly report */}
-        <section className="grid gap-4 lg:grid-cols-[minmax(0,_1.4fr)_minmax(0,_1fr)]">
+        <section className="grid gap-4 lg:grid-cols-[minmax(0,_1.4fr)_minmax(0,_1fr)] min-w-0">
           {/* Activity table */}
-          <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] overflow-visible">
-            <div className="px-5 sm:px-6 md:px-8 py-4 sm:py-5 border-b border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] min-w-0">
+            <div className="px-3 sm:px-6 md:px-8 py-3 sm:py-5 border-b border-[var(--color-border)] flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-[var(--color-primary)]" />
                 <h2 className="text-[15px] font-semibold text-[var(--color-text)]">
                   {tab === 'archived' ? 'Archived activity' : 'All employee activity'}
                 </h2>
               </div>
-              <div className="flex flex-col items-end gap-2 sm:flex-row sm:items-center sm:gap-3">
-                <div className="flex rounded-xl border border-[var(--color-border)] p-0.5 bg-[var(--color-bg)]">
+              <div className="flex flex-col items-stretch gap-2 w-full sm:w-auto sm:items-end sm:flex-row sm:items-center sm:gap-3">
+                <div className="flex rounded-xl border border-[var(--color-border)] p-0.5 bg-[var(--color-bg)] w-full sm:w-auto">
                   <button
                     type="button"
                     onClick={() => {
                       setPage(1)
                       setTab('active')
                     }}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
+                    className={`flex flex-1 sm:flex-initial justify-center items-center gap-2 px-3 py-2 sm:py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
                       tab === 'active'
                         ? 'bg-[var(--color-primary)] text-white shadow-sm'
                         : 'bg-transparent text-[var(--color-text-secondary)] hover:bg-white hover:text-[var(--color-text)]'
                     }`}
                   >
-                    <BarChart3 className="w-3.5 h-3.5" />
+                    <BarChart3 className="w-3.5 h-3.5 shrink-0" />
                     Active
                   </button>
                   <button
@@ -695,13 +817,13 @@ export function AdminActivityPage() {
                       setPage(1)
                       setTab('archived')
                     }}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
+                    className={`flex flex-1 sm:flex-initial justify-center items-center gap-2 px-3 py-2 sm:py-1.5 rounded-lg text-[12px] font-semibold transition-colors ${
                       tab === 'archived'
                         ? 'bg-[var(--color-primary)] text-white shadow-sm'
                         : 'bg-transparent text-[var(--color-text-secondary)] hover:bg-white hover:text-[var(--color-text)]'
                     }`}
                   >
-                    <Archive className="w-3.5 h-3.5" />
+                    <Archive className="w-3.5 h-3.5 shrink-0" />
                     Archived
                   </button>
                 </div>
@@ -709,7 +831,7 @@ export function AdminActivityPage() {
             </div>
 
             {aiOverlay && (
-              <div className="px-5 sm:px-6 md:px-8 py-3 border-b border-[var(--color-border)] bg-[var(--color-primary)]/8">
+              <div className="px-3 sm:px-6 md:px-8 py-3 border-b border-[var(--color-border)] bg-[var(--color-primary)]/8 min-w-0">
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
                   <p className="text-[12px] text-[var(--color-text)] pr-1">
                     <span className="font-semibold text-[var(--color-primary)]">AI search: </span>
@@ -733,7 +855,7 @@ export function AdminActivityPage() {
             )}
 
             <div
-              className={`hidden md:grid px-5 sm:px-6 md:px-8 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)] bg-[var(--color-bg)] ${
+              className={`hidden md:grid px-3 sm:px-6 md:px-8 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)] bg-[var(--color-bg)] ${
                 tab === 'archived'
                   ? 'grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,110px)]'
                   : 'grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2.2fr)]'
@@ -746,7 +868,7 @@ export function AdminActivityPage() {
               {tab === 'archived' && <span className="text-right">Action</span>}
             </div>
 
-            <div className="relative divide-y divide-[var(--color-border)] max-h-[480px] overflow-y-auto overflow-x-visible">
+            <div className="relative divide-y divide-[var(--color-border)] max-h-[min(480px,70vh)] sm:max-h-[480px] overflow-y-auto overflow-x-hidden md:overflow-x-visible [-webkit-overflow-scrolling:touch]">
               {loading && activities.length > 0 && (
                 <div className="absolute inset-0 z-10 flex items-center justify-center bg-white/70 backdrop-blur-[1px]">
                   <div className="inline-flex items-center gap-2 rounded-xl border border-[var(--color-border)] bg-white px-4 py-2 text-[13px] font-medium text-[var(--color-text)] shadow-sm">
@@ -756,11 +878,11 @@ export function AdminActivityPage() {
                 </div>
               )}
               {loading && displayActivities.length === 0 ? (
-                <div className="px-5 sm:px-6 md:px-8 py-6 text-[13px] text-[var(--color-text-secondary)]">
+                <div className="px-3 sm:px-6 md:px-8 py-6 text-[13px] text-[var(--color-text-secondary)]">
                   Loading activity…
                 </div>
               ) : displayActivities.length === 0 ? (
-                <div className="px-5 sm:px-6 md:px-8 py-10 text-center text-[13px] text-[var(--color-text-secondary)]">
+                <div className="px-3 sm:px-6 md:px-8 py-10 text-center text-[13px] text-[var(--color-text-secondary)]">
                   {aiOverlay
                     ? 'No activities matched this question. Try broader wording or a different time range.'
                     : 'No activity found for the selected filters.'}
@@ -780,7 +902,7 @@ export function AdminActivityPage() {
                         void handleSelectActivity(a._id)
                       }
                     }}
-                    className={`px-5 sm:px-6 md:px-8 py-3.5 flex flex-col gap-2 md:grid md:items-center md:gap-x-0 md:gap-y-2 cursor-pointer transition-colors ${
+                    className={`px-3 sm:px-6 md:px-8 py-3.5 flex flex-col gap-2 min-w-0 md:grid md:items-center md:gap-x-0 md:gap-y-2 cursor-pointer transition-colors ${
                       tab === 'archived'
                         ? 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,110px)]'
                         : 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2.2fr)]'
@@ -795,7 +917,7 @@ export function AdminActivityPage() {
                         {(a.userId?.name || a.userId?.email || '?').charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
-                        <p className="text-[13px] font-medium text-[var(--color-text)] truncate">
+                        <p className="text-[13px] font-medium text-[var(--color-text)] break-words md:truncate">
                           {a.userId?.name || a.userId?.email || 'Unknown user'}
                         </p>
                         {a.userId?.email && (
@@ -805,24 +927,27 @@ export function AdminActivityPage() {
                         )}
                       </div>
                     </div>
-                    <p className="text-[12px] text-[var(--color-text-secondary)] truncate">
+                    <p className="text-[12px] text-[var(--color-text-secondary)] md:truncate break-words">
+                      <span className="font-semibold text-[var(--color-text)] md:hidden">Customer: </span>
                       {a.customer || '—'}
                     </p>
-                    <p className="text-[12px] text-[var(--color-text-secondary)]">
+                    <p className="text-[11px] sm:text-[12px] text-[var(--color-text-secondary)] break-words">
+                      <span className="font-semibold text-[var(--color-text)] md:hidden">Date: </span>
                       {new Date(a.createdAt).toLocaleString()}
                     </p>
                     <p
-                      className="text-[13px] text-[var(--color-text)] overflow-hidden"
+                      className="text-[13px] text-[var(--color-text)] overflow-hidden break-words"
                       style={{
                         display: '-webkit-box',
                         WebkitLineClamp: 2,
                         WebkitBoxOrient: 'vertical',
                       }}
                     >
+                      <span className="font-semibold md:hidden">Summary: </span>
                       {a.summary || 'No summary'}
                     </p>
                     {tab === 'archived' && (
-                      <div className="flex justify-end">
+                      <div className="flex justify-end pt-1 md:pt-0 border-t border-[var(--color-border)]/60 md:border-0 mt-1 md:mt-0">
                         <div className="relative">
                           <button
                             id={`action-menu-btn-${a._id}`}
@@ -875,63 +1000,77 @@ export function AdminActivityPage() {
               )}
             </div>
             {!aiOverlay && (totalPages || 1) > 1 && (
-              <div className="px-5 sm:px-6 md:px-8 py-3 border-t border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3">
+              <div className="px-3 sm:px-6 md:px-8 py-3 border-t border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-3 min-w-0">
                 <p className="text-[12px] text-[var(--color-text-secondary)] order-2 sm:order-1">
                   Page {page} of {totalPages || 1} ({total} total)
                 </p>
-                <div className="order-1 sm:order-2 w-full sm:w-auto overflow-x-auto">
-                  <div className="flex items-center gap-1.5 justify-start sm:justify-end min-w-max pb-0.5">
+                <div className="order-1 sm:order-2 w-full sm:w-auto min-w-0">
+                  <div className="flex flex-wrap items-center gap-1.5 justify-center sm:justify-end pb-0.5">
                   <button
                     type="button"
                     onClick={() => setPage(1)}
                     disabled={page <= 1 || loading}
-                    className="inline-flex items-center rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
                     title="First page"
                   >
-                    First
+                    <ChevronsLeft className="w-4 h-4 sm:hidden" aria-hidden />
+                    <span className="hidden sm:inline">First</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page <= 1 || loading}
-                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Previous page"
                   >
                     <ChevronLeft className="w-4 h-4" />
-                    Prev
+                    <span className="hidden sm:inline">Prev</span>
                   </button>
-                  {pageNumbers.map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => setPage(p)}
-                      disabled={loading}
-                      className={`inline-flex items-center justify-center min-w-9 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50 whitespace-nowrap ${
-                        p === page
-                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-                          : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)]'
-                      }`}
-                      aria-current={p === page ? 'page' : undefined}
-                    >
-                      {p}
-                    </button>
-                  ))}
+                  {paginationItems.map((item, idx) =>
+                    item === 'ellipsis' ? (
+                      <span
+                        key={`ellipsis-${idx}`}
+                        className="inline-flex min-w-8 items-center justify-center px-1 text-[12px] font-medium text-[var(--color-text-secondary)] select-none"
+                        aria-hidden
+                      >
+                        …
+                      </span>
+                    ) : (
+                      <button
+                        key={item}
+                        type="button"
+                        onClick={() => setPage(item)}
+                        disabled={loading}
+                        className={`inline-flex items-center justify-center min-w-9 rounded-lg border px-3 py-1.5 text-[12px] font-medium transition-colors disabled:opacity-50 whitespace-nowrap ${
+                          item === page
+                            ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                            : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)]'
+                        }`}
+                        aria-current={item === page ? 'page' : undefined}
+                      >
+                        {item}
+                      </button>
+                    )
+                  )}
                   <button
                     type="button"
                     onClick={() => setPage((p) => Math.min(totalPages || 1, p + 1))}
                     disabled={page >= (totalPages || 1) || loading}
-                    className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
+                    title="Next page"
                   >
-                    Next
+                    <span className="hidden sm:inline">Next</span>
                     <ChevronRight className="w-4 h-4" />
                   </button>
                   <button
                     type="button"
                     onClick={() => setPage(totalPages || 1)}
                     disabled={page >= (totalPages || 1) || loading}
-                    className="inline-flex items-center rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-[var(--color-border)] px-2 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 disabled:cursor-not-allowed"
                     title="Last page"
                   >
-                    Last
+                    <span className="hidden sm:inline">Last</span>
+                    <ChevronsRight className="w-4 h-4 sm:hidden" aria-hidden />
                   </button>
                   </div>
                 </div>
@@ -939,10 +1078,10 @@ export function AdminActivityPage() {
             )}
           </div>
 
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 min-w-0">
             <div
               ref={mediaPanelRef}
-              className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-4 sm:p-5"
+              className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-4 sm:p-5 min-w-0 overflow-hidden"
             >
               <div className="flex items-center justify-between gap-3 mb-2">
                 <h2 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
@@ -1046,18 +1185,51 @@ export function AdminActivityPage() {
               )}
             </div>
 
-            {/* Weekly AI report */}
-            <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-4 sm:p-5 flex flex-col">
-              <div className="flex items-center justify-between gap-3 mb-2">
-                <h2 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-[var(--color-primary)]" />
+            {/* Weekly AI report + matching timesheet Excel */}
+            <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-4 sm:p-5 flex flex-col min-w-0 overflow-hidden">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-2 min-w-0">
+                <h2 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2 min-w-0">
+                  <FileText className="w-4 h-4 shrink-0 text-[var(--color-primary)]" />
                   Weekly quality report
                 </h2>
+                <button
+                  type="button"
+                  onClick={() => void handleExportWeeklyExcel()}
+                  disabled={exporting || exportingWeeklyExcel || loadingReport || !weeklyReportReady}
+                  title={
+                    weeklyReportReady
+                      ? 'Same filters as the AI report you just generated. With From and To set, each customer tab includes every week in that range.'
+                      : 'Generate weekly AI report first (button in the filters bar above). Then download the matching timesheet Excel for the All employee activity data.'
+                  }
+                  className="inline-flex w-full sm:w-auto sm:shrink-0 items-center justify-center gap-2 rounded-xl border border-[var(--color-primary)] bg-[var(--color-primary)]/5 px-3 py-2 text-[12px] font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-60"
+                >
+                  {exportingWeeklyExcel ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Downloading…
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="w-4 h-4" />
+                      Download timesheet Excel
+                    </>
+                  )}
+                </button>
               </div>
+              {!weeklyReportReady && !loadingReport && (
+                <p className="text-[11px] text-[var(--color-text-secondary)] mb-2 sm:text-right">
+                  Generate the weekly AI report first — then this button unlocks for the same filters as All employee
+                  activity.
+                </p>
+              )}
               <p className="text-[12px] text-[var(--color-text-secondary)] mb-3 leading-relaxed">
-                One narrative document built from the filtered table (not a Q&amp;A). For questions like &quot;which
-                Bosch issues were logged last week?&quot;, use Ask AI above; you can still paste this report into email
-                or Outlook from the Reports page.
+                <span className="font-medium text-[var(--color-text)]">AI narrative</span> — click Generate weekly AI
+                report above (uses current filters).{' '}
+                <span className="font-medium text-[var(--color-text)]">Spreadsheet layout</span> — after the report is
+                generated, download here for an Excel file <span className="font-medium">broken down by customer</span>{' '}
+                (one worksheet per customer): day, date, part, concern ID, activity text, hours when captured — same
+                From/To range as the AI report. For ad-hoc questions, use Ask AI above; send narratives from the Reports
+                page.
               </p>
               {reportId && (
                 <p className="mb-2 text-[11px] text-[var(--color-text-secondary)]">
