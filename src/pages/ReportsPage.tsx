@@ -464,6 +464,10 @@ export function ReportsPage() {
                     className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[var(--color-text)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
                   />
                 </div>
+                <p className="text-[11px] text-[var(--color-text-secondary)] leading-relaxed">
+                  Default To/Cc are merged with the matching customer&apos;s email when employees send a single AI log
+                  from the Log with AI screen (and used for report emails when recipients are not overridden).
+                </p>
 
                 <div className="grid sm:grid-cols-2 gap-3">
                   <div className="grid gap-2">

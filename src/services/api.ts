@@ -56,8 +56,8 @@ async function request<T>(path: string, options?: RequestInit & { skipAuth?: boo
       (typeof asAny?.message === 'string' && asAny.message.trim())
 
     const message = serverMessage
-      ? `HTTP ${res.status}: ${serverMessage}`
-      : `HTTP ${res.status}: ${res.statusText}`
+      ? serverMessage
+      : res.statusText?.trim() || `Request failed (${res.status})`
 
     const err = new Error(message) as Error & { status?: number }
     err.status = res.status
@@ -90,6 +90,11 @@ export const api = {
         body: JSON.stringify(data),
       }),
     getUsers: () => request<{ users: User[] }>('/api/auth/users', { method: 'GET' }),
+
+    getCoworkers: () =>
+      request<{
+        users: { id: string; name?: string; email: string; role: string }[]
+      }>('/api/auth/coworkers', { method: 'GET' }),
     updateUser: (
       id: string,
       data: { role?: User['role']; isActive?: boolean; name?: string; email?: string; resetPassword?: string }
@@ -158,7 +163,7 @@ export const api = {
       search.set('limit', String(params?.limit ?? 20))
       if (params?.page) search.set('page', String(params.page))
       return request<{
-        activities: { _id: string; customer?: string; summary?: string; createdAt: string }[]
+        activities: { _id: string; customer?: string; summary?: string; createdAt: string; isOwner?: boolean }[]
         total: number
         page: number
         limit: number
@@ -175,6 +180,14 @@ export const api = {
       request<{
         activity: {
           _id: string
+          userId?: string | { _id: string; name?: string; email?: string; role?: string }
+          sharedWith?: { _id: string; name?: string; email?: string; role?: string }[]
+          collaborationNotes?: {
+            _id?: string
+            text: string
+            createdAt: string
+            userId?: { _id?: string; name?: string; email?: string }
+          }[]
           customer?: string
           summary?: string
           rawConversation?: string
@@ -185,6 +198,18 @@ export const api = {
         }
       }>(`/api/activities/${id}`, {
         method: 'GET',
+      }),
+
+    share: (id: string, sharedWithUserIds: string[]) =>
+      request<{ activity: unknown }>(`/api/activities/${id}/share`, {
+        method: 'PATCH',
+        body: JSON.stringify({ sharedWithUserIds }),
+      }),
+
+    addNote: (id: string, text: string) =>
+      request<{ activity: unknown }>(`/api/activities/${id}/notes`, {
+        method: 'POST',
+        body: JSON.stringify({ text }),
       }),
 
     adminGetOne: (id: string) =>

@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
 import { AuthProvider } from '@/context/AuthContext'
+import { SharedLogsNotifyProvider } from '@/context/SharedLogsNotifyContext'
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute'
 import { AdminRoute } from '@/components/auth/AdminRoute'
 import { Layout } from './components/layout/Layout'
@@ -19,6 +20,7 @@ import { BarcodeReportsPage } from './pages/BarcodeReportsPage'
 function App() {
   return (
     <AuthProvider>
+      <SharedLogsNotifyProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/" element={<Layout />}>
@@ -99,6 +101,7 @@ function App() {
         </Route>
       </Routes>
       <ToastContainer position="top-right" autoClose={3000} hideProgressBar={false} newestOnTop closeOnClick pauseOnHover theme="light" />
+      </SharedLogsNotifyProvider>
     </AuthProvider>
   )
 }

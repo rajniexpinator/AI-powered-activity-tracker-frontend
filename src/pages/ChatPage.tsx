@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   MessageSquare,
   Clock,
@@ -14,13 +14,20 @@ import {
   Plus,
   ScanLine,
   Paperclip,
+  Video,
   FileText,
+  Users,
+  UserCircle2,
+  RefreshCw,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { useAuth } from '@/context/AuthContext'
+import { useSharedLogsNotify } from '@/context/SharedLogsNotifyContext'
 
 type ExtractResult = {
   structured: unknown
@@ -55,6 +62,14 @@ type ActivityAttachment = {
 
 type ActivityDetail = {
   _id: string
+  userId?: string | { _id: string; name?: string; email?: string; role?: string }
+  sharedWith?: { _id: string; name?: string; email?: string; role?: string }[]
+  collaborationNotes?: {
+    _id?: string
+    text: string
+    createdAt: string
+    userId?: { _id?: string; name?: string; email?: string }
+  }[]
   customer?: string
   summary?: string
   rawConversation?: string
@@ -64,12 +79,105 @@ type ActivityDetail = {
   createdAt: string
 }
 
+function activityOwnerId(d: ActivityDetail | null): string | null {
+  if (!d?.userId) return null
+  const u = d.userId as { _id?: string } | string
+  if (typeof u === 'object' && u !== null && '_id' in u && u._id) return String(u._id)
+  return String(d.userId)
+}
+
+type CollabNote = NonNullable<ActivityDetail['collaborationNotes']>[number]
+
+function noteAuthorId(note: CollabNote): string {
+  const u = note.userId as unknown
+  if (typeof u === 'string' && u.trim()) return u.trim()
+  if (u && typeof u === 'object' && u !== null && '_id' in u && (u as { _id?: unknown })._id != null) {
+    return String((u as { _id: unknown })._id)
+  }
+  return ''
+}
+
+function isCollabNoteFromUser(
+  note: CollabNote,
+  u: { id: string; email?: string } | null | undefined
+): boolean {
+  if (!u?.id) return false
+  const aid = noteAuthorId(note)
+  if (aid && String(aid) === String(u.id)) return true
+  const raw = note.userId as { email?: string } | null | undefined
+  if (raw && typeof raw === 'object' && u.email && typeof raw.email === 'string') {
+    if (raw.email.trim().toLowerCase() === u.email.trim().toLowerCase()) return true
+  }
+  return false
+}
+
+function collabNoteKey(n: CollabNote): string {
+  if (n._id) return String(n._id)
+  return `${noteAuthorId(n)}-${n.createdAt}-${(n.text || '').slice(0, 48)}`
+}
+
+/** Stable pastel styles per author so different people are easy to tell apart */
+const OTHER_NOTE_STYLES = [
+  {
+    bubble:
+      'border-sky-200/90 bg-gradient-to-br from-sky-50 to-sky-50/70 text-slate-900 ring-1 ring-sky-100/80',
+    meta: 'text-sky-900/70',
+  },
+  {
+    bubble:
+      'border-violet-200/85 bg-gradient-to-br from-violet-50 to-violet-50/70 text-slate-900 ring-1 ring-violet-100/80',
+    meta: 'text-violet-900/70',
+  },
+  {
+    bubble:
+      'border-emerald-200/85 bg-gradient-to-br from-emerald-50 to-emerald-50/70 text-slate-900 ring-1 ring-emerald-100/80',
+    meta: 'text-emerald-900/70',
+  },
+  {
+    bubble:
+      'border-amber-200/90 bg-gradient-to-br from-amber-50 to-amber-50/65 text-slate-900 ring-1 ring-amber-100/80',
+    meta: 'text-amber-900/75',
+  },
+  {
+    bubble:
+      'border-rose-200/80 bg-gradient-to-br from-rose-50 to-rose-50/70 text-slate-900 ring-1 ring-rose-100/70',
+    meta: 'text-rose-900/70',
+  },
+  {
+    bubble:
+      'border-cyan-200/85 bg-gradient-to-br from-cyan-50 to-cyan-50/70 text-slate-900 ring-1 ring-cyan-100/80',
+    meta: 'text-cyan-900/70',
+  },
+]
+
+function styleIndexForAuthorId(authorId: string): number {
+  if (!authorId) return 0
+  let h = 0
+  for (let i = 0; i < authorId.length; i++) {
+    h = (h + authorId.charCodeAt(i) * (i + 19)) >>> 0
+  }
+  return h % OTHER_NOTE_STYLES.length
+}
+
+const OTHER_AVATAR_STYLES = [
+  'bg-sky-200/90 text-sky-950 border border-sky-300/80',
+  'bg-violet-200/90 text-violet-950 border border-violet-300/80',
+  'bg-emerald-200/90 text-emerald-950 border border-emerald-300/80',
+  'bg-amber-200/90 text-amber-950 border border-amber-300/80',
+  'bg-rose-200/90 text-rose-950 border border-rose-300/80',
+  'bg-cyan-200/90 text-cyan-950 border border-cyan-300/80',
+]
+
 const MAX_IMAGES_PER_ENTRY = 8
 const MAX_IMAGE_FILE_BYTES = 10 * 1024 * 1024 // 10 MB — keep in sync with Backend upload middleware
 const MAX_IMAGE_FILE_ERROR = 'Maximum file size up to 10 MB.'
 const MAX_ATTACHMENTS_PER_ENTRY = 10
 const MAX_ATTACHMENT_FILE_BYTES = 50 * 1024 * 1024 // 50 MB — keep in sync with Backend attachment middleware
 const MAX_ATTACHMENT_FILE_ERROR = 'Maximum attachment size is 50 MB.'
+
+/** Poll server so collaboration updates appear without manual refresh (not true WebSocket realtime). */
+const POLL_ACTIVITY_DETAIL_MS = 8000
+const POLL_ACTIVITY_LIST_MS = 22000
 
 function formatFileSize(bytes?: number) {
   if (bytes == null || Number.isNaN(bytes)) return ''
@@ -87,6 +195,7 @@ function isVideoAttachment(a: ActivityAttachment): boolean {
 
 export function ChatPage() {
   const { user } = useAuth()
+  const { highlightSharedIds, clearSharedLogHighlight } = useSharedLogsNotify()
   const isEmployee = user?.role === 'employee'
   const [text, setText] = useState('')
   const [customerHint, setCustomerHint] = useState('')
@@ -103,7 +212,7 @@ export function ChatPage() {
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [recentActivities, setRecentActivities] = useState<
-    { _id: string; customer?: string; summary?: string; createdAt: string }[]
+    { _id: string; customer?: string; summary?: string; createdAt: string; isOwner?: boolean }[]
   >([])
   const [loadingRecent, setLoadingRecent] = useState(false)
   const [loadingCustomers, setLoadingCustomers] = useState(false)
@@ -127,8 +236,39 @@ export function ChatPage() {
   const attachmentInputRef = useRef<HTMLInputElement | null>(null)
   const [loadingSelected, setLoadingSelected] = useState(false)
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null)
+  const [activityDetail, setActivityDetail] = useState<ActivityDetail | null>(null)
+  const [coworkers, setCoworkers] = useState<{ id: string; name?: string; email: string; role: string }[]>([])
+  const [loadingCoworkers, setLoadingCoworkers] = useState(false)
+  const [coworkersError, setCoworkersError] = useState<string | null>(null)
+  const [shareSearch, setShareSearch] = useState('')
+  const [shareSelection, setShareSelection] = useState<string[]>([])
+  /** Team panel: split sharing vs notes so the page is less overwhelming */
+  const [teamWorkspaceTab, setTeamWorkspaceTab] = useState<'sharing' | 'notes'>('notes')
+  const [showExtractedJson, setShowExtractedJson] = useState(false)
+  const [collabNote, setCollabNote] = useState('')
+  const [savingShare, setSavingShare] = useState(false)
+  const [savingNote, setSavingNote] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [sendingEmail, setSendingEmail] = useState(false)
+
+  const mainLogLocked =
+    Boolean(selectedActivityId && activityDetail && user && user.role !== 'admin' && activityOwnerId(activityDetail) !== user.id)
+
+  const canArchiveSelected =
+    Boolean(selectedActivityId && activityDetail && user && (user.role === 'admin' || activityOwnerId(activityDetail) === user.id))
+
+  const canManageSharing = Boolean(
+    activityDetail && user && (user.role === 'admin' || activityOwnerId(activityDetail) === user.id)
+  )
+
+  const canAddCollabNote = Boolean(
+    activityDetail &&
+      user &&
+      (user.role === 'admin' ||
+        activityOwnerId(activityDetail) === user.id ||
+        activityDetail.sharedWith?.some((s) => String(s._id) === user.id))
+  )
+
   const [dateFilter, setDateFilter] = useState<'all' | 'today'>('all')
   const [customerFilter, setCustomerFilter] = useState<string>('') // '' = all customers
   const [savedResultKey, setSavedResultKey] = useState<string | null>(null)
@@ -159,6 +299,57 @@ export function ChatPage() {
   const [savingBarcode, setSavingBarcode] = useState(false)
   const [recentModalOpen, setRecentModalOpen] = useState(false)
   const newLogButtonRef = useRef<HTMLButtonElement | null>(null)
+
+  const loadTeamForSharing = useCallback(async () => {
+    if (!user) return
+    setLoadingCoworkers(true)
+    setCoworkersError(null)
+    try {
+      if (user.role === 'admin') {
+        const { users } = await api.auth.getUsers()
+        const mapped = users
+          .filter((u) => u.id !== user.id && u.isActive !== false)
+          .map((u) => ({
+            id: u.id,
+            name: u.name,
+            email: u.email,
+            role: u.role,
+          }))
+          .sort((a, b) =>
+            (a.name || a.email).localeCompare(b.name || b.email, undefined, { sensitivity: 'base' })
+          )
+        setCoworkers(mapped)
+      } else {
+        const { users } = await api.auth.getCoworkers()
+        setCoworkers(users)
+      }
+    } catch (err) {
+      setCoworkersError(err instanceof Error ? err.message : 'Could not load team list')
+      setCoworkers([])
+    } finally {
+      setLoadingCoworkers(false)
+    }
+  }, [user])
+
+  const displayedCoworkers = useMemo(() => {
+    const q = shareSearch.trim().toLowerCase()
+    const match = (c: (typeof coworkers)[0]) =>
+      !q ||
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.email || '').toLowerCase().includes(q) ||
+      (c.role || '').toLowerCase().includes(q)
+    const seen = new Set<string>()
+    const out: typeof coworkers = []
+    for (const c of coworkers) {
+      if (!shareSelection.includes(c.id) && !match(c)) continue
+      if (seen.has(c.id)) continue
+      seen.add(c.id)
+      out.push(c)
+    }
+    return out.sort((a, b) =>
+      (a.name || a.email).localeCompare(b.name || b.email, undefined, { sensitivity: 'base' })
+    )
+  }, [coworkers, shareSearch, shareSelection])
 
   function normalizeCustomerName(value: string) {
     return value.trim().toLowerCase().replace(/\s+/g, ' ')
@@ -503,19 +694,21 @@ export function ChatPage() {
     }
   }
 
-  async function loadRecent() {
-    setLoadingRecent(true)
+  /** List refresh only; new shared-log toasts run app-wide in SharedLogsNotifyProvider */
+  const refreshRecentList = useCallback(async (opts?: { silent?: boolean }) => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    if (!opts?.silent) setLoadingRecent(true)
     try {
       const { activities } = await api.activities.list({ limit: 20 })
       setRecentActivities(activities)
     } catch {
     } finally {
-      setLoadingRecent(false)
+      if (!opts?.silent) setLoadingRecent(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
-    void loadRecent()
+    void refreshRecentList({ silent: false })
     const loadCustomers = async () => {
       setLoadingCustomers(true)
       try {
@@ -527,7 +720,91 @@ export function ChatPage() {
       }
     }
     void loadCustomers()
-  }, [])
+  }, [refreshRecentList])
+
+  useEffect(() => {
+    const id = window.setInterval(() => void refreshRecentList({ silent: true }), POLL_ACTIVITY_LIST_MS)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void refreshRecentList({ silent: true })
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [refreshRecentList])
+
+  useEffect(() => {
+    void loadTeamForSharing()
+  }, [loadTeamForSharing])
+
+  /** Merge collaboration fields while a log is open — no full page refresh needed for new notes. */
+  const collabPullInFlightRef = useRef(false)
+  const lastRemoteNoteToastAtRef = useRef<Record<string, number>>({})
+
+  useEffect(() => {
+    if (!selectedActivityId || !user?.id) return
+    let cancelled = false
+
+    const pull = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      if (collabPullInFlightRef.current) return
+      collabPullInFlightRef.current = true
+      try {
+        const { activity } = await api.activities.getOne(selectedActivityId)
+        if (cancelled) return
+        const next = activity as ActivityDetail
+
+        setActivityDetail((prev) => {
+          if (!prev || prev._id !== next._id) return next
+
+          const prevNoteKeys = new Set((prev.collaborationNotes ?? []).map((n) => collabNoteKey(n)))
+          const now = Date.now()
+          for (const n of next.collaborationNotes ?? []) {
+            const nk = collabNoteKey(n)
+            if (prevNoteKeys.has(nk) || isCollabNoteFromUser(n, user)) continue
+
+            const lastToast = lastRemoteNoteToastAtRef.current[nk] ?? 0
+            if (now - lastToast < 5000) continue
+            lastRemoteNoteToastAtRef.current[nk] = now
+
+            const who = (n.userId?.name || n.userId?.email || 'Someone').trim()
+            toast.info(`${who} added a note on this log`)
+          }
+
+          const wasInShared = (prev.sharedWith ?? []).some((s) => String(s._id) === user.id)
+          const nowInShared = (next.sharedWith ?? []).some((s) => String(s._id) === user.id)
+          if (!wasInShared && nowInShared) {
+            toast.info('You were added to this log — you can view and add notes')
+          }
+
+          return {
+            ...prev,
+            collaborationNotes: next.collaborationNotes,
+            sharedWith: next.sharedWith,
+            userId: next.userId,
+          }
+        })
+      } catch {
+        /* ignore transient poll errors */
+      } finally {
+        collabPullInFlightRef.current = false
+      }
+    }
+
+    void pull()
+    const intervalId = window.setInterval(pull, POLL_ACTIVITY_DETAIL_MS)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') void pull()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      cancelled = true
+      window.clearInterval(intervalId)
+      document.removeEventListener('visibilitychange', onVis)
+      collabPullInFlightRef.current = false
+    }
+  }, [selectedActivityId, user?.id])
 
   useEffect(() => {
     if (selectedCustomerId || !customerHint.trim() || customers.length === 0) return
@@ -539,7 +816,14 @@ export function ChatPage() {
   }, [customers, customerHint, selectedCustomerId])
 
   function resetToNewLog() {
+    clearSharedLogHighlight()
     setSelectedActivityId(null)
+    setActivityDetail(null)
+    setShareSelection([])
+    setShareSearch('')
+    setCollabNote('')
+    setTeamWorkspaceTab('notes')
+    setShowExtractedJson(false)
     setResult(null)
     setValidation(null)
     setError(null)
@@ -568,6 +852,10 @@ export function ChatPage() {
   async function handleExtract() {
     if (!text.trim()) {
       setError('Please describe the activity before logging with AI.')
+      return
+    }
+    if (mainLogLocked) {
+      setError('This log is shared with you in read-only mode. Ask the owner to edit main fields.')
       return
     }
     if (isEmployee) {
@@ -621,6 +909,10 @@ export function ChatPage() {
 
   async function handleSave() {
     if (!result) return
+    if (mainLogLocked) {
+      toast.error('Only the log owner can edit the main fields. You can add collaboration notes below.')
+      return
+    }
     if (isEmployee) {
       const hasDropdownChoice = Boolean(selectedCustomerId)
       const hasTypedCustomer = Boolean(customerHint.trim())
@@ -729,6 +1021,28 @@ export function ChatPage() {
       setSaveMessage(selectedActivityId ? 'Activity updated.' : 'Activity saved to tracker.')
       toast.success(selectedActivityId ? 'Updated successfully.' : 'Saved to tracker.')
       setSavedResultKey(currentKey)
+
+      const newId = String((activity as { _id?: string })._id || '')
+      if (selectedActivityId && newId) {
+        try {
+          const refreshed = await api.activities.getOne(selectedActivityId)
+          const d = refreshed.activity as ActivityDetail
+          setActivityDetail(d)
+          setShareSelection((d.sharedWith ?? []).map((s) => s._id))
+        } catch {
+        }
+      } else if (!selectedActivityId && newId) {
+        setSelectedActivityId(newId)
+        try {
+          const refreshed = await api.activities.getOne(newId)
+          const d = refreshed.activity as ActivityDetail
+          setActivityDetail(d)
+          setShareSelection((d.sharedWith ?? []).map((s) => s._id))
+        } catch {
+          setActivityDetail(activity as ActivityDetail)
+        }
+      }
+
       // Keep recent list in sync after create/update.
       setRecentActivities((prev) => {
         const nextItem = {
@@ -736,6 +1050,7 @@ export function ChatPage() {
           customer: (activity as any).customer,
           summary: (activity as any).summary,
           createdAt: (activity as any).createdAt,
+          isOwner: true,
         }
         if (selectedActivityId) {
           return prev.map((item) => (item._id === selectedActivityId ? nextItem : item))
@@ -750,8 +1065,50 @@ export function ChatPage() {
     }
   }
 
+  async function handleSaveSharing() {
+    if (!selectedActivityId || !canManageSharing) return
+    setSavingShare(true)
+    setError(null)
+    try {
+      const { activity } = await api.activities.share(selectedActivityId, shareSelection)
+      setActivityDetail(activity as ActivityDetail)
+      toast.success('Sharing updated.')
+    } catch (err) {
+      const message = (err as Error).message || 'Failed to update sharing'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSavingShare(false)
+    }
+  }
+
+  async function handleAddCollabNote() {
+    if (!selectedActivityId || !collabNote.trim() || !canAddCollabNote) return
+    setSavingNote(true)
+    setError(null)
+    try {
+      const { activity } = await api.activities.addNote(selectedActivityId, collabNote.trim())
+      setActivityDetail(activity as ActivityDetail)
+      setCollabNote('')
+      toast.success('Note added.')
+    } catch (err) {
+      const message = (err as Error).message || 'Failed to add note'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSavingNote(false)
+    }
+  }
+
   async function handleSelectRecent(id: string) {
+    clearSharedLogHighlight(id)
     setSelectedActivityId(id)
+    setActivityDetail(null)
+    setShareSelection([])
+    setShareSearch('')
+    setCollabNote('')
+    setTeamWorkspaceTab('notes')
+    setShowExtractedJson(false)
     setLoadingSelected(true)
     setError(null)
     setSaveMessage(null)
@@ -763,6 +1120,8 @@ export function ChatPage() {
         recentActivities.find((a) => a._id === id)?.customer?.trim() || ''
       const { activity } = await api.activities.getOne(id)
       const detail = activity as ActivityDetail
+      setActivityDetail(detail)
+      setShareSelection((detail.sharedWith ?? []).map((s) => s._id))
 
       const structured = (detail.structuredData || {}) as StructuredActivity
 
@@ -876,6 +1235,7 @@ export function ChatPage() {
     return true
   })
   const mobileRecentPreview = filteredActivities.slice(0, 3)
+  const hasRecentSharedHighlight = highlightSharedIds.size > 0
 
   return (
     <AdminShell>
@@ -1193,10 +1553,22 @@ export function ChatPage() {
         {/* Mobile: recent logs modal */}
         {recentModalOpen && (
           <div className="fixed inset-0 z-40 bg-black/50 md:hidden">
-            <div className="absolute inset-x-0 bottom-0 top-12 rounded-t-2xl bg-white border border-[var(--color-border)] shadow-xl overflow-hidden flex flex-col">
+            <div
+              className={`absolute inset-x-0 bottom-0 top-12 rounded-t-2xl bg-white border shadow-xl overflow-hidden flex flex-col ${
+                hasRecentSharedHighlight
+                  ? 'border-sky-400/80 ring-2 ring-sky-300/50 ring-inset bg-gradient-to-b from-sky-50/95 to-white'
+                  : 'border-[var(--color-border)]'
+              }`}
+            >
               <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
                 <div>
-                  <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#777]">Recent logs</p>
+                  <p
+                    className={`text-xs font-medium uppercase tracking-[0.14em] ${
+                      hasRecentSharedHighlight ? 'text-sky-900 font-semibold' : 'text-[#777]'
+                    }`}
+                  >
+                    Recent logs
+                  </p>
                   <p className="text-[11px] text-[#777]">{filteredActivities.length} shown</p>
                 </div>
                 <div className="flex items-center gap-2">
@@ -1212,11 +1584,14 @@ export function ChatPage() {
                 </div>
               </div>
 
-              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)]">
+              <div className="flex flex-wrap items-center justify-center gap-2 min-w-0 px-4 pr-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)] sm:justify-between">
                 <button
                   type="button"
                   onClick={() => {
                     setSelectedActivityId(null)
+                    setActivityDetail(null)
+                    setShareSelection([])
+                    setCollabNote('')
                     setResult(null)
                     setValidation(null)
                     setError(null)
@@ -1241,21 +1616,28 @@ export function ChatPage() {
                     setCustomerHintTouched(false)
                     setRecentModalOpen(false)
                   }}
-                  className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[12px] font-semibold text-[#444] hover:bg-black/[0.03]"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] bg-white text-[#444] hover:bg-black/[0.03]"
+                  aria-label="New log"
+                  title="New log"
                 >
                   <Plus className="w-4 h-4" />
-                  New log
                 </button>
 
                 <button
                   type="button"
                   onClick={() => void handleSendLogEmail()}
                   disabled={!selectedActivityId || sendingEmail || archiving}
-                  title={!selectedActivityId ? 'Select a log first to enable Send email' : 'Send selected log by email'}
-                  className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[12px] font-semibold text-[#444] hover:bg-black/[0.03] disabled:opacity-60 disabled:cursor-not-allowed"
+                  aria-label={sendingEmail ? 'Sending email…' : 'Send email'}
+                  title={
+                    !selectedActivityId
+                      ? 'Select a log first to enable Send email'
+                      : sendingEmail
+                        ? 'Sending…'
+                        : 'Send selected log by email'
+                  }
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] bg-white text-[#444] hover:bg-black/[0.03] disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
-                  {sendingEmail ? 'Sending…' : 'Send email'}
                 </button>
 
                 <button
@@ -1272,6 +1654,9 @@ export function ChatPage() {
                       await api.activities.archive(selectedActivityId)
                       setRecentActivities((prev) => prev.filter((a) => a._id !== selectedActivityId))
                       setSelectedActivityId(null)
+                      setActivityDetail(null)
+                      setShareSelection([])
+                      setCollabNote('')
                       setResult(null)
                       setValidation(null)
                       setText('')
@@ -1299,12 +1684,12 @@ export function ChatPage() {
                       setArchiving(false)
                     }
                   }}
-                  disabled={!selectedActivityId || archiving}
+                  disabled={!selectedActivityId || archiving || !canArchiveSelected}
+                  aria-label={archiving ? 'Archiving…' : 'Archive'}
                   title={!selectedActivityId ? 'Select a log first to enable Archive' : 'Archive selected log'}
-                  className="inline-flex items-center gap-1.5 h-9 rounded-lg border border-red-700 bg-red-600 px-3 text-[12px] font-semibold text-white shadow-sm hover:bg-red-700 disabled:bg-red-100 disabled:text-red-600 disabled:border-red-300 disabled:shadow-none"
+                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-700 bg-red-600 text-white shadow-sm hover:bg-red-700 disabled:bg-red-100 disabled:text-red-600 disabled:border-red-300 disabled:shadow-none"
                 >
-                  <Archive className="w-4 h-4" />
-                  {archiving ? 'Archiving…' : 'Archive'}
+                  {archiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
                 </button>
               </div>
 
@@ -1324,7 +1709,7 @@ export function ChatPage() {
                         }}
                         className={`relative w-full text-left px-4 py-3 transition-colors ${
                           isSelected ? 'bg-[var(--color-primary)]/6' : 'hover:bg-black/[0.025]'
-                        }`}
+                        }${highlightSharedIds.has(act._id) ? ' ring-2 ring-inset ring-sky-400/75 bg-sky-50/60' : ''}`}
                       >
                         {isSelected && (
                           <span
@@ -1332,8 +1717,15 @@ export function ChatPage() {
                             className="absolute left-0 top-0 bottom-0 w-1 bg-[var(--color-primary)]"
                           />
                         )}
-                        <p className="text-xs font-medium text-[#999] mb-0.5 truncate">
-                          {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                        <p className="text-xs font-medium text-[#999] mb-0.5 truncate flex flex-wrap items-center gap-1.5">
+                          {act.isOwner === false && (
+                            <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-sky-100 text-sky-800 border border-sky-200">
+                              Shared
+                            </span>
+                          )}
+                          <span className="truncate">
+                            {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                          </span>
                         </p>
                         <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
                       </button>
@@ -1361,14 +1753,29 @@ export function ChatPage() {
         {/* Two-column layout */}
         <div className="grid gap-4 md:grid-cols-[minmax(0,_260px)_minmax(0,_1fr)]">
           {/* Left: recent activity list */}
-          <section className="rounded-[var(--radius-lg)] bg-white border border-[var(--color-border)] shadow-[var(--shadow-sm)] overflow-hidden hidden md:block">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#777]">Recent logs</p>
-              <div className="flex items-center gap-2 whitespace-nowrap">
+          <section
+            className={`rounded-[var(--radius-lg)] shadow-[var(--shadow-sm)] overflow-hidden hidden md:block border bg-white transition-[box-shadow,background-color,border-color] duration-300 ${
+              hasRecentSharedHighlight
+                ? 'border-sky-400/85 ring-2 ring-sky-300/45 bg-gradient-to-b from-sky-50/95 to-white shadow-[0_10px_28px_rgba(14,165,233,0.2)]'
+                : 'border-[var(--color-border)]'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 min-w-0 pl-4 pr-5 sm:pr-6 py-3 border-b border-[var(--color-border)]">
+              <p
+                className={`text-xs font-medium uppercase tracking-[0.14em] shrink min-w-0 ${
+                  hasRecentSharedHighlight ? 'text-sky-900 font-semibold' : 'text-[#777]'
+                }`}
+              >
+                Recent logs
+              </p>
+              <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
                     setSelectedActivityId(null)
+                    setActivityDetail(null)
+                    setShareSelection([])
+                    setCollabNote('')
                     setResult(null)
                     setValidation(null)
                     setError(null)
@@ -1392,20 +1799,27 @@ export function ChatPage() {
                     setSavedResultKey(null)
                     setCustomerHintTouched(false)
                   }}
-                  className="inline-flex items-center gap-1.5 h-8 rounded-full px-3 text-[11px] font-semibold text-[#444] hover:bg-black/[0.03] border border-[var(--color-border)] bg-white transition-colors"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[#444] hover:bg-black/[0.03] transition-colors"
+                  aria-label="New log"
+                  title="New log"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  New log
+                  <Plus className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => void handleSendLogEmail()}
                   disabled={!selectedActivityId || sendingEmail || archiving}
-                  title={!selectedActivityId ? 'Select a log first to enable Send email' : 'Send selected log by email'}
-                  className="inline-flex items-center gap-1.5 h-8 rounded-full px-3 text-[11px] font-semibold text-[#444] hover:bg-black/[0.03] border border-[var(--color-border)] bg-white transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  aria-label={sendingEmail ? 'Sending email…' : 'Send email'}
+                  title={
+                    !selectedActivityId
+                      ? 'Select a log first to enable Send email'
+                      : sendingEmail
+                        ? 'Sending…'
+                        : 'Send selected log by email'
+                  }
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[#444] hover:bg-black/[0.03] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                 >
-                  {sendingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Mail className="w-3.5 h-3.5" />}
-                  {sendingEmail ? 'Sending…' : 'Send email'}
+                  {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                 </button>
                 <button
                   type="button"
@@ -1421,6 +1835,9 @@ export function ChatPage() {
                       await api.activities.archive(selectedActivityId)
                       setRecentActivities((prev) => prev.filter((a) => a._id !== selectedActivityId))
                       setSelectedActivityId(null)
+                      setActivityDetail(null)
+                      setShareSelection([])
+                      setCollabNote('')
                       setResult(null)
                       setValidation(null)
                       setText('')
@@ -1447,12 +1864,12 @@ export function ChatPage() {
                       setArchiving(false)
                     }
                   }}
-                  disabled={!selectedActivityId || archiving}
+                  disabled={!selectedActivityId || archiving || !canArchiveSelected}
+                  aria-label={archiving ? 'Archiving…' : 'Archive'}
                   title={!selectedActivityId ? 'Select a log first to enable Archive' : 'Archive selected log'}
-                  className="inline-flex items-center gap-1.5 h-8 rounded-full px-3 text-[11px] font-semibold text-white border border-red-700 bg-red-600 shadow-sm hover:bg-red-700 disabled:bg-red-100 disabled:text-red-600 disabled:border-red-300 disabled:shadow-none transition-colors"
+                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-red-700 bg-red-600 text-white shadow-sm hover:bg-red-700 disabled:bg-red-100 disabled:text-red-600 disabled:border-red-300 disabled:shadow-none transition-colors"
                 >
-                  <Archive className="w-3.5 h-3.5" />
-                  {archiving ? 'Archiving…' : 'Archive'}
+                  {archiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
                 </button>
               </div>
             </div>
@@ -1471,10 +1888,17 @@ export function ChatPage() {
                         isSelected
                           ? 'bg-[var(--color-primary)]/6 border-l-2 border-[var(--color-primary)]'
                           : 'hover:bg-black/[0.025]'
-                      }`}
+                      }${highlightSharedIds.has(act._id) ? ' ring-2 ring-inset ring-sky-400/75 bg-sky-50/60' : ''}`}
                     >
-                      <p className="text-xs font-medium text-[#999] mb-0.5 truncate">
-                        {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                      <p className="text-xs font-medium text-[#999] mb-0.5 truncate flex flex-wrap items-center gap-1.5">
+                        {act.isOwner === false && (
+                          <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-sky-100 text-sky-800 border border-sky-200">
+                            Shared
+                          </span>
+                        )}
+                        <span className="truncate">
+                          {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                        </span>
                       </p>
                       <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
                     </button>
@@ -1505,9 +1929,21 @@ export function ChatPage() {
           </section>
 
           {/* Mobile: recent logs preview */}
-          <section className="rounded-[var(--radius-lg)] bg-white border border-[var(--color-border)] shadow-[var(--shadow-sm)] overflow-hidden md:hidden">
-            <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]">
-              <p className="text-xs font-medium uppercase tracking-[0.14em] text-[#777]">Recent logs</p>
+          <section
+            className={`rounded-[var(--radius-lg)] shadow-[var(--shadow-sm)] overflow-hidden md:hidden border bg-white transition-[box-shadow,background-color,border-color] duration-300 ${
+              hasRecentSharedHighlight
+                ? 'border-sky-400/85 ring-2 ring-sky-300/45 bg-gradient-to-b from-sky-50/95 to-white shadow-[0_10px_28px_rgba(14,165,233,0.2)]'
+                : 'border-[var(--color-border)]'
+            }`}
+          >
+            <div className="flex items-center justify-between gap-2 min-w-0 pl-4 pr-5 py-3 border-b border-[var(--color-border)]">
+              <p
+                className={`text-xs font-medium uppercase tracking-[0.14em] min-w-0 ${
+                  hasRecentSharedHighlight ? 'text-sky-900 font-semibold' : 'text-[#777]'
+                }`}
+              >
+                Recent logs
+              </p>
               <button
                 type="button"
                 onClick={() => setRecentModalOpen(true)}
@@ -1529,7 +1965,7 @@ export function ChatPage() {
                     onClick={() => void handleSelectRecent(act._id)}
                     className={`relative w-full text-left px-4 py-3 transition-colors ${
                       isSelected ? 'bg-[var(--color-primary)]/6' : 'hover:bg-black/[0.025]'
-                    }`}
+                    }${highlightSharedIds.has(act._id) ? ' ring-2 ring-inset ring-sky-400/75 bg-sky-50/60' : ''}`}
                   >
                     {isSelected && (
                       <span
@@ -1537,8 +1973,15 @@ export function ChatPage() {
                         className="absolute left-0 top-0 bottom-0 w-1 bg-[var(--color-primary)]"
                       />
                     )}
-                    <p className="text-xs font-medium text-[#999] mb-0.5 truncate">
-                      {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                    <p className="text-xs font-medium text-[#999] mb-0.5 truncate flex flex-wrap items-center gap-1.5">
+                      {act.isOwner === false && (
+                        <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-sky-100 text-sky-800 border border-sky-200">
+                          Shared
+                        </span>
+                      )}
+                      <span className="truncate">
+                        {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                      </span>
                     </p>
                     <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
                   </button>
@@ -1612,9 +2055,26 @@ export function ChatPage() {
               )}
 
               {result && (
-                <div className="mt-2 space-y-3">
-                  <div className="flex items-center justify-between mb-1 gap-2">
-                    <p className="text-xs font-medium text-[#666]">Extracted JSON</p>
+                <fieldset
+                  disabled={mainLogLocked}
+                  className="mt-2 space-y-3 min-w-0 border-0 p-0 m-0 disabled:opacity-[0.85]"
+                >
+                  <div className="flex flex-wrap items-center justify-between mb-1 gap-2">
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-medium text-[#666]">Extracted data</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowExtractedJson((s) => !s)}
+                        className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] bg-white px-2 py-0.5 text-[10px] font-semibold text-[#555] hover:bg-black/[0.03]"
+                      >
+                        {showExtractedJson ? (
+                          <ChevronDown className="w-3 h-3" />
+                        ) : (
+                          <ChevronRight className="w-3 h-3" />
+                        )}
+                        {showExtractedJson ? 'Hide raw JSON' : 'Show raw JSON'}
+                      </button>
+                    </div>
                     {validation && (
                       <div
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${
@@ -1630,9 +2090,16 @@ export function ChatPage() {
                       </div>
                     )}
                   </div>
-                  <pre className="max-h-64 overflow-auto rounded-[var(--radius)] bg-[#0b1020] text-[11px] text-[#e5f0ff] px-3 py-2 border border-[#1f2937] whitespace-pre-wrap break-words">
-                    {JSON.stringify(result.structured, null, 2)}
-                  </pre>
+                  {showExtractedJson ? (
+                    <pre className="max-h-48 overflow-auto rounded-[var(--radius)] bg-[#0b1020] text-[11px] text-[#e5f0ff] px-3 py-2 border border-[#1f2937] whitespace-pre-wrap break-words">
+                      {JSON.stringify(result.structured, null, 2)}
+                    </pre>
+                  ) : (
+                    <p className="text-[11px] text-[#888] mb-1">
+                      Fields below are editable. Open <span className="font-medium text-[#555]">raw JSON</span> only if you
+                      need the full AI payload.
+                    </p>
+                  )}
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="space-y-2">
                       <div>
@@ -1745,13 +2212,16 @@ export function ChatPage() {
                       {saveMessage}
                     </p>
                   )}
-                </div>
+                </fieldset>
               )}
             </div>
 
             {/* Input */}
             <div className="border-t border-[var(--color-border)] px-4 sm:px-5 py-3 bg-white">
-              <div className="flex flex-col gap-2">
+              <fieldset
+                disabled={mainLogLocked}
+                className="flex flex-col gap-2 min-w-0 border-0 p-0 m-0 disabled:opacity-[0.85]"
+              >
                 <textarea
                   rows={3}
                   value={text}
@@ -1961,33 +2431,14 @@ export function ChatPage() {
                     ))}
                   </div>
                 )}
-                {attachments.length > 0 && (
+                {attachments.some((a) => !isVideoAttachment(a)) && (
                   <div className="mt-2 grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
-                    {attachments.map((a, idx) => (
-                      <div
-                        key={`${a.url}-${idx}`}
-                        className={`relative rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] group ${
-                          isVideoAttachment(a) ? '' : 'overflow-hidden'
-                        }`}
-                      >
-                        {isVideoAttachment(a) ? (
-                          !failedAttachmentVideos[a.url] ? (
-                            <video
-                              src={a.url}
-                              controls
-                              playsInline
-                              preload="metadata"
-                              className="h-20 w-full object-cover bg-black"
-                              onError={() =>
-                                setFailedAttachmentVideos((prev) => ({ ...prev, [a.url]: true }))
-                              }
-                            />
-                          ) : (
-                            <div className="h-20 w-full flex items-center justify-center text-[10px] text-red-600 px-2 text-center bg-[var(--color-bg)]">
-                              Video load failed
-                            </div>
-                          )
-                        ) : (
+                    {attachments.map((a, idx) =>
+                      !isVideoAttachment(a) ? (
+                        <div
+                          key={`${a.url}-${idx}`}
+                          className="relative rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)] group"
+                        >
                           <a
                             href={a.url}
                             target="_blank"
@@ -2003,18 +2454,18 @@ export function ChatPage() {
                               <span className="text-[8px] text-[#999]">{formatFileSize(a.size)}</span>
                             ) : null}
                           </a>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
-                          className="absolute top-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 z-10"
-                          aria-label={`Remove file ${idx + 1}`}
-                          title="Remove file"
-                        >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
+                          <button
+                            type="button"
+                            onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                            className="absolute top-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 z-10"
+                            aria-label={`Remove file ${idx + 1}`}
+                            title="Remove file"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ) : null,
+                    )}
                   </div>
                 )}
                 {/* Documents & video (test reports, customer data files) */}
@@ -2024,9 +2475,9 @@ export function ChatPage() {
                     Attach files (optional)
                   </p>
                   <p className="text-[10px] text-[#777] leading-relaxed">
-                    PDF, Word, Excel, CSV, ZIP, JSON/XML/DAT, MP4/MOV/WebM — up to {MAX_ATTACHMENTS_PER_ENTRY} files,{' '}
-                    {MAX_ATTACHMENT_FILE_BYTES / (1024 * 1024)} MB each. For equipment test data or files you send to
-                    customers.
+                    PDF, Word, Excel, CSV, RTF, ZIP, JSON/XML/DAT, MP4/MOV/WebM — up to {MAX_ATTACHMENTS_PER_ENTRY}{' '}
+                    files, {MAX_ATTACHMENT_FILE_BYTES / (1024 * 1024)} MB each. For equipment test data or files you
+                    send to customers.
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
                     <label className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-[11px] text-[#444] cursor-pointer hover:bg-black/[0.03]">
@@ -2036,7 +2487,7 @@ export function ChatPage() {
                         ref={attachmentInputRef}
                         type="file"
                         className="hidden"
-                        accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.zip,.mp4,.mov,.webm,.m4v,.json,.xml,.dat,video/*,application/pdf"
+                        accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,.rtf,.zip,.mp4,.mov,.webm,.m4v,.json,.xml,.dat,video/*,application/pdf,application/rtf,text/rtf"
                         onChange={(e) => {
                           const file = e.target.files?.[0]
                           if (file) {
@@ -2106,6 +2557,52 @@ export function ChatPage() {
                     )}
                   </div>
                 </div>
+                {attachments.some(isVideoAttachment) && (
+                  <div className="mt-3 space-y-2">
+                    <p className="text-[11px] font-semibold text-[#555] flex items-center gap-1.5">
+                      <Video className="w-3.5 h-3.5 text-[var(--color-primary)] shrink-0" />
+                      Uploaded videos
+                    </p>
+                    <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                      {attachments.map((a, idx) =>
+                        isVideoAttachment(a) ? (
+                          <div
+                            key={`${a.url}-${idx}`}
+                            className="relative rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)] group"
+                            title={a.name}
+                          >
+                            {!failedAttachmentVideos[a.url] ? (
+                              <video
+                                src={a.url}
+                                controls
+                                playsInline
+                                preload="metadata"
+                                className="h-20 w-full object-cover bg-black"
+                                title={a.name}
+                                onError={() =>
+                                  setFailedAttachmentVideos((prev) => ({ ...prev, [a.url]: true }))
+                                }
+                              />
+                            ) : (
+                              <div className="h-20 w-full flex items-center justify-center text-[10px] text-red-600 px-2 text-center bg-[var(--color-bg)]">
+                                Video load failed
+                              </div>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
+                              className="absolute top-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80 z-10"
+                              aria-label={`Remove video ${idx + 1}`}
+                              title="Remove video"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        ) : null,
+                      )}
+                    </div>
+                  </div>
+                )}
                 <p className="text-[11px] text-[#777] leading-relaxed">
                   Upload up to {MAX_IMAGES_PER_ENTRY} photos as evidence for this activity (defect, part label/barcode,
                   workstation condition, or before/after repair). Each image may be up to 10 MB. Use clear images that
@@ -2158,8 +2655,352 @@ export function ChatPage() {
                     </button>
                   </div>
                 </div>
-              </div>
+              </fieldset>
             </div>
+
+            {selectedActivityId && activityDetail && (
+              <div className="border-t border-[var(--color-border)] bg-[var(--color-bg)] px-4 sm:px-5 py-4 rounded-b-[var(--radius-lg)]">
+                <div className="rounded-2xl border border-[var(--color-border)] bg-gradient-to-b from-[var(--color-primary)]/[0.07] via-white to-white shadow-[0_12px_40px_rgba(15,23,42,0.06)] overflow-hidden">
+                  <div className="px-4 py-3 border-b border-[var(--color-border)]/90 bg-white/90 backdrop-blur-sm flex flex-wrap items-start gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[var(--color-primary)]/12 text-[var(--color-primary)] ring-1 ring-[var(--color-primary)]/15">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-[14px] font-semibold text-[var(--color-text)] tracking-tight">
+                          Team workspace
+                        </h3>
+                        <span
+                          className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200/90 bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-900"
+                          title="Sharing and notes refresh automatically while you keep this page open"
+                        >
+                          <span className="relative flex h-2 w-2">
+                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                          </span>
+                          Live sync
+                        </span>
+                      </div>
+                      <p className="text-[12px] text-[var(--color-text-secondary)] mt-1 leading-snug">
+                        Use <span className="font-medium text-[var(--color-text)]">Sharing</span> to invite viewers, or{' '}
+                        <span className="font-medium text-[var(--color-text)]">Notes</span> for the thread—only one panel
+                        shows at a time so the page stays shorter.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="px-4 py-3 space-y-3">
+                    {mainLogLocked && (
+                      <div className="rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2.5 text-[12px] text-amber-950 leading-relaxed">
+                        <span className="font-semibold">Read-only for you.</span> This log was shared with you—open{' '}
+                        <span className="font-semibold">Notes</span> to participate. Ask the owner if the main activity
+                        text needs to change.
+                      </div>
+                    )}
+
+                    <div
+                      className="flex gap-1 p-1 rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)]"
+                      role="tablist"
+                      aria-label="Team workspace sections"
+                    >
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={teamWorkspaceTab === 'sharing'}
+                        onClick={() => setTeamWorkspaceTab('sharing')}
+                        className={`flex-1 min-w-0 rounded-lg px-2.5 sm:px-3 py-2 text-[11px] sm:text-[12px] font-semibold transition ${
+                          teamWorkspaceTab === 'sharing'
+                            ? 'bg-white text-[var(--color-text)] shadow-sm ring-1 ring-black/[0.06]'
+                            : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
+                        }`}
+                      >
+                        Sharing
+                        {canManageSharing && shareSelection.length > 0 ? (
+                          <span className="ml-1 opacity-75 font-normal">({shareSelection.length})</span>
+                        ) : null}
+                      </button>
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={teamWorkspaceTab === 'notes'}
+                        onClick={() => setTeamWorkspaceTab('notes')}
+                        className={`flex-1 min-w-0 rounded-lg px-2.5 sm:px-3 py-2 text-[11px] sm:text-[12px] font-semibold transition inline-flex items-center justify-center gap-1 ${
+                          teamWorkspaceTab === 'notes'
+                            ? 'bg-white text-[var(--color-text)] shadow-sm ring-1 ring-black/[0.06]'
+                            : 'text-[var(--color-text-secondary)] hover:text-[var(--color-text)]'
+                        }`}
+                      >
+                        <MessageSquare className="w-3.5 h-3.5 shrink-0 opacity-80" />
+                        Notes
+                        {(activityDetail.collaborationNotes ?? []).length > 0 ? (
+                          <span className="opacity-75 font-normal">
+                            ({(activityDetail.collaborationNotes ?? []).length})
+                          </span>
+                        ) : null}
+                      </button>
+                    </div>
+
+                    {activityDetail.userId && typeof activityDetail.userId === 'object' && (
+                      <div className="flex items-center gap-2 text-[11px] text-[var(--color-text-secondary)] px-0.5">
+                        <UserCircle2 className="w-3.5 h-3.5 shrink-0 text-[var(--color-primary)]" />
+                        <span className="truncate">
+                          <span className="font-semibold text-[var(--color-text)]">Owner:</span>{' '}
+                          {(activityDetail.userId as { name?: string }).name?.trim() ||
+                            (activityDetail.userId as { email?: string }).email ||
+                            '—'}
+                          {(activityDetail.userId as { email?: string }).email ? (
+                            <span className="text-[var(--color-text-secondary)]">
+                              {' '}
+                              · {(activityDetail.userId as { email?: string }).email}
+                            </span>
+                          ) : null}
+                        </span>
+                      </div>
+                    )}
+
+                    {teamWorkspaceTab === 'sharing' && (
+                      <div className="space-y-3">
+                        {!canManageSharing ? (
+                          <div className="rounded-xl border border-[var(--color-border)] bg-white px-3 py-3 text-[12px] text-[var(--color-text-secondary)] leading-relaxed">
+                            Only the log owner can change who this activity is shared with. Switch to{' '}
+                            <button
+                              type="button"
+                              className="font-semibold text-[var(--color-primary)] underline-offset-2 hover:underline"
+                              onClick={() => setTeamWorkspaceTab('notes')}
+                            >
+                              Notes
+                            </button>{' '}
+                            to read and post updates.
+                          </div>
+                        ) : (
+                          <div className="rounded-xl border border-[var(--color-border)] bg-white p-3.5 shadow-sm space-y-3">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p className="text-[13px] font-semibold text-[var(--color-text)]">
+                                  Who can view &amp; comment
+                                </p>
+                                <p className="text-[11px] text-[var(--color-text-secondary)] mt-0.5 max-w-md">
+                                  Multi-select below. Shared teammates can open this log and post notes—they cannot edit the
+                                  main AI fields.
+                                </p>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => void loadTeamForSharing()}
+                                disabled={loadingCoworkers}
+                                className="inline-flex items-center gap-1.5 shrink-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1.5 text-[11px] font-semibold text-[var(--color-text)] hover:bg-black/[0.04] disabled:opacity-50"
+                              >
+                                {loadingCoworkers ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="w-3.5 h-3.5" />
+                                )}
+                                Refresh list
+                              </button>
+                            </div>
+
+                            <div>
+                              <label className="text-[11px] font-semibold text-[var(--color-text-secondary)]">
+                                Search team
+                              </label>
+                              <input
+                                type="search"
+                                value={shareSearch}
+                                onChange={(e) => setShareSearch(e.target.value)}
+                                placeholder="Filter by name or email…"
+                                className="mt-1 w-full rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-[13px] text-[var(--color-text)] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
+                              />
+                            </div>
+
+                            {coworkersError && (
+                              <div className="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[12px] text-red-800">
+                                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                                <span>{coworkersError}</span>
+                              </div>
+                            )}
+
+                            {loadingCoworkers ? (
+                              <div className="flex items-center gap-2 py-6 text-[13px] text-[var(--color-text-secondary)]">
+                                <Loader2 className="w-4 h-4 animate-spin text-[var(--color-primary)]" />
+                                Loading team…
+                              </div>
+                            ) : coworkers.length === 0 ? (
+                              <p className="text-[12px] text-[var(--color-text-secondary)] leading-relaxed rounded-lg bg-[var(--color-bg)] border border-dashed border-[var(--color-border)] px-3 py-3">
+                                No other people in the system yet. Add accounts under{' '}
+                                <span className="font-semibold text-[var(--color-text)]">User management</span> (admin),
+                                then refresh this list.
+                              </p>
+                            ) : (
+                              <>
+                                <div>
+                                  <label className="text-[11px] font-semibold text-[var(--color-text-secondary)]">
+                                    Select coworkers
+                                  </label>
+                                  <select
+                                    multiple
+                                    size={Math.min(10, Math.max(5, displayedCoworkers.length))}
+                                    value={shareSelection}
+                                    onChange={(e) => {
+                                      const next = Array.from(e.target.selectedOptions, (opt) => opt.value)
+                                      setShareSelection(next)
+                                    }}
+                                    className="mt-1 w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-1.5 text-[13px] text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30 min-h-[140px]"
+                                  >
+                                    {displayedCoworkers.map((c) => (
+                                      <option key={c.id} value={c.id}>
+                                        {c.name?.trim()
+                                          ? `${c.name.trim()}  ·  ${c.email}  ·  ${c.role === 'admin' ? 'Admin' : 'Employee'}`
+                                          : `${c.email}  ·  ${c.role === 'admin' ? 'Admin' : 'Employee'}`}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <p className="mt-1.5 text-[10px] text-[var(--color-text-secondary)]">
+                                    Hold{' '}
+                                    <kbd className="px-1 py-0.5 rounded bg-black/[0.06] font-sans text-[9px]">Ctrl</kbd>{' '}
+                                    (Windows) or{' '}
+                                    <kbd className="px-1 py-0.5 rounded bg-black/[0.06] font-sans text-[9px]">⌘</kbd> (Mac)
+                                    and click to select multiple.
+                                  </p>
+                                </div>
+
+                                {shareSelection.length > 0 && (
+                                  <div>
+                                    <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--color-text-secondary)] mb-1.5">
+                                      Selected ({shareSelection.length})
+                                    </p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                      {shareSelection.map((id) => {
+                                        const c = coworkers.find((x) => x.id === id)
+                                        const label = c?.name?.trim() || c?.email || id
+                                        return (
+                                          <span
+                                            key={id}
+                                            className="inline-flex items-center gap-1 rounded-full border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/8 pl-2.5 pr-1 py-0.5 text-[11px] font-medium text-[var(--color-text)]"
+                                          >
+                                            <span className="max-w-[180px] truncate">{label}</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => setShareSelection((prev) => prev.filter((x) => x !== id))}
+                                              className="inline-flex h-5 w-5 items-center justify-center rounded-full hover:bg-black/10 text-[var(--color-text-secondary)]"
+                                              aria-label={`Remove ${label}`}
+                                            >
+                                              <X className="w-3 h-3" />
+                                            </button>
+                                          </span>
+                                        )
+                                      })}
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => void handleSaveSharing()}
+                              disabled={savingShare || !canManageSharing || loadingCoworkers}
+                              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-xl bg-[var(--color-primary)] px-4 py-2.5 text-[13px] font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50"
+                            >
+                              {savingShare ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+                              {savingShare ? 'Saving…' : 'Save sharing'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {teamWorkspaceTab === 'notes' && (
+                      <div className="rounded-xl border border-[var(--color-border)] bg-white p-3.5 shadow-sm space-y-3">
+                        <p className="text-[13px] font-semibold text-[var(--color-text)]">Notes &amp; updates</p>
+                        <div className="space-y-3 max-h-[min(360px,50vh)] overflow-y-auto pr-0.5">
+                          {(activityDetail.collaborationNotes ?? []).length === 0 ? (
+                            <p className="text-[12px] text-[var(--color-text-secondary)] py-2">
+                              No notes yet—be the first to add an update.
+                            </p>
+                          ) : (
+                            (activityDetail.collaborationNotes ?? []).map((n, idx) => {
+                              const aid = noteAuthorId(n)
+                              const isMine = Boolean(
+                                user?.id && aid != null && String(aid) === String(user.id)
+                              )
+                              const label = n.userId?.name?.trim() || n.userId?.email || 'User'
+                              const initial = (label.slice(0, 1) || '?').toUpperCase()
+                              const si = styleIndexForAuthorId(aid)
+                              const st = OTHER_NOTE_STYLES[si]
+                              const av = OTHER_AVATAR_STYLES[si]
+                              return (
+                                <div
+                                  key={n._id || `${String(n.createdAt)}-${idx}`}
+                                  className={`flex w-full ${isMine ? 'justify-end' : 'justify-start'}`}
+                                >
+                                  <div
+                                    className={`flex max-w-[min(92%,420px)] gap-2.5 ${isMine ? 'flex-row-reverse' : 'flex-row'}`}
+                                  >
+                                    {!isMine && (
+                                      <div
+                                        className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold shadow-sm ${av}`}
+                                        aria-hidden
+                                      >
+                                        {initial}
+                                      </div>
+                                    )}
+                                    <div
+                                      className={
+                                        isMine
+                                          ? 'min-w-0 rounded-2xl rounded-br-md border border-[var(--color-primary)]/35 bg-gradient-to-br from-[var(--color-primary)]/18 to-[var(--color-primary)]/10 px-3.5 py-2.5 shadow-sm ring-1 ring-[var(--color-primary)]/15'
+                                          : `min-w-0 rounded-2xl rounded-bl-md border px-3.5 py-2.5 shadow-sm ${st.bubble}`
+                                      }
+                                    >
+                                      <p
+                                        className={`text-[10px] font-semibold mb-1 ${isMine ? 'text-[var(--color-primary)]' : st.meta}`}
+                                      >
+                                        {isMine ? 'You' : label}
+                                        <span
+                                          className={`font-normal ${isMine ? 'text-[var(--color-primary)]/75' : 'opacity-80'}`}
+                                        >
+                                          {' '}
+                                          · {n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}
+                                        </span>
+                                      </p>
+                                      <p className="text-[13px] whitespace-pre-wrap leading-relaxed text-[var(--color-text)]">
+                                        {n.text}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+                              )
+                            })
+                          )}
+                        </div>
+                        {canAddCollabNote ? (
+                          <div className="space-y-2 pt-1 border-t border-[var(--color-border)]/80">
+                            <label className="text-[11px] font-semibold text-[var(--color-text-secondary)]">
+                              Add a note
+                            </label>
+                            <textarea
+                              rows={3}
+                              value={collabNote}
+                              onChange={(e) => setCollabNote(e.target.value)}
+                              placeholder="Status update, question, or handoff for your team…"
+                              className="w-full resize-y rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-[13px] text-[var(--color-text)] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25 min-h-[72px]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void handleAddCollabNote()}
+                              disabled={savingNote || !collabNote.trim()}
+                              className="inline-flex items-center gap-2 rounded-xl bg-slate-800 px-4 py-2 text-[13px] font-semibold text-white shadow-sm hover:bg-slate-900 disabled:opacity-50"
+                            >
+                              {savingNote ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                              {savingNote ? 'Posting…' : 'Post note'}
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
           </section>
         </div>
       </main>
