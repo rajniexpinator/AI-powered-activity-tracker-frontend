@@ -35,6 +35,26 @@ function severityQueryFromFilter(f: SeverityFilterValue): { severity?: string; m
   return { severity: f }
 }
 
+/** Previous calendar week (Mon–Sun), local dates, as YYYY-MM-DD. */
+function lastWeekLocalRange(): { from: string; to: string } {
+  const now = new Date()
+  const day = now.getDay()
+  const daysFromMonday = (day + 6) % 7
+  const thisMonday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysFromMonday)
+  const prevMonday = new Date(thisMonday.getFullYear(), thisMonday.getMonth(), thisMonday.getDate() - 7)
+  const prevSunday = new Date(prevMonday.getFullYear(), prevMonday.getMonth(), prevMonday.getDate() + 6)
+  const ymd = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return { from: ymd(prevMonday), to: ymd(prevSunday) }
+}
+
+type LoadActivitiesOpts = {
+  from?: string
+  to?: string
+  page?: number
+  severityFilter?: SeverityFilterValue
+}
+
 function formatActivitySeverityLabel(structuredData: Record<string, unknown> | undefined): string {
   if (!structuredData || typeof structuredData !== 'object') return '—'
   const raw = structuredData.severity
@@ -188,19 +208,32 @@ export function AdminActivityPage() {
     [selectedUserId, selectedCustomer, from, to, page, severityFilter]
   )
 
-  async function loadActivities() {
+  async function loadActivities(opts?: LoadActivitiesOpts) {
+    const effFrom = opts?.from !== undefined ? opts.from : from
+    const effTo = opts?.to !== undefined ? opts.to : to
+    const effPage = opts?.page ?? page
+    const effSeverity = opts?.severityFilter ?? severityFilter
+    const params = {
+      userId: selectedUserId !== 'all' ? selectedUserId : undefined,
+      customer: selectedCustomer !== 'all' ? selectedCustomer : undefined,
+      from: effFrom || undefined,
+      to: effTo || undefined,
+      limit: pageSize,
+      page: effPage,
+      ...severityQueryFromFilter(effSeverity),
+    }
     const seq = ++requestSeq.current
     setLoading(true)
     setError('')
     try {
       if (tab === 'archived') {
-        const res = await api.activities.adminArchivedList(appliedFilters)
+        const res = await api.activities.adminArchivedList(params)
         if (seq !== requestSeq.current) return
         setActivities(res.activities)
         setTotal(res.total)
         setTotalPages(res.totalPages)
       } else {
-        const res = await api.activities.adminList(appliedFilters)
+        const res = await api.activities.adminList(params)
         if (seq !== requestSeq.current) return
         setActivities(res.activities)
         setTotal(res.total)
@@ -274,7 +307,30 @@ export function AdminActivityPage() {
   async function handleApplyFilters(e: React.FormEvent) {
     e.preventDefault()
     setPage(1)
-    await loadActivities()
+    await loadActivities({ page: 1 })
+  }
+
+  async function handleQuickLastWeekDates() {
+    const { from: f, to: t } = lastWeekLocalRange()
+    setFrom(f)
+    setTo(t)
+    setPage(1)
+    setFiltersOpen(true)
+    await loadActivities({ from: f, to: t, page: 1 })
+    toast.success(`Dates set to last week (${f} – ${t}).`)
+  }
+
+  async function handleQuickSeverityLastWeek(sev: Exclude<SeverityFilterValue, 'all'>) {
+    const { from: f, to: t } = lastWeekLocalRange()
+    setFrom(f)
+    setTo(t)
+    setSeverityFilter(sev)
+    setPage(1)
+    setFiltersOpen(true)
+    await loadActivities({ from: f, to: t, page: 1, severityFilter: sev })
+    const words =
+      sev === '3' ? 'High (3)' : sev === 'min2' ? 'Medium or high (2–3)' : sev === '2' ? 'Medium (2)' : 'Low (1)'
+    toast.success(`${words} · last week (${f} – ${t}). Use “Generate weekly AI report” for the narrative.`)
   }
 
   async function handleResetFilters() {
@@ -549,10 +605,9 @@ export function AdminActivityPage() {
                 Activity overview
               </h1>
               <p className="mt-2 text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
-                Use filters for exact lists. Ask AI below to query logs in plain English (for example, &quot;Show me
-                all Bosch issues last week&quot;). Generate weekly AI report creates a narrative from the same filters;
-                the timesheet-style Excel (one tab per customer) lives in that weekly report panel. Saved reports are
-                under Reports.
+                Use filters for exact lists — including issue severity (1–3) and date range. Shortcuts below can set
+                &quot;last week&quot; plus a severity for a management-style report (for example all high-severity logs).
+                Generate weekly AI report builds the narrative from the same filters; saved copies are under Reports.
               </p>
             </div>
             {user && (
@@ -730,6 +785,57 @@ export function AdminActivityPage() {
                   <option value="2">Medium (2)</option>
                   <option value="1">Low (1)</option>
                 </select>
+              </div>
+
+              <div className="sm:col-span-2 md:col-span-5 rounded-xl border border-[var(--color-border)]/80 bg-[var(--color-bg)]/50 px-3 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)] mb-2">
+                  Severity report · last week
+                </p>
+                <p className="text-[11px] text-[var(--color-text-secondary)] mb-2 leading-relaxed">
+                  Sets Mon–Sun of the previous calendar week and refreshes the list. Then run Generate weekly AI report.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleQuickLastWeekDates()}
+                    disabled={loading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                  >
+                    Last week only
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleQuickSeverityLastWeek('3')}
+                    disabled={loading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                  >
+                    High (3) · last week
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleQuickSeverityLastWeek('min2')}
+                    disabled={loading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                  >
+                    Medium + high · last week
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleQuickSeverityLastWeek('2')}
+                    disabled={loading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                  >
+                    Medium (2) · last week
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleQuickSeverityLastWeek('1')}
+                    disabled={loading}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[11px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                  >
+                    Low (1) · last week
+                  </button>
+                </div>
               </div>
 
               <div className="sm:col-span-2 md:col-span-5 flex flex-wrap justify-end gap-2">

@@ -16,6 +16,7 @@ import { CustomersPage } from './pages/CustomersPage'
 import { AdminActivityPage } from './pages/AdminActivityPage'
 import { ReportsPage } from './pages/ReportsPage'
 import { BarcodeReportsPage } from './pages/BarcodeReportsPage'
+import { EmployeeFilesPage } from './pages/EmployeeFilesPage'
 
 function App() {
   return (
@@ -64,6 +65,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <CustomersPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="employee-files"
+            element={
+              <ProtectedRoute>
+                <EmployeeFilesPage />
               </ProtectedRoute>
             }
           />

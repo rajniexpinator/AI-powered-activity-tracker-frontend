@@ -1,5 +1,17 @@
 import type { User, LoginResponse } from '@/types/auth'
 
+export type EmployeeFileItem = {
+  _id: string
+  title: string
+  description?: string
+  originalName: string
+  mimeType: string
+  size: number
+  createdAt: string
+  updatedAt?: string
+  uploadedBy?: { _id: string; name?: string; email?: string } | null
+}
+
 const BASE = import.meta.env.VITE_API_BASE_URL ?? ''
 const TOKEN_KEY = 'activity_tracker_token'
 
@@ -410,6 +422,8 @@ export const api = {
           from?: string
           to?: string
           includeCustomerSummaries?: boolean
+          issueSeverityExact?: number
+          issueSeverityMin?: number
           model?: string
           activityCount?: number
           createdAt: string
@@ -640,6 +654,47 @@ export const api = {
         totalPages: number
       }>(`/api/barcodes/admin${qs ? `?${qs}` : ''}`, { method: 'GET' })
     },
+  },
+
+  employeeFiles: {
+    list: () =>
+      request<{
+        files: EmployeeFileItem[]
+      }>('/api/employee-files', { method: 'GET' }),
+
+    getDownloadUrl: (id: string) =>
+      request<{ url: string; expiresIn?: number; filename?: string }>(`/api/employee-files/${encodeURIComponent(id)}/download`, {
+        method: 'GET',
+      }),
+
+    upload: async (file: File, opts?: { title?: string; description?: string }) => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (opts?.title?.trim()) formData.append('title', opts.title.trim())
+      if (opts?.description?.trim()) formData.append('description', opts.description.trim())
+
+      const headers: HeadersInit = {}
+      const token = getToken()
+      if (token) headers['Authorization'] = `Bearer ${token}`
+
+      const res = await fetch(`${BASE}/api/employee-files`, {
+        method: 'POST',
+        headers,
+        body: formData,
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        const err = new Error((data as { error?: string }).error || res.statusText) as Error & { status?: number }
+        err.status = res.status
+        throw err
+      }
+      return data as { file: EmployeeFileItem }
+    },
+
+    remove: (id: string) =>
+      request<{ success: boolean }>(`/api/employee-files/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      }),
   },
 
   upload: {

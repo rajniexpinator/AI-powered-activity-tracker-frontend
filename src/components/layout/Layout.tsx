@@ -12,6 +12,8 @@ export function Layout() {
     location.pathname.startsWith('/chat/') ||
     location.pathname === '/customers' ||
     location.pathname.startsWith('/customers/') ||
+    location.pathname === '/employee-files' ||
+    location.pathname.startsWith('/employee-files/') ||
     location.pathname === '/activity' ||
     location.pathname.startsWith('/activity/') ||
     location.pathname === '/reports' ||

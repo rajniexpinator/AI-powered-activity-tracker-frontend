@@ -12,8 +12,21 @@ type ReportListItem = {
   from?: string
   to?: string
   includeCustomerSummaries?: boolean
+  issueSeverityExact?: number
+  issueSeverityMin?: number
   activityCount?: number
   createdAt: string
+}
+
+function formatReportSeverityLabel(r: ReportListItem): string | null {
+  if (typeof r.issueSeverityExact === 'number' && r.issueSeverityExact >= 1 && r.issueSeverityExact <= 3) {
+    const word = r.issueSeverityExact === 3 ? 'High' : r.issueSeverityExact === 2 ? 'Medium' : 'Low'
+    return `Severity ${r.issueSeverityExact} (${word})`
+  }
+  if (typeof r.issueSeverityMin === 'number' && r.issueSeverityMin >= 1 && r.issueSeverityMin <= 3) {
+    return r.issueSeverityMin === 2 ? 'Severity 2–3' : `Severity ≥ ${r.issueSeverityMin}`
+  }
+  return null
 }
 
 export function ReportsPage() {
@@ -318,7 +331,9 @@ export function ReportsPage() {
                   No reports yet. Generate one from the Activity page.
                 </div>
               ) : (
-                reports.map((r) => (
+                reports.map((r) => {
+                  const sevLabel = formatReportSeverityLabel(r)
+                  return (
                   <div
                     key={r._id}
                     className={`group w-full px-5 sm:px-6 md:px-8 py-3 hover:bg-[var(--color-bg)]/60 transition-colors ${
@@ -337,6 +352,7 @@ export function ReportsPage() {
                         <p className="text-[13px] font-semibold text-[var(--color-text)]">
                           Weekly report
                           {r.includeCustomerSummaries ? ' · customer summaries' : ''}
+                          {sevLabel ? ` · ${sevLabel}` : ''}
                         </p>
                         <p className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">
                           {new Date(r.createdAt).toLocaleString()}
@@ -358,7 +374,8 @@ export function ReportsPage() {
                       </div>
                     </div>
                   </div>
-                ))
+                  )
+                })
               )}
             </div>
             {totalPages > 1 && (

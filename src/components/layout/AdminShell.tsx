@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
-import { LayoutDashboard, MessageSquare, Users, Building2, LogOut, Menu, X, BarChart3, UserCircle, FileText, ScanLine } from 'lucide-react'
+import { LayoutDashboard, MessageSquare, Users, Building2, LogOut, Menu, X, BarChart3, UserCircle, FileText, ScanLine, FolderOpen } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 
 interface AdminShellProps {
@@ -139,6 +139,17 @@ export function AdminShell({ children }: AdminShellProps) {
                   <Building2 className="w-4 h-4 opacity-70" />
                   Customers
                 </Link>
+                <Link
+                  to="/employee-files"
+                  className={`mt-0.5 flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                    isActive('/employee-files')
+                      ? 'bg-[#3F4B9D] text-white'
+                      : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                  }`}
+                >
+                  <FolderOpen className="w-4 h-4 opacity-80" />
+                  Employee files
+                </Link>
               </div>
             )}
             {!isAdmin && (
@@ -156,6 +167,17 @@ export function AdminShell({ children }: AdminShellProps) {
                 >
                   <Building2 className="w-4 h-4 opacity-70" />
                   Customers
+                </Link>
+                <Link
+                  to="/employee-files"
+                  className={`mt-0.5 flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                    isActive('/employee-files')
+                      ? 'bg-[#3F4B9D] text-white'
+                      : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                  }`}
+                >
+                  <FolderOpen className="w-4 h-4 opacity-80" />
+                  Employee files
                 </Link>
               </div>
             )}
@@ -326,21 +348,47 @@ export function AdminShell({ children }: AdminShellProps) {
                     <Building2 className="w-4 h-4 opacity-70" />
                     Customers
                   </Link>
+                  <Link
+                    to="/employee-files"
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                      isActive('/employee-files')
+                        ? 'bg-[#3F4B9D] text-white'
+                        : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                    }`}
+                  >
+                    <FolderOpen className="w-4 h-4 opacity-80" />
+                    Employee files
+                  </Link>
                 </>
               )}
               {!isAdmin && (
-                <Link
-                  to="/customers"
-                  onClick={() => setMobileOpen(false)}
-                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
-                    isActive('/customers')
-                      ? 'bg-[#3F4B9D] text-white'
-                      : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
-                  }`}
-                >
-                  <Building2 className="w-4 h-4 opacity-70" />
-                  Customers
-                </Link>
+                <>
+                  <Link
+                    to="/customers"
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                      isActive('/customers')
+                        ? 'bg-[#3F4B9D] text-white'
+                        : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                    }`}
+                  >
+                    <Building2 className="w-4 h-4 opacity-70" />
+                    Customers
+                  </Link>
+                  <Link
+                    to="/employee-files"
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                      isActive('/employee-files')
+                        ? 'bg-[#3F4B9D] text-white'
+                        : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                    }`}
+                  >
+                    <FolderOpen className="w-4 h-4 opacity-80" />
+                    Employee files
+                  </Link>
+                </>
               )}
             </nav>
             <div className="px-3 pb-3 pt-1 border-t border-[var(--color-border)]/60 space-y-2">
