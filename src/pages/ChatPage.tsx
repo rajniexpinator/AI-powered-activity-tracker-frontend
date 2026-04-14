@@ -48,6 +48,7 @@ type StructuredActivity = {
   summary?: string
   part_name?: string
   intent?: string
+  severity?: number
   outcome?: string
   next_actions?: string[]
   notes?: string
@@ -174,6 +175,13 @@ const MAX_IMAGE_FILE_ERROR = 'Maximum file size up to 10 MB.'
 const MAX_ATTACHMENTS_PER_ENTRY = 10
 const MAX_ATTACHMENT_FILE_BYTES = 50 * 1024 * 1024 // 50 MB — keep in sync with Backend attachment middleware
 const MAX_ATTACHMENT_FILE_ERROR = 'Maximum attachment size is 50 MB.'
+const DEFAULT_ISSUE_SEVERITY = 2 as const
+
+function parseIssueSeverity(raw: unknown): 1 | 2 | 3 {
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN
+  if (n === 1 || n === 2 || n === 3) return n
+  return DEFAULT_ISSUE_SEVERITY
+}
 
 /** Poll server so collaboration updates appear without manual refresh (not true WebSocket realtime). */
 const POLL_ACTIVITY_DETAIL_MS = 8000
@@ -219,6 +227,7 @@ export function ChatPage() {
   const [editSummary, setEditSummary] = useState('')
   const [editPartName, setEditPartName] = useState('')
   const [editIntent, setEditIntent] = useState('')
+  const [editSeverity, setEditSeverity] = useState<1 | 2 | 3>(DEFAULT_ISSUE_SEVERITY)
   const [editOutcome, setEditOutcome] = useState('')
   const [editNextActions, setEditNextActions] = useState('')
   const [editNotes, setEditNotes] = useState('')
@@ -832,6 +841,7 @@ export function ChatPage() {
     setEditSummary('')
     setEditPartName('')
     setEditIntent('')
+    setEditSeverity(DEFAULT_ISSUE_SEVERITY)
     setEditOutcome('')
     setEditNextActions('')
     setEditNotes('')
@@ -880,6 +890,7 @@ export function ChatPage() {
       setEditSummary(structured.summary ?? '')
       setEditPartName(structured.part_name ?? '')
       setEditIntent(structured.intent ?? '')
+      setEditSeverity(parseIssueSeverity(structured.severity))
       setEditOutcome(structured.outcome ?? '')
       setEditNextActions(structured.next_actions?.join('\n') ?? '')
       setEditNotes(structured.notes ?? '')
@@ -947,6 +958,7 @@ export function ChatPage() {
       const resolvedSummary = editSummary || base.summary || ''
       const resolvedPartName = editPartName || base.part_name || ''
       const resolvedIntent = editIntent || base.intent || ''
+      const resolvedSeverity = editSeverity
       const resolvedOutcome = editOutcome || base.outcome || ''
       const resolvedNextActions = editNextActions
         ? editNextActions
@@ -970,6 +982,7 @@ export function ChatPage() {
         String(resolvedSummary).trim(),
         String(resolvedPartName).trim(),
         String(resolvedIntent).trim(),
+        String(resolvedSeverity),
         String(resolvedOutcome).trim(),
         String(nextActionsKey).trim(),
         String(resolvedNotes).trim(),
@@ -990,6 +1003,7 @@ export function ChatPage() {
         summary: resolvedSummary || base.summary,
         part_name: resolvedPartName || base.part_name,
         intent: resolvedIntent || base.intent,
+        severity: resolvedSeverity,
         outcome: resolvedOutcome || base.outcome,
         next_actions: resolvedNextActions,
         notes: resolvedNotes || base.notes,
@@ -1135,6 +1149,7 @@ export function ChatPage() {
       setEditSummary(structured.summary ?? '')
       setEditPartName(structured.part_name ?? '')
       setEditIntent(structured.intent ?? '')
+      setEditSeverity(parseIssueSeverity(structured.severity))
       setEditOutcome(structured.outcome ?? '')
       setEditNextActions(structured.next_actions?.join('\n') ?? '')
       setEditNotes(structured.notes ?? '')
@@ -1172,6 +1187,7 @@ export function ChatPage() {
         String(structured.summary ?? '').trim(),
         String(structured.part_name ?? '').trim(),
         String(structured.intent ?? '').trim(),
+        String(parseIssueSeverity(structured.severity)),
         String(structured.outcome ?? '').trim(),
         String(structured.next_actions?.join('\n') ?? '').trim(),
         String(structured.notes ?? '').trim(),
@@ -1600,6 +1616,7 @@ export function ChatPage() {
                     setEditSummary('')
                     setEditPartName('')
                     setEditIntent('')
+                    setEditSeverity(DEFAULT_ISSUE_SEVERITY)
                     setEditOutcome('')
                     setEditNextActions('')
                     setEditNotes('')
@@ -1663,6 +1680,7 @@ export function ChatPage() {
                       setEditSummary('')
                       setEditPartName('')
                       setEditIntent('')
+                      setEditSeverity(DEFAULT_ISSUE_SEVERITY)
                       setEditOutcome('')
                       setEditNextActions('')
                       setEditNotes('')
@@ -1784,6 +1802,7 @@ export function ChatPage() {
                     setEditSummary('')
                     setEditPartName('')
                     setEditIntent('')
+                    setEditSeverity(DEFAULT_ISSUE_SEVERITY)
                     setEditOutcome('')
                     setEditNextActions('')
                     setEditNotes('')
@@ -1844,6 +1863,7 @@ export function ChatPage() {
                       setEditSummary('')
                       setEditPartName('')
                       setEditIntent('')
+                      setEditSeverity(DEFAULT_ISSUE_SEVERITY)
                       setEditOutcome('')
                       setEditNextActions('')
                       setEditNotes('')
@@ -2128,15 +2148,17 @@ export function ChatPage() {
                       </div>
                       <div>
                         <label className="block text-[11px] font-semibold text-[#555] mb-1">
-                          Intent
+                          Severity
                         </label>
-                        <input
-                          type="text"
-                          value={editIntent}
-                          onChange={(e) => setEditIntent(e.target.value)}
-                          className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
-                          placeholder="What were you trying to achieve?"
-                        />
+                        <select
+                          value={editSeverity}
+                          onChange={(e) => setEditSeverity(Number(e.target.value) as 1 | 2 | 3)}
+                          className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                        >
+                          <option value={1}>1 — Low</option>
+                          <option value={2}>2 — Medium</option>
+                          <option value={3}>3 — High</option>
+                        </select>
                       </div>
                       <div>
                         <label className="block text-[11px] font-semibold text-[#555] mb-1">

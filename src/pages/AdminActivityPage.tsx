@@ -3,6 +3,7 @@ import { api, getToken } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import type { User } from '@/types/auth'
 import { AdminShell } from '@/components/layout/AdminShell'
+import { ReportImageGallery } from '@/components/ReportImageGallery'
 import {
   BarChart3,
   Filter,
@@ -26,12 +27,31 @@ import {
 } from 'lucide-react'
 import { toast } from 'react-toastify'
 
+type SeverityFilterValue = 'all' | '1' | '2' | '3' | 'min2'
+
+function severityQueryFromFilter(f: SeverityFilterValue): { severity?: string; minSeverity?: string } {
+  if (f === 'all') return {}
+  if (f === 'min2') return { minSeverity: '2' }
+  return { severity: f }
+}
+
+function formatActivitySeverityLabel(structuredData: Record<string, unknown> | undefined): string {
+  if (!structuredData || typeof structuredData !== 'object') return '—'
+  const raw = structuredData.severity
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN
+  if (n === 1) return '1'
+  if (n === 2) return '2'
+  if (n === 3) return '3'
+  return '—'
+}
+
 type AdminActivity = {
   _id: string
   customer?: string
   summary?: string
   createdAt: string
   archivedAt?: string
+  structuredData?: Record<string, unknown>
   userId?: { _id: string; name?: string; email?: string; role?: string }
 }
 
@@ -110,8 +130,12 @@ export function AdminActivityPage() {
   const [actionMenuId, setActionMenuId] = useState<string | null>(null)
   const [report, setReport] = useState<string>('')
   const [reportId, setReportId] = useState<string>('')
+  const [reportImageGallery, setReportImageGallery] = useState<
+    { activityId?: string; customer?: string; summary?: string; createdAt?: string; imageUrls?: string[] }[]
+  >([])
   const [error, setError] = useState<string>('')
   const [includeCustomerSummaries, setIncludeCustomerSummaries] = useState(false)
+  const [severityFilter, setSeverityFilter] = useState<SeverityFilterValue>('all')
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [aiOverlay, setAiOverlay] = useState<{ interpretation: string; activities: AdminActivity[]; answer?: string } | null>(null)
   const [aiQuestion, setAiQuestion] = useState('')
@@ -159,8 +183,9 @@ export function AdminActivityPage() {
       to: to || undefined,
       limit: pageSize,
       page,
+      ...severityQueryFromFilter(severityFilter),
     }),
-    [selectedUserId, selectedCustomer, from, to, page]
+    [selectedUserId, selectedCustomer, from, to, page, severityFilter]
   )
 
   async function loadActivities() {
@@ -258,6 +283,7 @@ export function AdminActivityPage() {
     setSelectedCustomer('all')
     setFrom('')
     setTo('')
+    setSeverityFilter('all')
     setPage(1)
     setAiOverlay(null)
     setError('')
@@ -351,13 +377,15 @@ export function AdminActivityPage() {
     }
     setLoadingAiWeeklyReport(true)
     setError('')
+    setReportImageGallery([])
     try {
-      const { report: nextReport, reportId } = await api.activities.adminAiWeeklyReport({
+      const { report: nextReport, reportId, imageGallery } = await api.activities.adminAiWeeklyReport({
         question: q,
         limit: 200,
       })
       setReport(nextReport)
       setReportId(reportId)
+      setReportImageGallery(Array.isArray(imageGallery) ? imageGallery : [])
       toast.success('Weekly report generated from your AI question.')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to generate weekly report'
@@ -373,14 +401,16 @@ export function AdminActivityPage() {
     setError('')
     setReport('')
     setReportId('')
+    setReportImageGallery([])
     setActionMenuId(null)
     try {
-      const { report, reportId } = await api.activities.generateWeeklyReport({
+      const { report, reportId, imageGallery } = await api.activities.generateWeeklyReport({
         ...appliedFilters,
         includeCustomerSummaries: includeCustomerSummaries && selectedCustomer === 'all',
       })
       setReport(report)
       setReportId(reportId)
+      setReportImageGallery(Array.isArray(imageGallery) ? imageGallery : [])
       toast.success(
         'Weekly AI report is ready. Use “Download timesheet Excel” below for the spreadsheet layout — one tab per customer, same date filters.'
       )
@@ -401,6 +431,8 @@ export function AdminActivityPage() {
       if (appliedFilters.from) search.set('from', appliedFilters.from)
       if (appliedFilters.to) search.set('to', appliedFilters.to)
       if (appliedFilters.limit) search.set('limit', String(appliedFilters.limit))
+      if (appliedFilters.severity) search.set('severity', appliedFilters.severity)
+      if (appliedFilters.minSeverity) search.set('minSeverity', appliedFilters.minSeverity)
       if (tab === 'archived') search.set('archived', 'true')
       const qs = search.toString()
       const base = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -439,6 +471,8 @@ export function AdminActivityPage() {
       if (appliedFilters.customer) search.set('customer', appliedFilters.customer)
       if (appliedFilters.from) search.set('from', appliedFilters.from)
       if (appliedFilters.to) search.set('to', appliedFilters.to)
+      if (appliedFilters.severity) search.set('severity', appliedFilters.severity)
+      if (appliedFilters.minSeverity) search.set('minSeverity', appliedFilters.minSeverity)
       if (tab === 'archived') search.set('archived', 'true')
       const weekEnd =
         appliedFilters.to ||
@@ -599,7 +633,7 @@ export function AdminActivityPage() {
           {filtersOpen && (
             <form
               onSubmit={handleApplyFilters}
-              className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-4 items-end"
+              className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-5 items-end"
             >
               <div>
                 <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
@@ -681,7 +715,24 @@ export function AdminActivityPage() {
                 </div>
               </div>
 
-              <div className="sm:col-span-2 md:col-span-4 flex flex-wrap justify-end gap-2">
+              <div>
+                <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
+                  Issue severity
+                </label>
+                <select
+                  value={severityFilter}
+                  onChange={(e) => setSeverityFilter(e.target.value as SeverityFilterValue)}
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-[13px] text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
+                >
+                  <option value="all">All severities</option>
+                  <option value="3">High (3)</option>
+                  <option value="min2">Medium or high (2–3)</option>
+                  <option value="2">Medium (2)</option>
+                  <option value="1">Low (1)</option>
+                </select>
+              </div>
+
+              <div className="sm:col-span-2 md:col-span-5 flex flex-wrap justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => void handleResetFilters()}
@@ -857,13 +908,16 @@ export function AdminActivityPage() {
             <div
               className={`hidden md:grid px-3 sm:px-6 md:px-8 py-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)] bg-[var(--color-bg)] ${
                 tab === 'archived'
-                  ? 'grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,110px)]'
-                  : 'grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2.2fr)]'
+                  ? 'grid-cols-[minmax(0,1.65fr)_minmax(0,1.15fr)_minmax(0,1.35fr)_minmax(0,38px)_minmax(0,1.85fr)_minmax(0,110px)]'
+                  : 'grid-cols-[minmax(0,1.65fr)_minmax(0,1.15fr)_minmax(0,1.35fr)_minmax(0,38px)_minmax(0,2fr)]'
               }`}
             >
               <span>Employee</span>
               <span>Customer</span>
               <span>Date</span>
+              <span className="text-center" title="Issue severity (1 low, 2 medium, 3 high)">
+                Sev
+              </span>
               <span>Summary</span>
               {tab === 'archived' && <span className="text-right">Action</span>}
             </div>
@@ -904,8 +958,8 @@ export function AdminActivityPage() {
                     }}
                     className={`px-3 sm:px-6 md:px-8 py-3.5 flex flex-col gap-2 min-w-0 md:grid md:items-center md:gap-x-0 md:gap-y-2 cursor-pointer transition-colors ${
                       tab === 'archived'
-                        ? 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2fr)_minmax(0,110px)]'
-                        : 'md:grid-cols-[minmax(0,1.8fr)_minmax(0,1.3fr)_minmax(0,1.5fr)_minmax(0,2.2fr)]'
+                        ? 'md:grid-cols-[minmax(0,1.65fr)_minmax(0,1.15fr)_minmax(0,1.35fr)_minmax(0,38px)_minmax(0,1.85fr)_minmax(0,110px)]'
+                        : 'md:grid-cols-[minmax(0,1.65fr)_minmax(0,1.15fr)_minmax(0,1.35fr)_minmax(0,38px)_minmax(0,2fr)]'
                     } ${
                       selectedActivityId === a._id
                         ? 'bg-[var(--color-primary)]/8'
@@ -934,6 +988,13 @@ export function AdminActivityPage() {
                     <p className="text-[11px] sm:text-[12px] text-[var(--color-text-secondary)] break-words">
                       <span className="font-semibold text-[var(--color-text)] md:hidden">Date: </span>
                       {new Date(a.createdAt).toLocaleString()}
+                    </p>
+                    <p
+                      className="text-[12px] font-semibold text-[var(--color-text)] md:text-center tabular-nums"
+                      title="Issue severity"
+                    >
+                      <span className="font-semibold md:hidden">Severity: </span>
+                      {formatActivitySeverityLabel(a.structuredData)}
                     </p>
                     <p
                       className="text-[13px] text-[var(--color-text)] overflow-hidden break-words"
@@ -1241,6 +1302,7 @@ export function AdminActivityPage() {
                   ? 'Generating weekly report…'
                   : report || 'Click "Generate weekly AI report" above to create a summary.'}
               </div>
+              <ReportImageGallery entries={reportImageGallery} className="px-0.5" />
             </div>
           </div>
         </section>

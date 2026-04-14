@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AdminShell } from '@/components/layout/AdminShell'
+import { ReportImageGallery } from '@/components/ReportImageGallery'
 import { api } from '@/services/api'
 import { FileText, Loader2, AlertCircle, ChevronLeft, ChevronRight, Mail, ExternalLink, Send, Save, Trash2 } from 'lucide-react'
 import { toast } from 'react-toastify'
@@ -20,6 +21,15 @@ export function ReportsPage() {
   const [reports, setReports] = useState<ReportListItem[]>([])
   const [selectedReportId, setSelectedReportId] = useState<string>('')
   const [selectedContent, setSelectedContent] = useState<string>('')
+  const [selectedImageGallery, setSelectedImageGallery] = useState<
+    {
+      activityId?: string
+      customer?: string
+      summary?: string
+      createdAt?: string
+      imageUrls?: string[]
+    }[]
+  >([])
   const [loading, setLoading] = useState(true)
   const [loadingOne, setLoadingOne] = useState(false)
   const [error, setError] = useState('')
@@ -92,6 +102,7 @@ export function ReportsPage() {
   async function loadOne(id: string) {
     setSelectedReportId(id)
     setSelectedContent('')
+    setSelectedImageGallery([])
     setLoadingOne(true)
     setError('')
     setDraft(null)
@@ -99,6 +110,7 @@ export function ReportsPage() {
     try {
       const { report } = await api.reports.getOne(id)
       setSelectedContent(report.content)
+      setSelectedImageGallery(Array.isArray(report.imageGallery) ? report.imageGallery : [])
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load report')
     } finally {
@@ -116,6 +128,7 @@ export function ReportsPage() {
       if (selectedReportId === id) {
         setSelectedReportId('')
         setSelectedContent('')
+        setSelectedImageGallery([])
         setDraft(null)
         setEmailSubject('')
       }
@@ -133,6 +146,7 @@ export function ReportsPage() {
       setReports([])
       setSelectedReportId('')
       setSelectedContent('')
+      setSelectedImageGallery([])
       setDraft(null)
       setEmailSubject('')
       setPage(1)
@@ -566,8 +580,9 @@ export function ReportsPage() {
                     Loading report…
                   </span>
                 ) : selectedContent ? (
-                  <div className="whitespace-pre-wrap leading-relaxed">
-                    {selectedContent}
+                  <div>
+                    <div className="whitespace-pre-wrap leading-relaxed">{selectedContent}</div>
+                    <ReportImageGallery entries={selectedImageGallery} />
                   </div>
                 ) : (
                   <p className="text-[13px] text-[var(--color-text-secondary)]">

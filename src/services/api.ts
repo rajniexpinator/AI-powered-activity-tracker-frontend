@@ -265,12 +265,18 @@ export const api = {
       to?: string
       limit?: number
       page?: number
+      /** Exact issue severity 1–3 (structuredData.severity) */
+      severity?: string
+      /** Minimum severity 1–3 (e.g. 2 = medium and high) */
+      minSeverity?: string
     }) => {
       const search = new URLSearchParams()
       if (params.userId) search.set('userId', params.userId)
       if (params.customer) search.set('customer', params.customer)
       if (params.from) search.set('from', params.from)
       if (params.to) search.set('to', params.to)
+      if (params.severity) search.set('severity', params.severity)
+      if (params.minSeverity) search.set('minSeverity', params.minSeverity)
       if (typeof params.limit === 'number') search.set('limit', String(params.limit))
       if (typeof params.page === 'number') search.set('page', String(params.page))
       const qs = search.toString()
@@ -297,12 +303,16 @@ export const api = {
       to?: string
       limit?: number
       page?: number
+      severity?: string
+      minSeverity?: string
     }) => {
       const search = new URLSearchParams()
       if (params.userId) search.set('userId', params.userId)
       if (params.customer) search.set('customer', params.customer)
       if (params.from) search.set('from', params.from)
       if (params.to) search.set('to', params.to)
+      if (params.severity) search.set('severity', params.severity)
+      if (params.minSeverity) search.set('minSeverity', params.minSeverity)
       if (typeof params.limit === 'number') search.set('limit', String(params.limit))
       if (typeof params.page === 'number') search.set('page', String(params.page))
       const qs = search.toString()
@@ -330,8 +340,20 @@ export const api = {
       to?: string
       limit?: number
       includeCustomerSummaries?: boolean
+      severity?: string | number
+      minSeverity?: string | number
     }) =>
-      request<{ report: string; reportId: string }>('/api/reports/generate', {
+      request<{
+        report: string
+        reportId: string
+        imageGallery?: Array<{
+          activityId?: string
+          customer?: string
+          summary?: string
+          createdAt?: string
+          imageUrls?: string[]
+        }>
+      }>('/api/reports/generate', {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
@@ -357,7 +379,17 @@ export const api = {
 
     /** Generate a weekly report narrative from an admin question (AI -> filters -> weekly report). */
     adminAiWeeklyReport: (payload: { question: string; limit?: number }) =>
-      request<{ report: string; reportId: string }>('/api/activities/admin/ai-weekly-report', {
+      request<{
+        report: string
+        reportId: string
+        imageGallery?: Array<{
+          activityId?: string
+          customer?: string
+          summary?: string
+          createdAt?: string
+          imageUrls?: string[]
+        }>
+      }>('/api/activities/admin/ai-weekly-report', {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
@@ -401,6 +433,13 @@ export const api = {
           activityCount?: number
           createdAt: string
           content: string
+          imageGallery?: Array<{
+            activityId?: string
+            customer?: string
+            summary?: string
+            createdAt?: string
+            imageUrls?: string[]
+          }>
         }
       }>(`/api/reports/${id}`, { method: 'GET' }),
 
