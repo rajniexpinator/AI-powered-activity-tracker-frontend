@@ -277,9 +277,9 @@ export const api = {
       to?: string
       limit?: number
       page?: number
-      /** Exact issue severity 1–3 (structuredData.severity) */
+      /** Exact issue severity 0–3 (structuredData.severity) */
       severity?: string
-      /** Minimum severity 1–3 (e.g. 2 = medium and high) */
+      /** Minimum severity 0–3 (e.g. 2 = medium and high) */
       minSeverity?: string
     }) => {
       const search = new URLSearchParams()

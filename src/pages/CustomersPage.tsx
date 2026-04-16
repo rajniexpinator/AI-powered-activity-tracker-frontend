@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'react-toastify'
-import { User as UserIcon, Plus, AlertCircle, Trash2, Pencil, X, Search, SlidersHorizontal } from 'lucide-react'
+import { User as UserIcon, Plus, AlertCircle, Trash2, Pencil, X, Search, SlidersHorizontal, Loader2 } from 'lucide-react'
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { useAuth } from '@/context/AuthContext'
@@ -409,7 +409,7 @@ export function CustomersPage() {
         )}
 
         <section className="mb-6 sm:mb-8">
-          <div className="rounded-2xl border border-[var(--color-primary)]/15 bg-gradient-to-r from-[v`ar(--color-primary)]/10 via-white to-white p-5 sm:p-6">
+          <div className="rounded-2xl border border-[var(--color-primary)]/15 bg-gradient-to-r from-[var(--color-primary)]/10 via-white to-white p-5 sm:p-6">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
               <div>
                 <h1 className="text-2xl sm:text-[28px] md:text-[32px] font-bold tracking-tight text-[var(--color-text)] flex items-center gap-3">
@@ -444,8 +444,9 @@ export function CustomersPage() {
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
+                  disabled={loading}
                   placeholder="Search by customer name or email"
-                  className="w-full rounded-xl border border-[var(--color-border)] bg-white pl-9 pr-3 py-2.5 text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
+                  className="w-full rounded-xl border border-[var(--color-border)] bg-white pl-9 pr-3 py-2.5 text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)] disabled:opacity-60 disabled:cursor-wait"
                 />
               </div>
               <div className="relative">
@@ -453,7 +454,8 @@ export function CustomersPage() {
                 <select
                   value={emailFilter}
                   onChange={(e) => setEmailFilter(e.target.value as 'all' | 'with' | 'without')}
-                  className="w-full appearance-none rounded-xl border border-[var(--color-border)] bg-white pl-9 pr-3 py-2.5 text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
+                  disabled={loading}
+                  className="w-full appearance-none rounded-xl border border-[var(--color-border)] bg-white pl-9 pr-3 py-2.5 text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)] disabled:opacity-60 disabled:cursor-wait"
                 >
                   <option value="all">All emails</option>
                   <option value="with">With email</option>
@@ -475,14 +477,30 @@ export function CustomersPage() {
           <div className="px-5 sm:px-6 md:px-8 py-4 sm:py-5 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
             <h2 className="text-[15px] font-semibold text-[var(--color-text)]">All customers</h2>
             <p className="text-[12px] text-[var(--color-text-secondary)]">
-              {filteredCustomers.length} customer{filteredCustomers.length !== 1 ? 's' : ''} total
+              {loading ? (
+                <span className="inline-flex items-center gap-1.5 text-[var(--color-text-secondary)]">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--color-primary)]" />
+                  Loading…
+                </span>
+              ) : (
+                <>
+                  {filteredCustomers.length} customer{filteredCustomers.length !== 1 ? 's' : ''} total
+                </>
+              )}
             </p>
           </div>
           <div className="max-h-[520px] overflow-auto">
             {loading ? (
-              <div className="px-5 sm:px-6 md:px-8 py-6 text-[13px] text-[var(--color-text-secondary)]">Loading customers…</div>
+              <div className="rounded-xl border border-[var(--color-border)]/80 bg-[var(--color-bg)]/50 mx-4 sm:mx-6 md:mx-8 my-6 py-14 text-center text-[var(--color-text-secondary)]">
+                <Loader2 className="w-6 h-6 animate-spin inline-block align-middle text-[var(--color-primary)]" />
+                <span className="ml-2 align-middle text-[13px]">Loading customers…</span>
+              </div>
             ) : filteredCustomers.length === 0 ? (
-              <div className="px-5 sm:px-6 md:px-8 py-10 text-center text-[13px] text-[var(--color-text-secondary)]">No customers match your filters.</div>
+              <div className="px-5 sm:px-6 md:px-8 py-10 text-center text-[13px] text-[var(--color-text-secondary)]">
+                {customers.length === 0
+                  ? 'No customers yet. Use “Add customer” to create the first entry.'
+                  : 'No customers match your search or email filter.'}
+              </div>
             ) : (
               <>
                 <div className="divide-y divide-[var(--color-border)] md:hidden">

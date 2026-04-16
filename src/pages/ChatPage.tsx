@@ -175,11 +175,11 @@ const MAX_IMAGE_FILE_ERROR = 'Maximum file size up to 10 MB.'
 const MAX_ATTACHMENTS_PER_ENTRY = 10
 const MAX_ATTACHMENT_FILE_BYTES = 50 * 1024 * 1024 // 50 MB — keep in sync with Backend attachment middleware
 const MAX_ATTACHMENT_FILE_ERROR = 'Maximum attachment size is 50 MB.'
-const DEFAULT_ISSUE_SEVERITY = 2 as const
+const DEFAULT_ISSUE_SEVERITY = 0 as const
 
-function parseIssueSeverity(raw: unknown): 1 | 2 | 3 {
+function parseIssueSeverity(raw: unknown): 0 | 1 | 2 | 3 {
   const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN
-  if (n === 1 || n === 2 || n === 3) return n
+  if (n === 0 || n === 1 || n === 2 || n === 3) return n
   return DEFAULT_ISSUE_SEVERITY
 }
 
@@ -227,7 +227,7 @@ export function ChatPage() {
   const [editSummary, setEditSummary] = useState('')
   const [editPartName, setEditPartName] = useState('')
   const [editIntent, setEditIntent] = useState('')
-  const [editSeverity, setEditSeverity] = useState<1 | 2 | 3>(DEFAULT_ISSUE_SEVERITY)
+  const [editSeverity, setEditSeverity] = useState<0 | 1 | 2 | 3>(DEFAULT_ISSUE_SEVERITY)
   const [editOutcome, setEditOutcome] = useState('')
   const [editNextActions, setEditNextActions] = useState('')
   const [editNotes, setEditNotes] = useState('')
@@ -259,6 +259,12 @@ export function ChatPage() {
   const [savingNote, setSavingNote] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [sendingEmail, setSendingEmail] = useState(false)
+  const [emailConfirmOpen, setEmailConfirmOpen] = useState(false)
+  const [emailRecipientsLoading, setEmailRecipientsLoading] = useState(false)
+  const [emailCustomerRecipient, setEmailCustomerRecipient] = useState('')
+  const [emailManagerCcRecipients, setEmailManagerCcRecipients] = useState<string[]>([])
+  const [includeCustomerRecipient, setIncludeCustomerRecipient] = useState(true)
+  const [includeManagerCcRecipients, setIncludeManagerCcRecipients] = useState(true)
 
   const mainLogLocked =
     Boolean(selectedActivityId && activityDetail && user && user.role !== 'admin' && activityOwnerId(activityDetail) !== user.id)
@@ -362,6 +368,15 @@ export function ChatPage() {
 
   function normalizeCustomerName(value: string) {
     return value.trim().toLowerCase().replace(/\s+/g, ' ')
+  }
+
+  function selectedLogCustomerEmail(): string {
+    const rawCustomer = typeof activityDetail?.customer === 'string' ? activityDetail.customer.trim() : ''
+    if (!rawCustomer) return ''
+    const normalized = normalizeCustomerName(rawCustomer)
+    const match = customers.find((c) => normalizeCustomerName(c.name) === normalized)
+    const email = typeof match?.email === 'string' ? match.email.trim().toLowerCase() : ''
+    return email
   }
 
   function isUnsupportedIphoneImage(file: File) {
@@ -1209,16 +1224,52 @@ export function ChatPage() {
     }
   }
 
+  async function openEmailConfirmPrompt() {
+    if (!selectedActivityId) {
+      setError('Select a log from the list before sending email.')
+      return
+    }
+    setEmailRecipientsLoading(true)
+    setError(null)
+    try {
+      const customerEmail = selectedLogCustomerEmail()
+      const defaults = await api.ms365.getDefaultRecipients()
+      const managerCc = Array.isArray(defaults?.recipients?.cc)
+        ? defaults.recipients.cc
+            .filter((v) => typeof v === 'string')
+            .map((v) => v.trim().toLowerCase())
+            .filter(Boolean)
+        : []
+      setEmailCustomerRecipient(customerEmail)
+      setEmailManagerCcRecipients([...new Set(managerCc)])
+      setIncludeCustomerRecipient(Boolean(customerEmail))
+      setIncludeManagerCcRecipients(managerCc.length > 0)
+      setEmailConfirmOpen(true)
+    } catch (err) {
+      const message = (err as Error).message || 'Failed to prepare email recipients'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setEmailRecipientsLoading(false)
+    }
+  }
+
   async function handleSendLogEmail() {
     if (!selectedActivityId) {
       setError('Select a log from the list before sending email.')
+      return
+    }
+    const to = includeCustomerRecipient && emailCustomerRecipient ? [emailCustomerRecipient] : []
+    const cc = includeManagerCcRecipients ? emailManagerCcRecipients : []
+    if (to.length === 0 && cc.length === 0) {
+      setError('No recipients selected. Choose at least one recipient before sending.')
       return
     }
     setSendingEmail(true)
     setError(null)
     setSaveMessage(null)
     try {
-      const res = await api.activities.sendEmail(selectedActivityId)
+      const res = await api.activities.sendEmail(selectedActivityId, { to, cc })
       const recipientLabel = res.to.length > 0 ? res.to.join(', ') : 'configured recipients'
       const skippedCount = Array.isArray(res.skipped) ? res.skipped.length : 0
       const extra =
@@ -1226,6 +1277,7 @@ export function ChatPage() {
           ? ` Sent ${res.attachedCount}/${res.sourceCount} files (${skippedCount} skipped due to download or size limits).`
           : ` Sent with ${res.attachedCount} attached file(s).`
       toast.success(`Email sent to ${recipientLabel}.${extra}`)
+      setEmailConfirmOpen(false)
     } catch (err) {
       const message = (err as Error).message || 'Failed to send activity email'
       setError(message)
@@ -1277,7 +1329,7 @@ export function ChatPage() {
               to your activity history. Admins can review everything from the Activity screen.
             </p>
           </div>
-          <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto sm:justify-end">
+          <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:w-auto sm:justify-end">
             <button
               type="button"
               onClick={() => setDateFilter((prev) => (prev === 'today' ? 'all' : 'today'))}
@@ -1309,6 +1361,20 @@ export function ChatPage() {
             >
               <ScanLine className="w-4 h-4" />
               <span className="leading-none">Scan barcode</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void openEmailConfirmPrompt()}
+              disabled={!selectedActivityId || sendingEmail || emailRecipientsLoading || archiving}
+              className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
+                !selectedActivityId || sendingEmail || emailRecipientsLoading || archiving
+                  ? 'border-[var(--color-border)] text-[#888] cursor-not-allowed'
+                  : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+              }`}
+              title={!selectedActivityId ? 'Select a recent log first, then click Email' : 'Email selected AI log'}
+            >
+              {emailRecipientsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              <span className="leading-none">Email</span>
             </button>
           </div>
         </div>
@@ -1566,6 +1632,81 @@ export function ChatPage() {
           </div>
         )}
 
+        {emailConfirmOpen && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div className="w-full max-w-lg rounded-2xl bg-white border border-[var(--color-border)] shadow-xl overflow-hidden">
+              <div className="px-4 sm:px-5 py-3 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#666]">Confirm email</p>
+                  <p className="text-sm font-medium text-[#111]">Do you want to email this AI log to:</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEmailConfirmOpen(false)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#666] hover:bg-black/[0.04]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="px-4 sm:px-5 py-4 space-y-3">
+                <label className="flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={includeCustomerRecipient}
+                    onChange={(e) => setIncludeCustomerRecipient(e.target.checked)}
+                    disabled={!emailCustomerRecipient}
+                    className="mt-0.5"
+                  />
+                  <span className="text-[13px] text-[#222]">
+                    <span className="font-semibold">Customer</span>
+                    <span className="block text-[12px] text-[#666]">
+                      {emailCustomerRecipient || 'No customer email linked to this log'}
+                    </span>
+                  </span>
+                </label>
+                <label className="flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={includeManagerCcRecipients}
+                    onChange={(e) => setIncludeManagerCcRecipients(e.target.checked)}
+                    disabled={emailManagerCcRecipients.length === 0}
+                    className="mt-0.5"
+                  />
+                  <span className="text-[13px] text-[#222]">
+                    <span className="font-semibold">Manager CC</span>
+                    <span className="block text-[12px] text-[#666]">
+                      {emailManagerCcRecipients.length > 0
+                        ? emailManagerCcRecipients.join(', ')
+                        : 'No manager CC configured'}
+                    </span>
+                  </span>
+                </label>
+                <p className="text-[11px] text-[#777]">
+                  Attachments from this log (images/files) are included automatically.
+                </p>
+              </div>
+              <div className="px-4 sm:px-5 py-3 border-t border-[var(--color-border)] flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEmailConfirmOpen(false)}
+                  className="inline-flex h-9 items-center justify-center rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[#444] hover:bg-black/[0.03]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSendLogEmail()}
+                  disabled={sendingEmail}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-[12px] font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                >
+                  {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                  Send
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Mobile: recent logs modal */}
         {recentModalOpen && (
           <div className="fixed inset-0 z-40 bg-black/50 md:hidden">
@@ -1642,17 +1783,21 @@ export function ChatPage() {
 
                 <button
                   type="button"
-                  onClick={() => void handleSendLogEmail()}
+                  onClick={() => void openEmailConfirmPrompt()}
                   disabled={!selectedActivityId || sendingEmail || archiving}
                   aria-label={sendingEmail ? 'Sending email…' : 'Send email'}
                   title={
                     !selectedActivityId
-                      ? 'Select a log first to enable Send email'
+                      ? 'Select a recent log first, then click to send email'
                       : sendingEmail
                         ? 'Sending…'
-                        : 'Send selected log by email'
+                        : 'Send selected recent log by email'
                   }
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] bg-white text-[#444] hover:bg-black/[0.03] disabled:opacity-60 disabled:cursor-not-allowed"
+                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors ${
+                    !selectedActivityId || sendingEmail || archiving
+                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
+                      : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100'
+                  }`}
                 >
                   {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                 </button>
@@ -1826,17 +1971,21 @@ export function ChatPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleSendLogEmail()}
+                  onClick={() => void openEmailConfirmPrompt()}
                   disabled={!selectedActivityId || sendingEmail || archiving}
                   aria-label={sendingEmail ? 'Sending email…' : 'Send email'}
                   title={
                     !selectedActivityId
-                      ? 'Select a log first to enable Send email'
+                      ? 'Select a recent log first, then click to send email'
                       : sendingEmail
                         ? 'Sending…'
-                        : 'Send selected log by email'
+                        : 'Send selected recent log by email'
                   }
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[#444] hover:bg-black/[0.03] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                  className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white transition-colors ${
+                    !selectedActivityId || sendingEmail || archiving
+                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
+                      : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100'
+                  }`}
                 >
                   {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                 </button>
@@ -2152,9 +2301,10 @@ export function ChatPage() {
                         </label>
                         <select
                           value={editSeverity}
-                          onChange={(e) => setEditSeverity(Number(e.target.value) as 1 | 2 | 3)}
+                          onChange={(e) => setEditSeverity(Number(e.target.value) as 0 | 1 | 2 | 3)}
                           className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
                         >
+                          <option value={0}>0 — All good (operator discussion / no issue)</option>
                           <option value={1}>1 — Low</option>
                           <option value={2}>2 — Medium</option>
                           <option value={3}>3 — High</option>

@@ -236,10 +236,12 @@ export function BarcodeReportsPage() {
               </div>
             )}
 
-            {loading && mappings.length === 0 ? (
+            {loading ? (
               <div className="rounded-xl border border-slate-100 bg-slate-50/50 py-14 text-center text-slate-500">
                 <Loader2 className="w-6 h-6 animate-spin inline-block align-middle text-[var(--color-primary)]" />
-                <span className="ml-2 align-middle text-[13px]">Loading reports…</span>
+                <span className="ml-2 align-middle text-[13px]">
+                  {qApplied ? 'Searching…' : 'Loading reports…'}
+                </span>
               </div>
             ) : mappings.length === 0 ? (
               <div className="rounded-xl border border-slate-100 bg-white py-12 px-4">
@@ -247,10 +249,21 @@ export function BarcodeReportsPage() {
                   <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
                     <ScanLine className="w-6 h-6" />
                   </div>
-                  <p className="text-[15px] font-semibold text-slate-800">No mappings yet</p>
-                  <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">
-                    Scans appear here after employees save barcode or QR mappings from AI logs.
-                  </p>
+                  {qApplied ? (
+                    <>
+                      <p className="text-[15px] font-semibold text-slate-800">No matches</p>
+                      <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">
+                        Nothing matched &quot;{qApplied}&quot;. Try different keywords or clear the search.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-[15px] font-semibold text-slate-800">No mappings yet</p>
+                      <p className="mt-1 text-[13px] text-slate-600 leading-relaxed">
+                        Scans appear here after employees save barcode or QR mappings from AI logs.
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
             ) : (

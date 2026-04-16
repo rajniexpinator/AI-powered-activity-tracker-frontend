@@ -27,7 +27,7 @@ import {
 } from 'lucide-react'
 import { toast } from 'react-toastify'
 
-type SeverityFilterValue = 'all' | '1' | '2' | '3' | 'min2'
+type SeverityFilterValue = 'all' | '0' | '1' | '2' | '3' | 'min2'
 
 function severityQueryFromFilter(f: SeverityFilterValue): { severity?: string; minSeverity?: string } {
   if (f === 'all') return {}
@@ -59,6 +59,7 @@ function formatActivitySeverityLabel(structuredData: Record<string, unknown> | u
   if (!structuredData || typeof structuredData !== 'object') return '—'
   const raw = structuredData.severity
   const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN
+  if (n === 0) return '0'
   if (n === 1) return '1'
   if (n === 2) return '2'
   if (n === 3) return '3'
@@ -329,7 +330,15 @@ export function AdminActivityPage() {
     setFiltersOpen(true)
     await loadActivities({ from: f, to: t, page: 1, severityFilter: sev })
     const words =
-      sev === '3' ? 'High (3)' : sev === 'min2' ? 'Medium or high (2–3)' : sev === '2' ? 'Medium (2)' : 'Low (1)'
+      sev === '3'
+        ? 'High (3)'
+        : sev === 'min2'
+          ? 'Medium or high (2–3)'
+          : sev === '2'
+            ? 'Medium (2)'
+            : sev === '1'
+              ? 'Low (1)'
+              : 'All good (0)'
     toast.success(`${words} · last week (${f} – ${t}). Use “Generate weekly AI report” for the narrative.`)
   }
 
@@ -605,7 +614,7 @@ export function AdminActivityPage() {
                 Activity overview
               </h1>
               <p className="mt-2 text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
-                Use filters for exact lists — including issue severity (1–3) and date range. Shortcuts below can set
+                Use filters for exact lists — including issue severity (0–3) and date range. Shortcuts below can set
                 &quot;last week&quot; plus a severity for a management-style report (for example all high-severity logs).
                 Generate weekly AI report builds the narrative from the same filters; saved copies are under Reports.
               </p>
@@ -784,6 +793,7 @@ export function AdminActivityPage() {
                   <option value="min2">Medium or high (2–3)</option>
                   <option value="2">Medium (2)</option>
                   <option value="1">Low (1)</option>
+                  <option value="0">All good (0)</option>
                 </select>
               </div>
 
@@ -1021,7 +1031,7 @@ export function AdminActivityPage() {
               <span>Employee</span>
               <span>Customer</span>
               <span>Date</span>
-              <span className="text-center" title="Issue severity (1 low, 2 medium, 3 high)">
+              <span className="text-center" title="Issue severity (0 all good, 1 low, 2 medium, 3 high)">
                 Sev
               </span>
               <span>Summary</span>

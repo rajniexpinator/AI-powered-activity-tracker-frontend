@@ -19,12 +19,13 @@ type ReportListItem = {
 }
 
 function formatReportSeverityLabel(r: ReportListItem): string | null {
-  if (typeof r.issueSeverityExact === 'number' && r.issueSeverityExact >= 1 && r.issueSeverityExact <= 3) {
-    const word = r.issueSeverityExact === 3 ? 'High' : r.issueSeverityExact === 2 ? 'Medium' : 'Low'
+  if (typeof r.issueSeverityExact === 'number' && r.issueSeverityExact >= 0 && r.issueSeverityExact <= 3) {
+    const word =
+      r.issueSeverityExact === 3 ? 'High' : r.issueSeverityExact === 2 ? 'Medium' : r.issueSeverityExact === 1 ? 'Low' : 'All good'
     return `Severity ${r.issueSeverityExact} (${word})`
   }
-  if (typeof r.issueSeverityMin === 'number' && r.issueSeverityMin >= 1 && r.issueSeverityMin <= 3) {
-    return r.issueSeverityMin === 2 ? 'Severity 2–3' : `Severity ≥ ${r.issueSeverityMin}`
+  if (typeof r.issueSeverityMin === 'number' && r.issueSeverityMin >= 0 && r.issueSeverityMin <= 3) {
+    return r.issueSeverityMin === 2 ? 'Severity 2–3' : r.issueSeverityMin === 0 ? 'Severity 0–3' : `Severity ≥ ${r.issueSeverityMin}`
   }
   return null
 }
@@ -245,7 +246,7 @@ export function ReportsPage() {
 
   return (
     <AdminShell>
-      <main className="py-2 sm:py-3">
+      <main className="py-2 sm:py-3 px-1 sm:px-0">
         <section className="mb-5 sm:mb-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-start gap-3">
@@ -274,7 +275,7 @@ export function ReportsPage() {
         <section className="grid gap-4 xl:gap-5 lg:grid-cols-[minmax(0,_0.9fr)_minmax(0,_1.1fr)] items-start">
           {/* Left: history list */}
           <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_12px_40px_rgba(15,23,42,0.10)] overflow-hidden">
-            <div className="px-5 sm:px-6 md:px-8 py-3.5 border-b border-[var(--color-border)] flex items-center justify-between gap-3 bg-gradient-to-r from-[var(--color-bg)] to-white">
+            <div className="px-4 sm:px-6 md:px-8 py-3.5 border-b border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-gradient-to-r from-[var(--color-bg)] to-white">
               <div>
                 <p className="text-[11px] font-semibold text-[var(--color-text-secondary)] tracking-[0.16em] uppercase">
                   History
@@ -292,7 +293,7 @@ export function ReportsPage() {
                   )}
                 </p>
               </div>
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 self-end sm:self-auto">
                 <button
                   type="button"
                   onClick={() => void handleClearHistory()}
@@ -320,7 +321,7 @@ export function ReportsPage() {
                 </button>
               </div>
             </div>
-            <div className="divide-y divide-[var(--color-border)] max-h-[520px] overflow-auto">
+            <div className="divide-y divide-[var(--color-border)] max-h-[min(58dvh,520px)] sm:max-h-[520px] overflow-auto">
               {loading ? (
                 <div className="px-5 sm:px-6 md:px-8 py-6 text-[13px] text-[var(--color-text-secondary)] inline-flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -336,7 +337,7 @@ export function ReportsPage() {
                   return (
                   <div
                     key={r._id}
-                    className={`group w-full px-5 sm:px-6 md:px-8 py-3 hover:bg-[var(--color-bg)]/60 transition-colors ${
+                    className={`group w-full px-4 sm:px-6 md:px-8 py-3 hover:bg-[var(--color-bg)]/60 transition-colors ${
                       selectedReportId === r._id ? 'bg-[var(--color-primary)]/6 border-l-2 border-[var(--color-primary)]' : ''
                     }`}
                   >
@@ -349,7 +350,7 @@ export function ReportsPage() {
                         <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-[var(--color-text-secondary)] mb-0.5">
                           {r.customer ? r.customer : 'All customers'}
                         </p>
-                        <p className="text-[13px] font-semibold text-[var(--color-text)]">
+                        <p className="text-[13px] font-semibold text-[var(--color-text)] leading-snug">
                           Weekly report
                           {r.includeCustomerSummaries ? ' · customer summaries' : ''}
                           {sevLabel ? ` · ${sevLabel}` : ''}
@@ -379,11 +380,11 @@ export function ReportsPage() {
               )}
             </div>
             {totalPages > 1 && (
-              <div className="px-5 sm:px-6 md:px-8 py-3 border-t border-[var(--color-border)] flex items-center justify-between gap-3 bg-white">
+              <div className="px-4 sm:px-6 md:px-8 py-3 border-t border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white">
                 <p className="text-[12px] text-[var(--color-text-secondary)]">
                   Page {page} of {totalPages} ({total} total)
                 </p>
-                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                <div className="flex items-center gap-1.5 flex-wrap justify-start sm:justify-end">
                   <button
                     type="button"
                     onClick={() => setPage(1)}
@@ -442,9 +443,9 @@ export function ReportsPage() {
           </div>
 
           {/* Right: email + preview */}
-          <div className="grid gap-4">
+          <div className="grid gap-4 min-w-0">
             <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_12px_40px_rgba(15,23,42,0.10)] overflow-hidden">
-              <div className="px-5 sm:px-6 py-4 border-b border-[var(--color-border)] flex items-center justify-between gap-3 bg-gradient-to-r from-[var(--color-bg)] to-white">
+              <div className="px-4 sm:px-6 py-4 border-b border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-gradient-to-r from-[var(--color-bg)] to-white">
                 <div className="inline-flex items-center gap-3 min-w-0">
                   <span className="inline-flex items-center justify-center w-10 h-10 rounded-2xl bg-[var(--color-primary)]/10 text-[var(--color-primary)] shrink-0">
                     <Mail className="w-5 h-5" />
@@ -466,13 +467,13 @@ export function ReportsPage() {
                 <button
                   type="button"
                   onClick={() => void loadMs365()}
-                  className="inline-flex items-center gap-2 h-9 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                  className="inline-flex items-center justify-center gap-2 h-9 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] w-full sm:w-auto"
                 >
                   Refresh
                 </button>
               </div>
 
-              <div className="px-5 sm:px-6 py-4 grid gap-3">
+              <div className="px-4 sm:px-6 py-4 grid gap-3">
                 <div className="grid gap-2">
                   <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[var(--color-text-secondary)]">
                     To
@@ -524,12 +525,12 @@ export function ReportsPage() {
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-2 pt-1">
+                <div className="grid grid-cols-1 sm:flex sm:flex-wrap items-stretch sm:items-center gap-2 pt-1">
                   <button
                     type="button"
                     onClick={() => void handleSaveDefaultRecipients()}
                     disabled={savingRecipients || ms365Configured === false}
-                    className="inline-flex items-center gap-2 h-9 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-2 h-9 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 w-full sm:w-auto"
                   >
                     {savingRecipients ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
                     Save defaults
@@ -539,7 +540,7 @@ export function ReportsPage() {
                     type="button"
                     onClick={() => void handleCreateDraft()}
                     disabled={!selectedReportId || drafting || ms365Configured === false}
-                    className="inline-flex items-center gap-2 h-9 rounded-lg bg-[var(--color-primary)] px-3 text-[12px] font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50"
+                    className="inline-flex items-center justify-center gap-2 h-9 rounded-lg bg-[var(--color-primary)] px-3 text-[12px] font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50 w-full sm:w-auto"
                   >
                     {drafting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                     Create draft
@@ -550,7 +551,7 @@ export function ReportsPage() {
                       href={draft.webLink}
                       target="_blank"
                       rel="noreferrer"
-                      className="inline-flex items-center gap-2 h-9 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                      className="inline-flex items-center justify-center gap-2 h-9 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] w-full sm:w-auto"
                     >
                       <ExternalLink className="w-4 h-4" />
                       Open draft
@@ -562,7 +563,7 @@ export function ReportsPage() {
                       type="button"
                       onClick={() => void handleSendDraft()}
                       disabled={sending || ms365Configured === false}
-                      className="inline-flex items-center gap-2 h-9 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                      className="inline-flex items-center justify-center gap-2 h-9 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 w-full sm:w-auto"
                     >
                       {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
                       Send
@@ -572,13 +573,13 @@ export function ReportsPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_16px_45px_rgba(15,23,42,0.14)] overflow-hidden">
-              <div className="px-5 sm:px-6 py-4 border-b border-[var(--color-border)] bg-gradient-to-r from-[var(--color-bg)] to-white">
+            <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_16px_45px_rgba(15,23,42,0.14)] overflow-hidden min-w-0">
+              <div className="px-4 sm:px-6 py-4 border-b border-[var(--color-border)] bg-gradient-to-r from-[var(--color-bg)] to-white">
                 <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-[var(--color-text-secondary)]">
                   Report preview
                 </p>
                 {selected && (
-                  <p className="mt-1 text-[13px] text-[var(--color-text)] font-semibold truncate">
+                  <p className="mt-1 text-[13px] text-[var(--color-text)] font-semibold break-words">
                     Weekly report · {selected.customer ? selected.customer : 'All customers'}
                   </p>
                 )}
@@ -590,7 +591,7 @@ export function ReportsPage() {
                 )}
               </div>
 
-              <div className="max-h-[520px] overflow-auto px-4 sm:px-5 py-4 text-[13px] text-[var(--color-text)] bg-[var(--color-bg)]">
+              <div className="max-h-[min(62dvh,520px)] sm:max-h-[520px] overflow-auto px-4 sm:px-5 py-4 text-[13px] text-[var(--color-text)] bg-[var(--color-bg)]">
                 {loadingOne ? (
                   <span className="inline-flex items-center gap-2 text-[var(--color-text-secondary)]">
                     <Loader2 className="w-4 h-4 animate-spin" />

@@ -1,7 +1,27 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
-import { ArrowLeft, Users, UserPlus, UserCircle, Shield, AlertCircle, Loader2, CheckCircle, XCircle, Mail, User as UserIcon, Lock, X, Pencil, Trash2, Eye, EyeOff, MoreVertical } from 'lucide-react'
+import {
+  ArrowLeft,
+  Users,
+  UserPlus,
+  UserCircle,
+  Shield,
+  AlertCircle,
+  Loader2,
+  CheckCircle,
+  XCircle,
+  Mail,
+  User as UserIcon,
+  Lock,
+  X,
+  Pencil,
+  Trash2,
+  Eye,
+  EyeOff,
+  MoreVertical,
+  Search,
+} from 'lucide-react'
 import type { User } from '@/types/auth'
 import { api } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
@@ -36,8 +56,10 @@ export function UserManagementPage() {
   const [deleting, setDeleting] = useState(false)
   const [openActionsForUserId, setOpenActionsForUserId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
+  const [search, setSearch] = useState('')
 
   const loadUsers = useCallback(async () => {
+    setLoading(true)
     setError('')
     try {
       const { users: list } = await api.auth.getUsers()
@@ -55,7 +77,18 @@ export function UserManagementPage() {
 
   useEffect(() => {
     setPage(1)
-  }, [users.length])
+  }, [search])
+
+  const filteredUsers = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return users
+    return users.filter((u) => {
+      const email = (u.email || '').toLowerCase()
+      const name = (u.name || '').toLowerCase()
+      const role = (u.role || '').toLowerCase()
+      return email.includes(q) || name.includes(q) || role.includes(q)
+    })
+  }, [users, search])
 
   useEffect(() => {
     if (showAddModal) document.body.style.overflow = 'hidden'
@@ -203,8 +236,13 @@ export function UserManagementPage() {
     setOpenActionsForUserId((prev) => (prev === userId ? null : userId))
   }
 
-  const totalPages = Math.max(1, Math.ceil(users.length / PAGE_SIZE))
-  const paginatedUsers = users.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const totalPages = Math.max(1, Math.ceil(filteredUsers.length / PAGE_SIZE))
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  const paginatedUsers = filteredUsers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   return (
     <AdminShell>
@@ -338,13 +376,7 @@ export function UserManagementPage() {
         </div>
       )}
 
-      {loading ? (
-            <div className="flex flex-col items-center justify-center min-h-[50vh]">
-              <Loader2 className="w-10 h-10 text-[var(--color-primary)] animate-spin" />
-              <p className="mt-4 text-[15px] text-[var(--color-text-secondary)]">Loading users…</p>
-            </div>
-          ) : (
-            <>
+      <main className="py-1 sm:py-0">
               {/* Page header */}
               <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6 mb-8">
                 <div>
@@ -388,15 +420,50 @@ export function UserManagementPage() {
 
               {/* Users table card */}
               <section className="bg-white rounded-2xl border border-[var(--color-primary)]/10 shadow-[0_4px_24px_rgba(63,75,157,0.08)] overflow-hidden">
-                <div className="px-5 sm:px-6 md:px-8 py-5 sm:py-6 border-b border-[var(--color-border)] flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <UserCircle className="w-5 h-5 text-[var(--color-primary)]" />
-                    <h2 className="text-lg sm:text-[19px] font-semibold text-[var(--color-text)]">All users</h2>
+                <div className="px-5 sm:px-6 md:px-8 py-5 sm:py-6 border-b border-[var(--color-border)] flex flex-col gap-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <UserCircle className="w-5 h-5 text-[var(--color-primary)]" />
+                      <h2 className="text-lg sm:text-[19px] font-semibold text-[var(--color-text)]">All users</h2>
+                    </div>
+                    <p className="text-[13px] text-[var(--color-text-secondary)]">
+                      {loading ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--color-primary)]" />
+                          Loading…
+                        </span>
+                      ) : search.trim() ? (
+                        <>
+                          {filteredUsers.length} match{filteredUsers.length !== 1 ? 'es' : ''} · {users.length} total
+                        </>
+                      ) : (
+                        <>
+                          {filteredUsers.length} user{filteredUsers.length !== 1 ? 's' : ''}
+                        </>
+                      )}
+                    </p>
                   </div>
-                  <p className="text-[13px] text-[var(--color-text-secondary)]">
-                    {users.length} user{users.length !== 1 ? 's' : ''}
-                  </p>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-secondary)]" />
+                    <input
+                      type="search"
+                      value={search}
+                      onChange={(e) => setSearch(e.target.value)}
+                      disabled={loading}
+                      placeholder="Search by email, name, or role"
+                      enterKeyHint="search"
+                      className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] pl-10 pr-3 py-2.5 text-[14px] text-[var(--color-text)] placeholder:text-[var(--color-text-secondary)] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)] disabled:opacity-60 disabled:cursor-wait"
+                    />
+                  </div>
                 </div>
+                <div className="max-h-[520px] overflow-auto">
+                  {loading ? (
+                    <div className="rounded-xl border border-[var(--color-border)]/80 bg-[var(--color-bg)]/50 mx-4 sm:mx-6 md:mx-8 my-6 py-14 text-center text-[var(--color-text-secondary)]">
+                      <Loader2 className="w-6 h-6 animate-spin inline-block align-middle text-[var(--color-primary)]" />
+                      <span className="ml-2 align-middle text-[13px]">Loading users…</span>
+                    </div>
+                  ) : (
+                    <>
                 <div className="md:hidden">
                   {paginatedUsers.length === 0 ? (
                     <div className="px-5 sm:px-6 py-12 text-center">
@@ -404,16 +471,27 @@ export function UserManagementPage() {
                         <span className="flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-bg)]">
                           <Users className="w-7 h-7 text-[var(--color-primary)]/50" />
                         </span>
-                        <p className="text-[15px] font-medium text-[var(--color-text)]">No users yet</p>
-                        <p className="text-[14px] max-w-sm">Add your first user using the button above.</p>
-                        <button
-                          type="button"
-                          onClick={() => setShowAddModal(true)}
-                          className="mt-1 inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] text-white text-[13px] font-medium rounded-xl hover:bg-[var(--color-primary-hover)]"
-                        >
-                          <UserPlus className="w-4 h-4" />
-                          Add user
-                        </button>
+                        {users.length === 0 ? (
+                          <>
+                            <p className="text-[15px] font-medium text-[var(--color-text)]">No users yet</p>
+                            <p className="text-[14px] max-w-sm">Add your first user using the button above.</p>
+                            <button
+                              type="button"
+                              onClick={() => setShowAddModal(true)}
+                              className="mt-1 inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] text-white text-[13px] font-medium rounded-xl hover:bg-[var(--color-primary-hover)]"
+                            >
+                              <UserPlus className="w-4 h-4" />
+                              Add user
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <p className="text-[15px] font-medium text-[var(--color-text)]">No matches</p>
+                            <p className="text-[14px] max-w-sm">
+                              No users match &quot;{search.trim()}&quot;. Try a different email, name, or role.
+                            </p>
+                          </>
+                        )}
                       </div>
                     </div>
                   ) : (
@@ -544,16 +622,27 @@ export function UserManagementPage() {
                       <span className="flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-bg)]">
                         <Users className="w-7 h-7 text-[var(--color-primary)]/50" />
                       </span>
-                      <p className="text-[15px] font-medium text-[var(--color-text)]">No users yet</p>
-                      <p className="text-[14px] max-w-sm">Add your first user using the button above.</p>
-                      <button
-                        type="button"
-                        onClick={() => setShowAddModal(true)}
-                        className="mt-2 inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] text-white text-[14px] font-medium rounded-xl hover:bg-[var(--color-primary-hover)]"
-                      >
-                        <UserPlus className="w-4 h-4" />
-                        Add user
-                      </button>
+                      {users.length === 0 ? (
+                        <>
+                          <p className="text-[15px] font-medium text-[var(--color-text)]">No users yet</p>
+                          <p className="text-[14px] max-w-sm">Add your first user using the button above.</p>
+                          <button
+                            type="button"
+                            onClick={() => setShowAddModal(true)}
+                            className="mt-2 inline-flex items-center gap-2 px-4 py-2.5 bg-[var(--color-primary)] text-white text-[14px] font-medium rounded-xl hover:bg-[var(--color-primary-hover)]"
+                          >
+                            <UserPlus className="w-4 h-4" />
+                            Add user
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-[15px] font-medium text-[var(--color-text)]">No matches</p>
+                          <p className="text-[14px] max-w-sm">
+                            No users match &quot;{search.trim()}&quot;. Try a different email, name, or role.
+                          </p>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -673,10 +762,15 @@ export function UserManagementPage() {
                     </tbody>
                   </table>
                 </div>
-                {users.length > 0 && (
+                    </>
+                  )}
+                </div>
+                {!loading && filteredUsers.length > 0 && (
                   <div className="border-t border-[var(--color-border)] px-5 sm:px-6 md:px-8 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 bg-[var(--color-bg)]/60">
                     <p className="text-[12px] text-[var(--color-text-secondary)]">
-                      Showing {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, users.length)} of {users.length}
+                      Showing {(page - 1) * PAGE_SIZE + 1}-{Math.min(page * PAGE_SIZE, filteredUsers.length)} of{' '}
+                      {filteredUsers.length}
+                      {search.trim() ? ` (${users.length} total)` : ''}
                     </p>
                     <div className="flex items-center gap-2">
                       <button
@@ -850,8 +944,7 @@ export function UserManagementPage() {
           </div>
         </div>
       )}
-            </>
-          )}
+      </main>
     </AdminShell>
   )
 }
