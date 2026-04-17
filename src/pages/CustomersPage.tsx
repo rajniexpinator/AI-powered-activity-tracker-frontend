@@ -16,6 +16,11 @@ type Customer = {
   createdBy?: { _id: string; name?: string; email?: string; role?: string }
 }
 
+function parseEmailChips(value: string): string[] {
+  if (!value.trim()) return []
+  return [...new Set(value.split(',').map((v) => v.trim()).filter(Boolean))]
+}
+
 export function CustomersPage() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -38,6 +43,8 @@ export function CustomersPage() {
   const [editNotes, setEditNotes] = useState('')
   const [updating, setUpdating] = useState(false)
   const [deleteCandidate, setDeleteCandidate] = useState<Customer | null>(null)
+  const addEmailChips = useMemo(() => parseEmailChips(email), [email])
+  const editEmailChips = useMemo(() => parseEmailChips(editEmail), [editEmail])
 
   useEffect(() => {
     const load = async () => {
@@ -232,14 +239,30 @@ export function CustomersPage() {
                 </div>
                 <div>
                   <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
-                    Email (optional)
+                    Email(s) (optional)
                   </label>
                   <input
-                    type="email"
+                    type="text"
                     value={editEmail}
                     onChange={(e) => setEditEmail(e.target.value)}
+                    placeholder="person1@customer.com, person2@customer.com"
                     className="w-full px-3 py-2.5 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
                   />
+                  <p className="mt-1.5 text-[11px] text-[var(--color-text-secondary)]">
+                    Use commas to add multiple emails.
+                  </p>
+                  {editEmailChips.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {editEmailChips.map((chip) => (
+                        <span
+                          key={chip}
+                          className="inline-flex max-w-full items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5 text-[11px] text-[var(--color-text-secondary)] break-all"
+                        >
+                          {chip}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
@@ -311,15 +334,30 @@ export function CustomersPage() {
                   </div>
                   <div>
                     <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
-                      Email (optional)
+                      Email(s) (optional)
                     </label>
                     <input
-                      type="email"
+                      type="text"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      placeholder="team@customer.com"
+                      placeholder="person1@customer.com, person2@customer.com"
                       className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2.5 text-[14px] focus:ring-2 focus:ring-[var(--color-primary)]/25 focus:border-[var(--color-primary)]"
                     />
+                    <p className="mt-1.5 text-[11px] text-[var(--color-text-secondary)]">
+                      Use commas to add multiple emails.
+                    </p>
+                    {addEmailChips.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {addEmailChips.map((chip) => (
+                          <span
+                            key={chip}
+                            className="inline-flex max-w-full items-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg)] px-2 py-0.5 text-[11px] text-[var(--color-text-secondary)] break-all"
+                          >
+                            {chip}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">

@@ -495,27 +495,40 @@ export function UserManagementPage() {
                       </div>
                     </div>
                   ) : (
-                    <div className="divide-y divide-[var(--color-border)]">
+                    <div className="px-3 py-3 space-y-3">
                       {paginatedUsers.map((u) => (
-                        <div key={u.id} className="px-4 py-3.5 space-y-3">
+                        <div
+                          key={u.id}
+                          className="rounded-2xl border border-[var(--color-border)] bg-white px-3.5 py-3.5 shadow-[0_12px_28px_rgba(63,75,157,0.14)] space-y-3"
+                        >
                           <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0">
-                              <p className="font-medium text-[var(--color-text)] text-[14px] truncate">{u.email}</p>
-                              <p className="text-[12px] text-[var(--color-text-secondary)]">{u.name || '—'}</p>
+                            <div className="min-w-0 flex items-start gap-2.5">
+                              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/12 text-[var(--color-primary)]">
+                                <Mail className="w-4 h-4" />
+                              </span>
+                              <div className="min-w-0">
+                                <p className="font-semibold text-[var(--color-text)] text-[14px] leading-5 break-all">{u.email}</p>
+                                <p className="text-[12px] text-[var(--color-text-secondary)] mt-0.5">{u.name || 'No name added'}</p>
+                              </div>
                             </div>
                             <span
-                              className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium ${
-                                u.isActive !== false ? 'bg-emerald-50 text-emerald-700' : 'bg-[var(--color-bg)] text-[var(--color-text-secondary)]'
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold ${
+                                u.isActive !== false
+                                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-100'
+                                  : 'bg-[var(--color-bg)] text-[var(--color-text-secondary)] border border-[var(--color-border)]'
                               }`}
                             >
+                              {u.isActive !== false ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
                               {u.isActive !== false ? 'Active' : 'Inactive'}
                             </span>
                           </div>
 
-                          <div className="flex items-center justify-between gap-2">
-                            <div>
+                          <div className="flex items-center justify-between gap-2 pt-1 border-t border-[var(--color-border)]/80">
+                            <div className="min-w-0">
                               {u.id === currentUser?.id ? (
-                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium ${ROLE_STYLES[u.role]}`}>
+                                <span
+                                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${ROLE_STYLES[u.role]}`}
+                                >
                                   <Shield className="w-3 h-3" />
                                   {u.role}
                                 </span>
@@ -523,7 +536,7 @@ export function UserManagementPage() {
                                 <select
                                   value={u.role}
                                   onChange={(e) => handleUpdateRole(u.id, e.target.value as User['role'])}
-                                  className="text-[12px] border border-[var(--color-border)] rounded-lg px-2.5 py-1.5 bg-white"
+                                  className="text-[12px] border border-[var(--color-border)] rounded-xl px-3 py-1.5 bg-white font-medium"
                                 >
                                   {ROLES.map((r) => (
                                     <option key={r} value={r}>
@@ -535,13 +548,13 @@ export function UserManagementPage() {
                             </div>
 
                             {u.id === currentUser?.id ? (
-                              <span className="text-[12px] text-[var(--color-text-secondary)]">You</span>
+                              <span className="text-[12px] font-medium text-[var(--color-text-secondary)]">Current user</span>
                             ) : (
                               <div className="relative" data-user-actions-menu-root="true">
                                 <button
                                   type="button"
                                   onClick={() => toggleActionsMenu(u.id)}
-                                  className="inline-flex items-center justify-center h-8 w-8 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]"
+                                  className="inline-flex items-center justify-center h-9 w-9 rounded-xl border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]"
                                   aria-label={`Open actions for ${u.email}`}
                                 >
                                   <MoreVertical className="w-4 h-4" />

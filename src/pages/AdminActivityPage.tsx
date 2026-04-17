@@ -149,6 +149,7 @@ export function AdminActivityPage() {
   const [exportingWeeklyExcel, setExportingWeeklyExcel] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [actionMenuId, setActionMenuId] = useState<string | null>(null)
+  const [actionMenuDirection, setActionMenuDirection] = useState<'up' | 'down'>('down')
   const [report, setReport] = useState<string>('')
   const [reportId, setReportId] = useState<string>('')
   const [reportImageGallery, setReportImageGallery] = useState<
@@ -403,6 +404,25 @@ export function AdminActivityPage() {
     } finally {
       setDeletingId(null)
     }
+  }
+
+  function toggleActionMenu(id: string) {
+    setActionMenuId((cur) => {
+      if (cur === id) return null
+      const btnEl = document.getElementById(`action-menu-btn-${id}`)
+      if (!btnEl) {
+        setActionMenuDirection('down')
+        return id
+      }
+      const rect = btnEl.getBoundingClientRect()
+      const estimatedMenuHeight = 96
+      const verticalGap = 8
+      const spaceBelow = window.innerHeight - rect.bottom
+      const spaceAbove = rect.top
+      const shouldOpenUp = spaceBelow < estimatedMenuHeight + verticalGap && spaceAbove > spaceBelow
+      setActionMenuDirection(shouldOpenUp ? 'up' : 'down')
+      return id
+    })
   }
 
   async function handleAiAsk() {
@@ -1058,8 +1078,7 @@ export function AdminActivityPage() {
                     : 'No activity found for the selected filters.'}
                 </div>
               ) : (
-                displayActivities.map((a, idx) => {
-                  const openMenuUp = idx >= displayActivities.length - 2
+                displayActivities.map((a) => {
                   return (
                   <div
                     key={a._id}
@@ -1129,7 +1148,7 @@ export function AdminActivityPage() {
                           <button
                             id={`action-menu-btn-${a._id}`}
                             type="button"
-                            onClick={() => setActionMenuId((cur) => (cur === a._id ? null : a._id))}
+                            onClick={() => toggleActionMenu(a._id)}
                             disabled={deletingId !== null}
                             className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-[var(--color-border)] bg-white hover:bg-[var(--color-bg)] disabled:opacity-60"
                             aria-haspopup="menu"
@@ -1142,8 +1161,8 @@ export function AdminActivityPage() {
                           {actionMenuId === a._id && (
                             <div
                               id={`action-menu-${a._id}`}
-                              className={`absolute right-0 z-50 w-36 rounded-xl border border-[var(--color-border)] bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)] overflow-hidden ${
-                                openMenuUp ? 'bottom-full mb-2' : 'top-full mt-2'
+                              className={`absolute right-0 z-[99999] w-36 rounded-xl border border-[var(--color-border)] bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)] overflow-hidden ${
+                                actionMenuDirection === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'
                               }`}
                               role="menu"
                             >

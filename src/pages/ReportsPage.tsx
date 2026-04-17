@@ -293,12 +293,12 @@ export function ReportsPage() {
                   )}
                 </p>
               </div>
-              <div className="flex items-center gap-1.5 self-end sm:self-auto">
+              <div className="flex items-center gap-2 self-end sm:self-auto">
                 <button
                   type="button"
                   onClick={() => void handleClearHistory()}
                   disabled={loading || reports.length === 0}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 shadow-sm"
                   title="Clear history"
                 >
                   <Trash2 className="w-4 h-4" />
@@ -307,7 +307,7 @@ export function ReportsPage() {
                   type="button"
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1 || loading}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 shadow-sm"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
@@ -315,13 +315,13 @@ export function ReportsPage() {
                   type="button"
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages || loading}
-                  className="inline-flex items-center gap-1 rounded-lg border border-[var(--color-border)] px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+                  className="inline-flex items-center gap-1 rounded-xl border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50 shadow-sm"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
             </div>
-            <div className="divide-y divide-[var(--color-border)] max-h-[min(58dvh,520px)] sm:max-h-[520px] overflow-auto">
+            <div className="max-h-[min(58dvh,520px)] sm:max-h-[520px] overflow-auto bg-[var(--color-bg)]/40 sm:bg-transparent px-2.5 py-2 sm:p-0 sm:divide-y sm:divide-[var(--color-border)]">
               {loading ? (
                 <div className="px-5 sm:px-6 md:px-8 py-6 text-[13px] text-[var(--color-text-secondary)] inline-flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
@@ -337,8 +337,10 @@ export function ReportsPage() {
                   return (
                   <div
                     key={r._id}
-                    className={`group w-full px-4 sm:px-6 md:px-8 py-3 hover:bg-[var(--color-bg)]/60 transition-colors ${
-                      selectedReportId === r._id ? 'bg-[var(--color-primary)]/6 border-l-2 border-[var(--color-primary)]' : ''
+                    className={`group w-full px-3.5 sm:px-6 md:px-8 py-3 sm:py-3.5 transition-colors rounded-2xl sm:rounded-none border sm:border-0 shadow-[0_8px_22px_rgba(15,23,42,0.08)] sm:shadow-none mb-2.5 sm:mb-0 ${
+                      selectedReportId === r._id
+                        ? 'bg-[var(--color-primary)]/8 border-[var(--color-primary)]/35 sm:border-l-2 sm:border-[var(--color-primary)]'
+                        : 'bg-white border-[var(--color-border)] hover:bg-[var(--color-bg)]/60'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -361,13 +363,13 @@ export function ReportsPage() {
                       </button>
 
                       <div className="shrink-0 flex items-center gap-2">
-                        <span className="inline-flex items-center justify-center rounded-full bg-[var(--color-bg)] px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)]">
+                        <span className="inline-flex items-center justify-center rounded-full border border-[var(--color-border)] bg-[var(--color-bg)] px-2.5 py-1 text-[11px] text-[var(--color-text-secondary)]">
                           {r.activityCount ?? 0} logs
                         </span>
                         <button
                           type="button"
                           onClick={() => void handleDeleteReport(r._id)}
-                          className="inline-flex items-center justify-center rounded-lg border border-red-300 bg-red-50 p-2 text-red-700 shadow-sm hover:bg-red-600 hover:text-white hover:border-red-700"
+                          className="inline-flex items-center justify-center rounded-xl border border-red-300 bg-red-50 p-2 text-red-700 shadow-sm hover:bg-red-600 hover:text-white hover:border-red-700"
                           title="Delete report"
                         >
                           <Trash2 className="w-4 h-4" />

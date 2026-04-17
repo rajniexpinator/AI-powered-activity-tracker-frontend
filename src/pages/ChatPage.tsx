@@ -261,9 +261,9 @@ export function ChatPage() {
   const [sendingEmail, setSendingEmail] = useState(false)
   const [emailConfirmOpen, setEmailConfirmOpen] = useState(false)
   const [emailRecipientsLoading, setEmailRecipientsLoading] = useState(false)
-  const [emailCustomerRecipient, setEmailCustomerRecipient] = useState('')
+  const [emailCustomerRecipients, setEmailCustomerRecipients] = useState<string[]>([])
+  const [selectedCustomerEmailRecipients, setSelectedCustomerEmailRecipients] = useState<string[]>([])
   const [emailManagerCcRecipients, setEmailManagerCcRecipients] = useState<string[]>([])
-  const [includeCustomerRecipient, setIncludeCustomerRecipient] = useState(true)
   const [includeManagerCcRecipients, setIncludeManagerCcRecipients] = useState(true)
 
   const mainLogLocked =
@@ -370,13 +370,17 @@ export function ChatPage() {
     return value.trim().toLowerCase().replace(/\s+/g, ' ')
   }
 
-  function selectedLogCustomerEmail(): string {
+  function parseCommaSeparatedEmails(value?: string): string[] {
+    if (typeof value !== 'string' || !value.trim()) return []
+    return [...new Set(value.split(',').map((v) => v.trim().toLowerCase()).filter(Boolean))]
+  }
+
+  function selectedLogCustomerEmails(): string[] {
     const rawCustomer = typeof activityDetail?.customer === 'string' ? activityDetail.customer.trim() : ''
-    if (!rawCustomer) return ''
+    if (!rawCustomer) return []
     const normalized = normalizeCustomerName(rawCustomer)
     const match = customers.find((c) => normalizeCustomerName(c.name) === normalized)
-    const email = typeof match?.email === 'string' ? match.email.trim().toLowerCase() : ''
-    return email
+    return parseCommaSeparatedEmails(typeof match?.email === 'string' ? match.email : '')
   }
 
   function isUnsupportedIphoneImage(file: File) {
@@ -1232,7 +1236,7 @@ export function ChatPage() {
     setEmailRecipientsLoading(true)
     setError(null)
     try {
-      const customerEmail = selectedLogCustomerEmail()
+      const customerEmails = selectedLogCustomerEmails()
       const defaults = await api.ms365.getDefaultRecipients()
       const managerCc = Array.isArray(defaults?.recipients?.cc)
         ? defaults.recipients.cc
@@ -1240,9 +1244,9 @@ export function ChatPage() {
             .map((v) => v.trim().toLowerCase())
             .filter(Boolean)
         : []
-      setEmailCustomerRecipient(customerEmail)
+      setEmailCustomerRecipients(customerEmails)
+      setSelectedCustomerEmailRecipients(customerEmails)
       setEmailManagerCcRecipients([...new Set(managerCc)])
-      setIncludeCustomerRecipient(Boolean(customerEmail))
       setIncludeManagerCcRecipients(managerCc.length > 0)
       setEmailConfirmOpen(true)
     } catch (err) {
@@ -1259,7 +1263,7 @@ export function ChatPage() {
       setError('Select a log from the list before sending email.')
       return
     }
-    const to = includeCustomerRecipient && emailCustomerRecipient ? [emailCustomerRecipient] : []
+    const to = [...selectedCustomerEmailRecipients]
     const cc = includeManagerCcRecipients ? emailManagerCcRecipients : []
     if (to.length === 0 && cc.length === 0) {
       setError('No recipients selected. Choose at least one recipient before sending.')
@@ -1649,21 +1653,34 @@ export function ChatPage() {
                 </button>
               </div>
               <div className="px-4 sm:px-5 py-4 space-y-3">
-                <label className="flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2">
-                  <input
-                    type="checkbox"
-                    checked={includeCustomerRecipient}
-                    onChange={(e) => setIncludeCustomerRecipient(e.target.checked)}
-                    disabled={!emailCustomerRecipient}
-                    className="mt-0.5"
-                  />
-                  <span className="text-[13px] text-[#222]">
-                    <span className="font-semibold">Customer</span>
-                    <span className="block text-[12px] text-[#666]">
-                      {emailCustomerRecipient || 'No customer email linked to this log'}
-                    </span>
-                  </span>
-                </label>
+                <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2">
+                  <span className="text-[13px] font-semibold text-[#222]">Customer recipients</span>
+                  {emailCustomerRecipients.length > 0 ? (
+                    <div className="mt-2 space-y-1.5">
+                      {emailCustomerRecipients.map((email) => {
+                        const checked = selectedCustomerEmailRecipients.includes(email)
+                        return (
+                          <label key={email} className="flex items-start gap-2">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                setSelectedCustomerEmailRecipients((prev) => {
+                                  if (e.target.checked) return [...new Set([...prev, email])]
+                                  return prev.filter((item) => item !== email)
+                                })
+                              }}
+                              className="mt-0.5"
+                            />
+                            <span className="text-[12px] text-[#666] break-all">{email}</span>
+                          </label>
+                        )
+                      })}
+                    </div>
+                  ) : (
+                    <span className="mt-1 block text-[12px] text-[#666]">No customer email linked to this log</span>
+                  )}
+                </div>
                 <label className="flex items-start gap-2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2">
                   <input
                     type="checkbox"
