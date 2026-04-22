@@ -14,26 +14,35 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['logo.png', 'logo.jpg', 'favicon.ico'],
+      includeAssets: ['logo.png', 'logo.jpg', 'favicon.ico', 'pwa-192.png', 'pwa-512.png'],
       manifest: {
+        id: '/',
         name: 'AI Activity Tracker',
         short_name: 'Activity Tracker',
         description: 'Internal activity tracking & operational assistant',
         theme_color: '#3f4b9d',
         background_color: '#ffffff',
         display: 'standalone',
+        start_url: '/',
+        scope: '/',
         icons: [
           {
-            src: '/logo.png',
+            src: '/pwa-192.png',
             sizes: '192x192',
             type: 'image/png',
             purpose: 'any',
           },
           {
-            src: '/logo.png',
+            src: '/pwa-512.png',
             sizes: '512x512',
             type: 'image/png',
-            purpose: 'any maskable',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ]
       },

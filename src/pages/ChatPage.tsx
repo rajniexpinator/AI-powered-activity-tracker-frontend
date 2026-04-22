@@ -265,6 +265,10 @@ export function ChatPage() {
   const [selectedCustomerEmailRecipients, setSelectedCustomerEmailRecipients] = useState<string[]>([])
   const [emailManagerCcRecipients, setEmailManagerCcRecipients] = useState<string[]>([])
   const [includeManagerCcRecipients, setIncludeManagerCcRecipients] = useState(true)
+  const [whatsAppConfirmOpen, setWhatsAppConfirmOpen] = useState(false)
+  const [sendingWhatsApp, setSendingWhatsApp] = useState(false)
+  const [whatsAppTo, setWhatsAppTo] = useState('')
+  const [whatsAppMessage, setWhatsAppMessage] = useState('')
 
   const mainLogLocked =
     Boolean(selectedActivityId && activityDetail && user && user.role !== 'admin' && activityOwnerId(activityDetail) !== user.id)
@@ -1291,6 +1295,69 @@ export function ChatPage() {
     }
   }
 
+  function buildWhatsAppMessageFromSelectedLog() {
+    if (!activityDetail) return ''
+    const createdLabel = activityDetail.createdAt ? new Date(activityDetail.createdAt).toLocaleString() : 'Unknown date'
+    const safeCustomer =
+      typeof activityDetail.customer === 'string' && activityDetail.customer.trim()
+        ? activityDetail.customer.trim()
+        : 'Unknown customer'
+    const safeSummary =
+      typeof activityDetail.summary === 'string' && activityDetail.summary.trim()
+        ? activityDetail.summary.trim()
+        : 'No summary'
+    return `AI Activity Update
+
+Customer: ${safeCustomer}
+Created: ${createdLabel}
+Summary: ${safeSummary}`
+  }
+
+  function openWhatsAppConfirmPrompt() {
+    if (!selectedActivityId) {
+      setError('Select a log from the list before sending WhatsApp.')
+      return
+    }
+    setError(null)
+    setSaveMessage(null)
+    setWhatsAppMessage(buildWhatsAppMessageFromSelectedLog())
+    setWhatsAppTo('')
+    setWhatsAppConfirmOpen(true)
+  }
+
+  async function handleSendWhatsApp() {
+    if (!selectedActivityId) {
+      setError('Select a log from the list before sending WhatsApp.')
+      return
+    }
+    if (!whatsAppTo.trim()) {
+      setError('Enter a WhatsApp number (for example +917986729952).')
+      return
+    }
+    if (!whatsAppMessage.trim()) {
+      setError('WhatsApp message cannot be empty.')
+      return
+    }
+
+    setSendingWhatsApp(true)
+    setError(null)
+    setSaveMessage(null)
+    try {
+      const res = await api.whatsapp.send({
+        to: whatsAppTo.trim(),
+        message: whatsAppMessage.trim(),
+      })
+      toast.success(`WhatsApp sent${res.to ? ` to ${res.to}` : ''}.`)
+      setWhatsAppConfirmOpen(false)
+    } catch (err) {
+      const message = (err as Error).message || 'Failed to send WhatsApp'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSendingWhatsApp(false)
+    }
+  }
+
   const filteredActivities = recentActivities.filter((act) => {
     if (dateFilter === 'today') {
       const actDate = new Date(act.createdAt)
@@ -1379,6 +1446,20 @@ export function ChatPage() {
             >
               {emailRecipientsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
               <span className="leading-none">Email</span>
+            </button>
+            <button
+              type="button"
+              onClick={openWhatsAppConfirmPrompt}
+              disabled={!selectedActivityId || sendingWhatsApp || archiving}
+              className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
+                !selectedActivityId || sendingWhatsApp || archiving
+                  ? 'border-[var(--color-border)] text-[#888] cursor-not-allowed'
+                  : 'border-green-200 text-green-700 hover:bg-green-50'
+              }`}
+              title={!selectedActivityId ? 'Select a recent log first, then click WhatsApp' : 'Send selected AI log by WhatsApp'}
+            >
+              {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+              <span className="leading-none">WhatsApp</span>
             </button>
           </div>
         </div>
@@ -1690,11 +1771,11 @@ export function ChatPage() {
                     className="mt-0.5"
                   />
                   <span className="text-[13px] text-[#222]">
-                    <span className="font-semibold">Manager CC</span>
+                    <span className="font-semibold">Default CC (from settings)</span>
                     <span className="block text-[12px] text-[#666]">
                       {emailManagerCcRecipients.length > 0
                         ? emailManagerCcRecipients.join(', ')
-                        : 'No manager CC configured'}
+                        : 'No default CC configured'}
                     </span>
                   </span>
                 </label>
@@ -1718,6 +1799,66 @@ export function ChatPage() {
                 >
                   {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                   Send
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {whatsAppConfirmOpen && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div className="w-full max-w-lg rounded-2xl bg-white border border-[var(--color-border)] shadow-xl overflow-hidden">
+              <div className="px-4 sm:px-5 py-3 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#666]">Confirm WhatsApp</p>
+                  <p className="text-sm font-medium text-[#111]">Send this AI log update by WhatsApp:</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setWhatsAppConfirmOpen(false)}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#666] hover:bg-black/[0.04]"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="px-4 sm:px-5 py-4 space-y-3">
+                <div>
+                  <label className="block text-[12px] font-semibold text-[#333] mb-1">To (WhatsApp number)</label>
+                  <input
+                    type="text"
+                    value={whatsAppTo}
+                    onChange={(e) => setWhatsAppTo(e.target.value)}
+                    placeholder="+917986729952"
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] text-[#222] placeholder:text-[#999]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[12px] font-semibold text-[#333] mb-1">Message</label>
+                  <textarea
+                    value={whatsAppMessage}
+                    onChange={(e) => setWhatsAppMessage(e.target.value)}
+                    rows={6}
+                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] text-[#222] resize-y"
+                  />
+                </div>
+                <p className="text-[11px] text-[#777]">This sends only when you click send. It does not auto-send.</p>
+              </div>
+              <div className="px-4 sm:px-5 py-3 border-t border-[var(--color-border)] flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setWhatsAppConfirmOpen(false)}
+                  className="inline-flex h-9 items-center justify-center rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[#444] hover:bg-black/[0.03]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSendWhatsApp()}
+                  disabled={sendingWhatsApp}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 text-[12px] font-semibold text-white hover:bg-green-700 disabled:opacity-60"
+                >
+                  {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+                  Send WhatsApp
                 </button>
               </div>
             </div>
@@ -1817,6 +1958,46 @@ export function ChatPage() {
                   }`}
                 >
                   {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={openWhatsAppConfirmPrompt}
+                  disabled={!selectedActivityId || sendingWhatsApp || archiving}
+                  aria-label={sendingWhatsApp ? 'Sending WhatsApp…' : 'Send WhatsApp'}
+                  title={
+                    !selectedActivityId
+                      ? 'Select a recent log first, then click to send WhatsApp'
+                      : sendingWhatsApp
+                        ? 'Sending…'
+                        : 'Send selected recent log by WhatsApp'
+                  }
+                  className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white transition-colors ${
+                    !selectedActivityId || sendingWhatsApp || archiving
+                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
+                      : 'border-green-200 text-green-700 hover:bg-green-50 active:bg-green-100'
+                  }`}
+                >
+                  {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={openWhatsAppConfirmPrompt}
+                  disabled={!selectedActivityId || sendingWhatsApp || archiving}
+                  aria-label={sendingWhatsApp ? 'Sending WhatsApp…' : 'Send WhatsApp'}
+                  title={
+                    !selectedActivityId
+                      ? 'Select a recent log first, then click to send WhatsApp'
+                      : sendingWhatsApp
+                        ? 'Sending…'
+                        : 'Send selected recent log by WhatsApp'
+                  }
+                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors ${
+                    !selectedActivityId || sendingWhatsApp || archiving
+                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
+                      : 'border-green-200 text-green-700 hover:bg-green-50 active:bg-green-100'
+                  }`}
+                >
+                  {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
                 </button>
 
                 <button

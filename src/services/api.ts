@@ -525,6 +525,20 @@ export const api = {
       }),
   },
 
+  whatsapp: {
+    send: (payload: { to: string; message: string }) =>
+      request<{
+        success: boolean
+        messageSid: string
+        status?: string
+        to?: string
+        from?: string
+      }>('/api/whatsapp/send', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+  },
+
   customers: {
     list: () =>
       request<{
