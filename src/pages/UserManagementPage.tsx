@@ -21,6 +21,7 @@ import {
   EyeOff,
   MoreVertical,
   Search,
+  KeyRound,
 } from 'lucide-react'
 import type { User } from '@/types/auth'
 import { api } from '@/services/api'
@@ -53,7 +54,13 @@ export function UserManagementPage() {
   const [editPassword, setEditPassword] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
   const [deleteUser, setDeleteUser] = useState<User | null>(null)
+  const [deleteConfirmVariant, setDeleteConfirmVariant] = useState<'default' | 'deleteUserWording'>('default')
   const [deleting, setDeleting] = useState(false)
+  const [passwordUpdateTarget, setPasswordUpdateTarget] = useState<User | null>(null)
+  const [adminNewPassword, setAdminNewPassword] = useState('')
+  const [showAdminNewPassword, setShowAdminNewPassword] = useState(false)
+  const [savingPasswordUpdate, setSavingPasswordUpdate] = useState(false)
+  const [passwordUpdateError, setPasswordUpdateError] = useState('')
   const [openActionsForUserId, setOpenActionsForUserId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -157,14 +164,51 @@ export function UserManagementPage() {
     }
   }
 
-  function openDeleteModal(u: User) {
+  function openDeleteModal(u: User, variant: 'default' | 'deleteUserWording' = 'default') {
     setDeleteUser(u)
+    setDeleteConfirmVariant(variant)
     setError('')
   }
 
   function closeDeleteModal() {
     setDeleteUser(null)
+    setDeleteConfirmVariant('default')
     setDeleting(false)
+  }
+
+  function closePasswordUpdateModal() {
+    setPasswordUpdateTarget(null)
+    setAdminNewPassword('')
+    setShowAdminNewPassword(false)
+    setSavingPasswordUpdate(false)
+    setPasswordUpdateError('')
+  }
+
+  function startUpdatePasswordFlow(u: User) {
+    if (!window.confirm('Are you sure you want to update password?')) return
+    setOpenActionsForUserId(null)
+    setPasswordUpdateTarget(u)
+    setAdminNewPassword('')
+    setShowAdminNewPassword(false)
+    setPasswordUpdateError('')
+  }
+
+  async function handleSaveAdminPassword(e: React.FormEvent) {
+    e.preventDefault()
+    if (!passwordUpdateTarget || adminNewPassword.length < 6) return
+    setSavingPasswordUpdate(true)
+    setPasswordUpdateError('')
+    try {
+      await api.auth.updateUser(passwordUpdateTarget.id, { resetPassword: adminNewPassword })
+      toast.success('Password updated.')
+      closePasswordUpdateModal()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update password'
+      setPasswordUpdateError(msg)
+      toast.error(msg)
+    } finally {
+      setSavingPasswordUpdate(false)
+    }
   }
 
   async function handleConfirmDelete() {
@@ -333,7 +377,9 @@ export function UserManagementPage() {
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeDeleteModal} aria-hidden="true" />
           <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[var(--color-border)] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)] bg-[var(--color-bg)]/50">
-              <h2 className="text-lg font-semibold text-[var(--color-text)]">Delete employee</h2>
+              <h2 className="text-lg font-semibold text-[var(--color-text)]">
+                {deleteConfirmVariant === 'deleteUserWording' ? 'Delete user' : 'Delete employee'}
+              </h2>
               <button
                 type="button"
                 onClick={closeDeleteModal}
@@ -345,7 +391,18 @@ export function UserManagementPage() {
             </div>
             <div className="p-6 space-y-4">
               <p className="text-[14px] text-[var(--color-text)]">
-                Are you sure you want to delete <span className="font-semibold">{deleteUser.email}</span>?
+                {deleteConfirmVariant === 'deleteUserWording' ? (
+                  <>
+                    Are you sure you want to delete user?
+                    <span className="block mt-2 text-[13px] text-[var(--color-text-secondary)] font-normal">
+                      {deleteUser.email}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    Are you sure you want to delete <span className="font-semibold">{deleteUser.email}</span>?
+                  </>
+                )}
               </p>
               <div className="flex gap-3 pt-2">
                 <button
@@ -372,6 +429,85 @@ export function UserManagementPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Admin: set password for another user */}
+      {passwordUpdateTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closePasswordUpdateModal} aria-hidden="true" />
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[var(--color-border)] overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)] bg-[var(--color-bg)]/50">
+              <h2 className="text-lg font-semibold text-[var(--color-text)]">Update password</h2>
+              <button
+                type="button"
+                onClick={closePasswordUpdateModal}
+                className="p-2 rounded-lg text-[var(--color-text-secondary)] hover:bg-black/5 hover:text-[var(--color-text)] transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveAdminPassword} className="p-6 space-y-4">
+              <p className="text-[13px] text-[var(--color-text-secondary)]">
+                New password for <span className="font-medium text-[var(--color-text)]">{passwordUpdateTarget.email}</span>
+              </p>
+              {passwordUpdateError ? (
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-red-50 border border-red-100 text-red-700 text-[13px]">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {passwordUpdateError}
+                </div>
+              ) : null}
+              <div>
+                <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                  New password
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--color-text-secondary)] opacity-60" />
+                  <input
+                    type={showAdminNewPassword ? 'text' : 'password'}
+                    value={adminNewPassword}
+                    onChange={(e) => setAdminNewPassword(e.target.value)}
+                    placeholder="Min 6 characters"
+                    minLength={6}
+                    className="w-full pl-10 pr-12 py-3 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[15px] focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)]"
+                    autoComplete="new-password"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAdminNewPassword((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 inline-flex h-8 w-8 items-center justify-center rounded-lg text-[var(--color-text-secondary)] hover:bg-black/5"
+                    aria-label={showAdminNewPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showAdminNewPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={closePasswordUpdateModal}
+                  className="flex-1 px-4 py-3 rounded-xl border border-[var(--color-border)] text-[var(--color-text)] font-medium text-[15px] hover:bg-[var(--color-bg)] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingPasswordUpdate || adminNewPassword.length < 6}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 rounded-xl text-[15px] font-semibold !text-white transition-colors"
+                >
+                  {savingPasswordUpdate ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Saving…
+                    </>
+                  ) : (
+                    'Save password'
+                  )}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
@@ -408,7 +544,7 @@ export function UserManagementPage() {
               </div>
 
       {/* Error banner */}
-      {error && !showAddModal ? (
+      {error && !showAddModal && !passwordUpdateTarget ? (
         <div
           className="mb-6 flex items-center gap-3 p-4 rounded-xl bg-red-50 border border-red-100 text-red-700 text-[14px]"
           role="alert"
@@ -560,33 +696,39 @@ export function UserManagementPage() {
                                   <MoreVertical className="w-4 h-4" />
                                 </button>
                                 {openActionsForUserId === u.id && (
-                                  <div className="absolute right-0 top-9 z-20 w-44 rounded-xl border border-[var(--color-border)] bg-white shadow-lg p-1">
+                                  <div className="absolute right-0 top-9 z-20 w-52 rounded-xl border border-[var(--color-border)] bg-white shadow-lg p-1">
                                     {u.role === 'employee' && (
-                                      <>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            openEditModal(u)
-                                            setOpenActionsForUserId(null)
-                                          }}
-                                          className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
-                                        >
-                                          <Pencil className="w-3.5 h-3.5" />
-                                          Edit
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            openDeleteModal(u)
-                                            setOpenActionsForUserId(null)
-                                          }}
-                                          className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-red-600 hover:bg-red-50"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                          Delete
-                                        </button>
-                                      </>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          openEditModal(u)
+                                          setOpenActionsForUserId(null)
+                                        }}
+                                        className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                                      >
+                                        <Pencil className="w-3.5 h-3.5" />
+                                        Edit
+                                      </button>
                                     )}
+                                    <button
+                                      type="button"
+                                      onClick={() => startUpdatePasswordFlow(u)}
+                                      className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                                    >
+                                      <KeyRound className="w-3.5 h-3.5" />
+                                      Update password
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        openDeleteModal(u, 'deleteUserWording')
+                                        setOpenActionsForUserId(null)
+                                      }}
+                                      className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-red-600 hover:bg-red-50"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      Delete password
+                                    </button>
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -726,33 +868,39 @@ export function UserManagementPage() {
                             <MoreVertical className="w-4 h-4" />
                           </button>
                           {openActionsForUserId === u.id && (
-                            <div className="absolute right-0 top-10 z-20 w-44 rounded-xl border border-[var(--color-border)] bg-white shadow-lg p-1 text-left">
+                            <div className="absolute right-0 top-10 z-20 w-52 rounded-xl border border-[var(--color-border)] bg-white shadow-lg p-1 text-left">
                               {u.role === 'employee' && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      openEditModal(u)
-                                      setOpenActionsForUserId(null)
-                                    }}
-                                    className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      openDeleteModal(u)
-                                      setOpenActionsForUserId(null)
-                                    }}
-                                    className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-red-600 hover:bg-red-50"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    Delete
-                                  </button>
-                                </>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    openEditModal(u)
+                                    setOpenActionsForUserId(null)
+                                  }}
+                                  className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                  Edit
+                                </button>
                               )}
+                              <button
+                                type="button"
+                                onClick={() => startUpdatePasswordFlow(u)}
+                                className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                              >
+                                <KeyRound className="w-3.5 h-3.5" />
+                                Update password
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  openDeleteModal(u, 'deleteUserWording')
+                                  setOpenActionsForUserId(null)
+                                }}
+                                className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-red-600 hover:bg-red-50"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                Delete password
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => {

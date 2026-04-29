@@ -201,6 +201,50 @@ function isVideoAttachment(a: ActivityAttachment): boolean {
   return /\.(mp4|mov|webm|m4v|ogv|ogg)(\?|#|$)/.test(path)
 }
 
+type BarcodeClarifyMapping = {
+  barcode: string
+  partName?: string
+  partNumber?: string
+  productName?: string
+  customer?: string
+  scanCount?: number
+  updatedAt?: string
+  createdAt?: string
+}
+
+type PendingBarcodeClarification = {
+  barcode: string
+  mode: 'known' | 'unknown'
+  mapping: BarcodeClarifyMapping | null
+  prompt: string
+  fields: string[]
+}
+
+function buildBarcodeLogSnippet(
+  barcode: string,
+  customer?: string,
+  partName?: string,
+  partNumber?: string,
+  notes?: string
+) {
+  const lines = [`Scanned barcode: ${barcode}`]
+  if (customer?.trim()) lines.push(`Customer: ${customer.trim()}`)
+  const partLabel = partName?.trim() || ''
+  if (partLabel) lines.push(`Part: ${partLabel}`)
+  if (partNumber?.trim()) lines.push(`Part number: ${partNumber.trim()}`)
+  if (notes?.trim()) lines.push(`Notes: ${notes.trim()}`)
+  return lines.join('\n')
+}
+
+function needsBarcodeMappingStep(p: PendingBarcodeClarification): boolean {
+  if (p.mode === 'unknown') return true
+  const f = p.fields || []
+  const m = p.mapping
+  if (f.includes('customer') && !String(m?.customer || '').trim()) return true
+  if (f.includes('partName') && !String(m?.partName || m?.productName || '').trim()) return true
+  return false
+}
+
 export function ChatPage() {
   const { user } = useAuth()
   const { highlightSharedIds, clearSharedLogHighlight } = useSharedLogsNotify()
@@ -316,8 +360,20 @@ export function ChatPage() {
   const [barcodePartNumber, setBarcodePartNumber] = useState('')
   const [barcodeNotes, setBarcodeNotes] = useState('')
   const [savingBarcode, setSavingBarcode] = useState(false)
+  const [barcodeIntegrationOpen, setBarcodeIntegrationOpen] = useState(false)
+  const [barcodeIntegrationStep, setBarcodeIntegrationStep] = useState<'choice' | 'pickLog'>('choice')
+  const [pendingBarcodeClarification, setPendingBarcodeClarification] =
+    useState<PendingBarcodeClarification | null>(null)
+  const barcodeMergeIntentRef = useRef<
+    null | { kind: 'newLog' } | { kind: 'existingLog'; activityId: string }
+  >(null)
   const [recentModalOpen, setRecentModalOpen] = useState(false)
   const newLogButtonRef = useRef<HTMLButtonElement | null>(null)
+
+  const recentActivitiesEditable = useMemo(() => {
+    if (user?.role === 'admin') return recentActivities
+    return recentActivities.filter((a) => a.isOwner)
+  }, [recentActivities, user?.role])
 
   const loadTeamForSharing = useCallback(async () => {
     if (!user) return
@@ -402,6 +458,7 @@ export function ChatPage() {
   }
 
   function closeBarcodeModal() {
+    barcodeMergeIntentRef.current = null
     setBarcodeModal(null)
     setBarcodeCustomer('')
     setBarcodePartName('')
@@ -443,14 +500,9 @@ export function ChatPage() {
   }
 
   async function handleBarcodeDetected(code: string) {
-    setText((prev) => (prev ? `Scanned barcode: ${code}\n${prev}` : `Scanned barcode: ${code}`))
-
     try {
       const clarification = await api.barcodes.clarify(code)
       const mapping = clarification.mapping
-      if (mapping?.customer) {
-        setCustomerHint((prev) => prev || String(mapping.customer))
-      }
 
       const readablePart = mapping?.partName || mapping?.productName || ''
       if (clarification.mode === 'known') {
@@ -460,32 +512,131 @@ export function ChatPage() {
             : 'Known barcode recognized.'
         )
       } else {
-        toast.info('New barcode detected. Please confirm customer/part once so it is reused next time.')
+        toast.info('New barcode detected. You can map customer/part after choosing how to attach it to a log.')
       }
 
-      // Keep scan counts in memory fresh for known barcodes.
       if (clarification.mode === 'known') {
         try {
           await api.barcodes.scan(code)
         } catch {
-          // Non-blocking: clarification UX should still continue if scan-count update fails.
+          /* non-blocking */
         }
       }
 
-      openBarcodeModal({
+      const pending: PendingBarcodeClarification = {
         barcode: code,
-        mode: clarification.mode === 'known' ? 'existing' : 'new',
-        customer: mapping?.customer,
-        partName: mapping?.partName || mapping?.productName,
-        partNumber: mapping?.partNumber,
-        scanCount: mapping?.scanCount,
+        mode: clarification.mode === 'known' ? 'known' : 'unknown',
+        mapping,
         prompt: clarification.prompt,
         fields: Array.isArray(clarification.fields) ? clarification.fields : [],
-      })
+      }
+      setPendingBarcodeClarification(pending)
+      setBarcodeIntegrationStep('choice')
+      setBarcodeIntegrationOpen(true)
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to check barcode'
       toast.error(msg)
     }
+  }
+
+  function closeBarcodeIntegration() {
+    setBarcodeIntegrationOpen(false)
+    setBarcodeIntegrationStep('choice')
+    setPendingBarcodeClarification(null)
+  }
+
+  function cancelBarcodeIntegration() {
+    barcodeMergeIntentRef.current = null
+    closeBarcodeIntegration()
+  }
+
+  function openBarcodeMappingForMerge(
+    intent: { kind: 'newLog' } | { kind: 'existingLog'; activityId: string },
+    p: PendingBarcodeClarification
+  ) {
+    barcodeMergeIntentRef.current = intent
+    openBarcodeModal({
+      barcode: p.barcode,
+      mode: p.mode === 'known' ? 'existing' : 'new',
+      customer: p.mapping?.customer,
+      partName: p.mapping?.partName || p.mapping?.productName,
+      partNumber: p.mapping?.partNumber,
+      scanCount: p.mapping?.scanCount,
+      prompt: p.prompt,
+      fields: p.fields,
+    })
+    closeBarcodeIntegration()
+  }
+
+  async function flushBarcodeToNewLog(snippet: string, hintCustomer?: string) {
+    closeBarcodeIntegration()
+    resetToNewLog()
+    setText(snippet)
+    const c = hintCustomer?.trim() || ''
+    if (c) {
+      setCustomerHint(c)
+      const normalized = normalizeCustomerName(c)
+      const matched = customers.find((cust) => normalizeCustomerName(cust.name) === normalized)
+      setSelectedCustomerId(matched?._id ?? '')
+    }
+    setCustomerHintTouched(false)
+    toast.info('Review the extracted log fields, then save to add it to your tracker.')
+    await handleExtract(snippet, hintCustomer)
+  }
+
+  async function flushBarcodeToExistingLog(activityId: string, snippet: string) {
+    closeBarcodeIntegration()
+    const { merged, detailCustomer } = await handleSelectRecent(activityId, {
+      appendSnippet: snippet,
+      prepareReExtract: true,
+    })
+    if (!merged.trim()) {
+      toast.error('Could not open that log. Try again or create a new log.')
+      return
+    }
+    toast.info('Barcode text added — review extracted fields, then save to update this log.')
+    await handleExtract(merged, detailCustomer)
+  }
+
+  async function onBarcodeIntegrationCreateNew() {
+    const p = pendingBarcodeClarification
+    if (!p) return
+    if (needsBarcodeMappingStep(p)) {
+      openBarcodeMappingForMerge({ kind: 'newLog' }, p)
+      return
+    }
+    const m = p.mapping
+    const snippet = buildBarcodeLogSnippet(
+      p.barcode,
+      m?.customer,
+      m?.partName || m?.productName,
+      m?.partNumber,
+      undefined
+    )
+    await flushBarcodeToNewLog(snippet, m?.customer)
+  }
+
+  function onBarcodeIntegrationAddToExisting() {
+    setBarcodeIntegrationStep('pickLog')
+    void refreshRecentList({ silent: true })
+  }
+
+  async function onPickRecentForBarcode(activityId: string) {
+    const p = pendingBarcodeClarification
+    if (!p) return
+    if (needsBarcodeMappingStep(p)) {
+      openBarcodeMappingForMerge({ kind: 'existingLog', activityId }, p)
+      return
+    }
+    const m = p.mapping
+    const snippet = buildBarcodeLogSnippet(
+      p.barcode,
+      m?.customer,
+      m?.partName || m?.productName,
+      m?.partNumber,
+      undefined
+    )
+    await flushBarcodeToExistingLog(activityId, snippet)
   }
 
   async function startScanner() {
@@ -882,8 +1033,9 @@ export function ChatPage() {
     setCustomerHintTouched(false)
   }
 
-  async function handleExtract() {
-    if (!text.trim()) {
+  async function handleExtract(overrideText?: string, overrideCustomerHint?: string) {
+    const body = (overrideText !== undefined ? overrideText : text).trim()
+    if (!body) {
       setError('Please describe the activity before logging with AI.')
       return
     }
@@ -891,9 +1043,10 @@ export function ChatPage() {
       setError('This log is shared with you in read-only mode. Ask the owner to edit main fields.')
       return
     }
+    const effectiveCustomerHint = (overrideCustomerHint ?? customerHint).trim()
     if (isEmployee) {
       const hasDropdownChoice = Boolean(selectedCustomerId)
-      const hasTypedCustomer = Boolean(customerHint.trim())
+      const hasTypedCustomer = Boolean(effectiveCustomerHint)
       if (!hasDropdownChoice && !hasTypedCustomer) {
         setError('Please select a customer before logging with AI.')
         setCustomerHintTouched(true)
@@ -907,7 +1060,7 @@ export function ChatPage() {
     setCustomerHintTouched(false)
     setLoadingExtract(true)
     try {
-      const data = await api.ai.extractActivity(text, customerHint || undefined)
+      const data = await api.ai.extractActivity(body, effectiveCustomerHint || undefined)
       setResult(data)
       const structured = (data.structured || {}) as StructuredActivity
       setEditSummary(structured.summary ?? '')
@@ -1137,7 +1290,10 @@ export function ChatPage() {
     }
   }
 
-  async function handleSelectRecent(id: string) {
+  async function handleSelectRecent(
+    id: string,
+    options?: { appendSnippet?: string; prepareReExtract?: boolean }
+  ): Promise<{ merged: string; detailCustomer: string }> {
     clearSharedLogHighlight(id)
     setSelectedActivityId(id)
     setActivityDetail(null)
@@ -1161,21 +1317,41 @@ export function ChatPage() {
       setShareSelection((detail.sharedWith ?? []).map((s) => s._id))
 
       const structured = (detail.structuredData || {}) as StructuredActivity
+      const baseRaw = (detail.rawConversation ?? '').trim()
+      const snippet = options?.appendSnippet?.trim() || ''
+      const merged =
+        snippet && options?.appendSnippet !== undefined
+          ? baseRaw
+            ? `${baseRaw}\n\n${snippet}`
+            : snippet
+          : (detail.rawConversation ?? '')
 
-      setResult({
-        structured,
-        rawText: detail.rawConversation ?? '',
-        model: 'from-history',
-      })
+      if (options?.prepareReExtract) {
+        setResult(null)
+        setValidation(null)
+        setEditSummary('')
+        setEditPartName('')
+        setEditIntent('')
+        setEditSeverity(DEFAULT_ISSUE_SEVERITY)
+        setEditOutcome('')
+        setEditNextActions('')
+        setEditNotes('')
+      } else {
+        setResult({
+          structured,
+          rawText: merged,
+          model: 'from-history',
+        })
+        setEditSummary(structured.summary ?? '')
+        setEditPartName(structured.part_name ?? '')
+        setEditIntent(structured.intent ?? '')
+        setEditSeverity(parseIssueSeverity(structured.severity))
+        setEditOutcome(structured.outcome ?? '')
+        setEditNextActions(structured.next_actions?.join('\n') ?? '')
+        setEditNotes(structured.notes ?? '')
+      }
 
-      setText(detail.rawConversation ?? '')
-      setEditSummary(structured.summary ?? '')
-      setEditPartName(structured.part_name ?? '')
-      setEditIntent(structured.intent ?? '')
-      setEditSeverity(parseIssueSeverity(structured.severity))
-      setEditOutcome(structured.outcome ?? '')
-      setEditNextActions(structured.next_actions?.join('\n') ?? '')
-      setEditNotes(structured.notes ?? '')
+      setText(merged)
       setImageUrls(detail.images ?? [])
       setAttachments(Array.isArray(detail.attachments) ? detail.attachments : [])
       setAttachmentFile(null)
@@ -1204,31 +1380,82 @@ export function ChatPage() {
       }
       setCustomerHintTouched(false)
 
-      // Prevent re-saving an existing activity from history
-      const existingKey = [
-        (detail.rawConversation ?? '').trim(),
-        String(structured.summary ?? '').trim(),
-        String(structured.part_name ?? '').trim(),
-        String(structured.intent ?? '').trim(),
-        String(parseIssueSeverity(structured.severity)),
-        String(structured.outcome ?? '').trim(),
-        String(structured.next_actions?.join('\n') ?? '').trim(),
-        String(structured.notes ?? '').trim(),
-        String((detail.images ?? []).join('|')),
-        String(
-          (detail.attachments ?? [])
-            .map((a) => a.url)
-            .slice()
-            .sort()
-            .join('|')
-        ),
-      ].join('||')
-      setSavedResultKey(existingKey)
+      if (!options?.prepareReExtract) {
+        const existingKey = [
+          merged.trim(),
+          String(structured.summary ?? '').trim(),
+          String(structured.part_name ?? '').trim(),
+          String(structured.intent ?? '').trim(),
+          String(parseIssueSeverity(structured.severity)),
+          String(structured.outcome ?? '').trim(),
+          String(structured.next_actions?.join('\n') ?? '').trim(),
+          String(structured.notes ?? '').trim(),
+          String((detail.images ?? []).join('|')),
+          String(
+            (detail.attachments ?? [])
+              .map((a) => a.url)
+              .slice()
+              .sort()
+              .join('|')
+          ),
+        ].join('||')
+        setSavedResultKey(existingKey)
+      }
+
+      return { merged, detailCustomer }
     } catch (err) {
       const message = (err as Error).message || 'Failed to load activity'
       setError(message)
+      return { merged: '', detailCustomer: '' }
     } finally {
       setLoadingSelected(false)
+    }
+  }
+
+  async function handleArchiveSelected(opts?: { closeRecentModal?: boolean }) {
+    if (!selectedActivityId) {
+      setError('Select a log from the list before archiving.')
+      return
+    }
+    const confirmed = window.confirm('Are you sure you want to delete this recent log?')
+    if (!confirmed) return
+
+    setArchiving(true)
+    setError(null)
+    setSaveMessage(null)
+    try {
+      await api.activities.archive(selectedActivityId)
+      setRecentActivities((prev) => prev.filter((a) => a._id !== selectedActivityId))
+      setSelectedActivityId(null)
+      setActivityDetail(null)
+      setShareSelection([])
+      setCollabNote('')
+      setResult(null)
+      setValidation(null)
+      setText('')
+      setEditSummary('')
+      setEditPartName('')
+      setEditIntent('')
+      setEditSeverity(DEFAULT_ISSUE_SEVERITY)
+      setEditOutcome('')
+      setEditNextActions('')
+      setEditNotes('')
+      setImageUrls([])
+      setImageFile(null)
+      setImagePreview(null)
+      setPreviewLoadFailed(false)
+      setFailedUploadedImages({})
+      setFailedAttachmentVideos({})
+      setAttachments([])
+      setAttachmentFile(null)
+      if (attachmentInputRef.current) attachmentInputRef.current.value = ''
+      setSavedResultKey(null)
+      if (opts?.closeRecentModal) setRecentModalOpen(false)
+    } catch (err) {
+      const message = (err as Error).message || 'Failed to archive activity'
+      setError(message)
+    } finally {
+      setArchiving(false)
     }
   }
 
@@ -1293,36 +1520,6 @@ export function ChatPage() {
     } finally {
       setSendingEmail(false)
     }
-  }
-
-  function buildWhatsAppMessageFromSelectedLog() {
-    if (!activityDetail) return ''
-    const createdLabel = activityDetail.createdAt ? new Date(activityDetail.createdAt).toLocaleString() : 'Unknown date'
-    const safeCustomer =
-      typeof activityDetail.customer === 'string' && activityDetail.customer.trim()
-        ? activityDetail.customer.trim()
-        : 'Unknown customer'
-    const safeSummary =
-      typeof activityDetail.summary === 'string' && activityDetail.summary.trim()
-        ? activityDetail.summary.trim()
-        : 'No summary'
-    return `AI Activity Update
-
-Customer: ${safeCustomer}
-Created: ${createdLabel}
-Summary: ${safeSummary}`
-  }
-
-  function openWhatsAppConfirmPrompt() {
-    if (!selectedActivityId) {
-      setError('Select a log from the list before sending WhatsApp.')
-      return
-    }
-    setError(null)
-    setSaveMessage(null)
-    setWhatsAppMessage(buildWhatsAppMessageFromSelectedLog())
-    setWhatsAppTo('')
-    setWhatsAppConfirmOpen(true)
   }
 
   async function handleSendWhatsApp() {
@@ -1447,20 +1644,6 @@ Summary: ${safeSummary}`
               {emailRecipientsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
               <span className="leading-none">Email</span>
             </button>
-            <button
-              type="button"
-              onClick={openWhatsAppConfirmPrompt}
-              disabled={!selectedActivityId || sendingWhatsApp || archiving}
-              className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
-                !selectedActivityId || sendingWhatsApp || archiving
-                  ? 'border-[var(--color-border)] text-[#888] cursor-not-allowed'
-                  : 'border-green-200 text-green-700 hover:bg-green-50'
-              }`}
-              title={!selectedActivityId ? 'Select a recent log first, then click WhatsApp' : 'Send selected AI log by WhatsApp'}
-            >
-              {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
-              <span className="leading-none">WhatsApp</span>
-            </button>
           </div>
         </div>
 
@@ -1556,10 +1739,147 @@ Summary: ${safeSummary}`
                   </div>
                 </div>
                 <p className="text-[12px] text-[#777] leading-relaxed">
-                  When a code is detected, it will be inserted into the activity text as{' '}
-                  <span className="font-mono text-[11px] text-[var(--color-primary)]">Scanned barcode: ...</span>.
+                  After a scan, you&apos;ll choose whether to start a <strong>new AI log</strong> or attach the code to a{' '}
+                  <strong>recent log</strong>. The barcode details are then run through the same AI extract-and-save flow as
+                  typed notes.
                 </p>
               </div>
+            </div>
+          </div>
+        )}
+
+        {barcodeIntegrationOpen && pendingBarcodeClarification && (
+          <div className="fixed inset-0 z-[45] flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true">
+            <div className="w-full max-w-md rounded-2xl bg-white shadow-xl border border-[var(--color-border)] overflow-hidden max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)] shrink-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+                    <ScanLine className="w-4 h-4" />
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#555]">
+                      {barcodeIntegrationStep === 'choice' ? 'Use scan in AI log' : 'Pick a recent log'}
+                    </p>
+                    <p className="text-[11px] text-[#777] font-mono truncate" title={pendingBarcodeClarification.barcode}>
+                      {pendingBarcodeClarification.barcode}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={cancelBarcodeIntegration}
+                  className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full hover:bg-black/5 text-[#666]"
+                  aria-label="Close"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {barcodeIntegrationStep === 'choice' ? (
+                <div className="px-4 py-4 space-y-4 overflow-y-auto">
+                  <p className="text-[13px] text-[#444] leading-relaxed">
+                    Connect this scan to your tracker the same way as a voice or text note: it becomes part of an AI log you
+                    can validate and save.
+                  </p>
+                  {pendingBarcodeClarification.mode === 'known' &&
+                  (pendingBarcodeClarification.mapping?.partName ||
+                    pendingBarcodeClarification.mapping?.customer) ? (
+                    <p className="text-[12px] text-[#666] rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2">
+                      Recognized:{' '}
+                      <span className="font-medium text-[#222]">
+                        {[
+                          pendingBarcodeClarification.mapping?.partName || pendingBarcodeClarification.mapping?.productName,
+                          pendingBarcodeClarification.mapping?.partNumber,
+                          pendingBarcodeClarification.mapping?.customer,
+                        ]
+                          .filter(Boolean)
+                          .join(' · ')}
+                      </span>
+                    </p>
+                  ) : null}
+                  <div className="grid gap-2">
+                    <button
+                      type="button"
+                      onClick={() => void onBarcodeIntegrationCreateNew()}
+                      className="w-full text-left rounded-xl border border-[var(--color-border)] bg-white px-4 py-3 hover:bg-[var(--color-bg)] transition-colors"
+                    >
+                      <span className="text-[13px] font-semibold text-[#111]">Create new log</span>
+                      <span className="block text-[12px] text-[#666] mt-0.5">
+                        Opens a fresh log with this barcode; AI will extract fields for you to review.
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onBarcodeIntegrationAddToExisting}
+                      className="w-full text-left rounded-xl border border-[var(--color-border)] bg-white px-4 py-3 hover:bg-[var(--color-bg)] transition-colors"
+                    >
+                      <span className="text-[13px] font-semibold text-[#111]">Add to existing log</span>
+                      <span className="block text-[12px] text-[#666] mt-0.5">
+                        Choose one of your recent logs and append this scan; AI re-runs on the combined text.
+                      </span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex flex-col flex-1 min-h-0">
+                  <div className="px-4 pt-3 pb-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setBarcodeIntegrationStep('choice')}
+                      className="inline-flex items-center gap-1 text-[12px] font-semibold text-[var(--color-primary)] hover:underline"
+                    >
+                      <ChevronRight className="w-4 h-4 rotate-180" />
+                      Back
+                    </button>
+                    <p className="text-[12px] text-[#666] mt-2">
+                      Pick a log you own (or any log you can edit). The scan is appended and AI extract runs again on the
+                      combined text.
+                    </p>
+                  </div>
+                  <div className="px-4 pb-4 overflow-y-auto flex-1 min-h-0 max-h-[50vh] space-y-2">
+                    {loadingRecent ? (
+                      <div className="flex items-center justify-center gap-2 py-8 text-[13px] text-[#666]">
+                        <Loader2 className="w-5 h-5 animate-spin text-[var(--color-primary)]" />
+                        Loading recent logs…
+                      </div>
+                    ) : recentActivitiesEditable.length === 0 ? (
+                      <p className="text-[13px] text-[#666] py-6 text-center">
+                        No logs available to update. Use <strong>Create new log</strong> first, or save a log and try again.
+                      </p>
+                    ) : (
+                      recentActivitiesEditable.map((act) => (
+                        <button
+                          key={act._id}
+                          type="button"
+                          onClick={() => void onPickRecentForBarcode(act._id)}
+                          className="w-full text-left rounded-xl border border-[var(--color-border)] bg-white px-3 py-2.5 hover:border-[var(--color-primary)]/40 hover:bg-[var(--color-primary)]/5 transition-colors"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <span className="text-[13px] font-medium text-[#111] line-clamp-2">
+                              {act.summary || 'Untitled log'}
+                            </span>
+                            <span className="shrink-0 inline-flex items-center gap-1 text-[11px] text-[#888]">
+                              <Clock className="w-3.5 h-3.5" />
+                              {new Date(act.createdAt).toLocaleString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          </div>
+                          {act.customer ? (
+                            <p className="text-[11px] text-[#666] mt-1">
+                              <Tag className="w-3 h-3 inline-block mr-1 align-middle opacity-70" />
+                              {act.customer}
+                            </p>
+                          ) : null}
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1686,6 +2006,27 @@ Summary: ${safeSummary}`
                           metadata: barcodeNotes.trim() ? { notes: barcodeNotes.trim() } : undefined,
                         }
                         await api.barcodes.upsert(barcodeModal.barcode, payload)
+
+                        const intent = barcodeMergeIntentRef.current
+                        barcodeMergeIntentRef.current = null
+                        const snippet = buildBarcodeLogSnippet(
+                          barcodeModal.barcode,
+                          payload.customer,
+                          payload.partName,
+                          payload.partNumber,
+                          barcodeNotes.trim() || undefined
+                        )
+
+                        if (intent?.kind === 'newLog') {
+                          closeBarcodeModal()
+                          await flushBarcodeToNewLog(snippet, payload.customer)
+                          return
+                        }
+                        if (intent?.kind === 'existingLog') {
+                          closeBarcodeModal()
+                          await flushBarcodeToExistingLog(intent.activityId, snippet)
+                          return
+                        }
 
                         if (payload.customer) {
                           setCustomerHint((prev) => prev || String(payload.customer))
@@ -1959,92 +2300,10 @@ Summary: ${safeSummary}`
                 >
                   {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
                 </button>
-                <button
-                  type="button"
-                  onClick={openWhatsAppConfirmPrompt}
-                  disabled={!selectedActivityId || sendingWhatsApp || archiving}
-                  aria-label={sendingWhatsApp ? 'Sending WhatsApp…' : 'Send WhatsApp'}
-                  title={
-                    !selectedActivityId
-                      ? 'Select a recent log first, then click to send WhatsApp'
-                      : sendingWhatsApp
-                        ? 'Sending…'
-                        : 'Send selected recent log by WhatsApp'
-                  }
-                  className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white transition-colors ${
-                    !selectedActivityId || sendingWhatsApp || archiving
-                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
-                      : 'border-green-200 text-green-700 hover:bg-green-50 active:bg-green-100'
-                  }`}
-                >
-                  {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={openWhatsAppConfirmPrompt}
-                  disabled={!selectedActivityId || sendingWhatsApp || archiving}
-                  aria-label={sendingWhatsApp ? 'Sending WhatsApp…' : 'Send WhatsApp'}
-                  title={
-                    !selectedActivityId
-                      ? 'Select a recent log first, then click to send WhatsApp'
-                      : sendingWhatsApp
-                        ? 'Sending…'
-                        : 'Send selected recent log by WhatsApp'
-                  }
-                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors ${
-                    !selectedActivityId || sendingWhatsApp || archiving
-                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
-                      : 'border-green-200 text-green-700 hover:bg-green-50 active:bg-green-100'
-                  }`}
-                >
-                  {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
-                </button>
 
                 <button
                   type="button"
-                  onClick={async () => {
-                    if (!selectedActivityId) {
-                      setError('Select a log from the list before archiving.')
-                      return
-                    }
-                    setArchiving(true)
-                    setError(null)
-                    setSaveMessage(null)
-                    try {
-                      await api.activities.archive(selectedActivityId)
-                      setRecentActivities((prev) => prev.filter((a) => a._id !== selectedActivityId))
-                      setSelectedActivityId(null)
-                      setActivityDetail(null)
-                      setShareSelection([])
-                      setCollabNote('')
-                      setResult(null)
-                      setValidation(null)
-                      setText('')
-                      setEditSummary('')
-                      setEditPartName('')
-                      setEditIntent('')
-                      setEditSeverity(DEFAULT_ISSUE_SEVERITY)
-                      setEditOutcome('')
-                      setEditNextActions('')
-                      setEditNotes('')
-                      setImageUrls([])
-                      setImageFile(null)
-                      setImagePreview(null)
-                      setPreviewLoadFailed(false)
-                      setFailedUploadedImages({})
-                      setFailedAttachmentVideos({})
-                      setAttachments([])
-                      setAttachmentFile(null)
-                      if (attachmentInputRef.current) attachmentInputRef.current.value = ''
-                      setSavedResultKey(null)
-                      setRecentModalOpen(false)
-                    } catch (err) {
-                      const message = (err as Error).message || 'Failed to archive activity'
-                      setError(message)
-                    } finally {
-                      setArchiving(false)
-                    }
-                  }}
+                  onClick={() => void handleArchiveSelected({ closeRecentModal: true })}
                   disabled={!selectedActivityId || archiving || !canArchiveSelected}
                   aria-label={archiving ? 'Archiving…' : 'Archive'}
                   title={!selectedActivityId ? 'Select a log first to enable Archive' : 'Archive selected log'}
@@ -2189,48 +2448,7 @@ Summary: ${safeSummary}`
                 </button>
                 <button
                   type="button"
-                  onClick={async () => {
-                    if (!selectedActivityId) {
-                      setError('Select a log from the list before archiving.')
-                      return
-                    }
-                    setArchiving(true)
-                    setError(null)
-                    setSaveMessage(null)
-                    try {
-                      await api.activities.archive(selectedActivityId)
-                      setRecentActivities((prev) => prev.filter((a) => a._id !== selectedActivityId))
-                      setSelectedActivityId(null)
-                      setActivityDetail(null)
-                      setShareSelection([])
-                      setCollabNote('')
-                      setResult(null)
-                      setValidation(null)
-                      setText('')
-                      setEditSummary('')
-                      setEditPartName('')
-                      setEditIntent('')
-                      setEditSeverity(DEFAULT_ISSUE_SEVERITY)
-                      setEditOutcome('')
-                      setEditNextActions('')
-                      setEditNotes('')
-                      setImageUrls([])
-                      setImageFile(null)
-                      setImagePreview(null)
-                      setPreviewLoadFailed(false)
-                      setFailedUploadedImages({})
-                      setFailedAttachmentVideos({})
-                      setAttachments([])
-                      setAttachmentFile(null)
-                      if (attachmentInputRef.current) attachmentInputRef.current.value = ''
-                      setSavedResultKey(null)
-                    } catch (err) {
-                      const message = (err as Error).message || 'Failed to archive activity'
-                      setError(message)
-                    } finally {
-                      setArchiving(false)
-                    }
-                  }}
+                  onClick={() => void handleArchiveSelected()}
                   disabled={!selectedActivityId || archiving || !canArchiveSelected}
                   aria-label={archiving ? 'Archiving…' : 'Archive'}
                   title={!selectedActivityId ? 'Select a log first to enable Archive' : 'Archive selected log'}
@@ -2985,7 +3203,7 @@ Summary: ${safeSummary}`
                   <div className="grid grid-cols-3 gap-2 w-full sm:flex sm:w-auto sm:items-center">
                     <button
                       type="button"
-                      onClick={handleExtract}
+                      onClick={() => void handleExtract()}
                       disabled={loadingExtract}
                       className="inline-flex w-full flex-col items-center justify-center gap-1 rounded-[var(--radius)] bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3 py-2.5 text-[12px] sm:text-sm font-semibold text-white transition-colors disabled:opacity-70 disabled:cursor-not-allowed min-h-12"
                     >
