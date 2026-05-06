@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { ReportImageGallery } from '@/components/ReportImageGallery'
 import { api } from '@/services/api'
@@ -109,9 +109,12 @@ export function ReportsPage() {
 
   useEffect(() => {
     void loadList(page)
-    void loadMs365()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page])
+
+  useEffect(() => {
+    void loadMs365()
+  }, [])
 
   async function loadOne(id: string) {
     setSelectedReportId(id)
@@ -230,8 +233,8 @@ export function ReportsPage() {
     }
   }
 
-  const selected = reports.find((r) => r._id === selectedReportId)
-  const pageNumbers = (() => {
+  const selected = useMemo(() => reports.find((r) => r._id === selectedReportId), [reports, selectedReportId])
+  const pageNumbers = useMemo(() => {
     const maxButtons = 5
     const safeTotal = Math.max(1, totalPages || 1)
     const safePage = Math.min(Math.max(page, 1), safeTotal)
@@ -242,7 +245,7 @@ export function ReportsPage() {
     const nums: number[] = []
     for (let p = start; p <= end; p++) nums.push(p)
     return nums
-  })()
+  }, [page, totalPages])
 
   return (
     <AdminShell>

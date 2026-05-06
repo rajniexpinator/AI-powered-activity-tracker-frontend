@@ -526,7 +526,11 @@ export const api = {
   },
 
   whatsapp: {
-    send: (payload: { to: string; message: string }) =>
+    getConfig: () =>
+      request<{ configured: boolean; defaultTemplateSid?: string }>('/api/whatsapp/config', {
+        method: 'GET',
+      }),
+    send: (payload: { to: string; message?: string; contentSid?: string; contentVariables?: string }) =>
       request<{
         success: boolean
         messageSid: string

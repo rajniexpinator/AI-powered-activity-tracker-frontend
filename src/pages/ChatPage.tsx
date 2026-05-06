@@ -176,6 +176,7 @@ const MAX_ATTACHMENTS_PER_ENTRY = 10
 const MAX_ATTACHMENT_FILE_BYTES = 50 * 1024 * 1024 // 50 MB — keep in sync with Backend attachment middleware
 const MAX_ATTACHMENT_FILE_ERROR = 'Maximum attachment size is 50 MB.'
 const DEFAULT_ISSUE_SEVERITY = 0 as const
+const DEFAULT_WHATSAPP_TEMPLATE_SID = String(import.meta.env.VITE_WHATSAPP_TEMPLATE_SID || '').trim()
 
 function parseIssueSeverity(raw: unknown): 0 | 1 | 2 | 3 {
   const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN
@@ -312,7 +313,7 @@ export function ChatPage() {
   const [whatsAppConfirmOpen, setWhatsAppConfirmOpen] = useState(false)
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false)
   const [whatsAppTo, setWhatsAppTo] = useState('')
-  const [whatsAppMessage, setWhatsAppMessage] = useState('')
+  const [whatsAppTemplateSid, setWhatsAppTemplateSid] = useState(DEFAULT_WHATSAPP_TEMPLATE_SID)
 
   const mainLogLocked =
     Boolean(selectedActivityId && activityDetail && user && user.role !== 'admin' && activityOwnerId(activityDetail) !== user.id)
@@ -1489,6 +1490,24 @@ export function ChatPage() {
     }
   }
 
+  async function openWhatsAppConfirmPrompt() {
+    if (!selectedActivityId) {
+      setError('Select a log from the list before sending WhatsApp.')
+      return
+    }
+    setError(null)
+    setSaveMessage(null)
+    if (!whatsAppTemplateSid.trim()) {
+      try {
+        const cfg = await api.whatsapp.getConfig()
+        if (cfg?.defaultTemplateSid) setWhatsAppTemplateSid(cfg.defaultTemplateSid)
+      } catch {
+        if (DEFAULT_WHATSAPP_TEMPLATE_SID) setWhatsAppTemplateSid(DEFAULT_WHATSAPP_TEMPLATE_SID)
+      }
+    }
+    setWhatsAppConfirmOpen(true)
+  }
+
   async function handleSendLogEmail() {
     if (!selectedActivityId) {
       setError('Select a log from the list before sending email.')
@@ -1531,10 +1550,13 @@ export function ChatPage() {
       setError('Enter a WhatsApp number (for example +917986729952).')
       return
     }
-    if (!whatsAppMessage.trim()) {
-      setError('WhatsApp message cannot be empty.')
+    if (!whatsAppTemplateSid.trim()) {
+      setError('WhatsApp template is not configured. Set TWILIO_WHATSAPP_TEMPLATE_SID on backend.')
       return
     }
+    const customer = (activityDetail?.customer || 'Customer').trim()
+    const summary = (activityDetail?.summary || 'Activity update').trim()
+    const contentVariables = JSON.stringify({ 1: customer, 2: summary })
 
     setSendingWhatsApp(true)
     setError(null)
@@ -1542,7 +1564,8 @@ export function ChatPage() {
     try {
       const res = await api.whatsapp.send({
         to: whatsAppTo.trim(),
-        message: whatsAppMessage.trim(),
+        contentSid: whatsAppTemplateSid.trim(),
+        contentVariables,
       })
       toast.success(`WhatsApp sent${res.to ? ` to ${res.to}` : ''}.`)
       setWhatsAppConfirmOpen(false)
@@ -1643,6 +1666,20 @@ export function ChatPage() {
             >
               {emailRecipientsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
               <span className="leading-none">Email</span>
+            </button>
+            <button
+              type="button"
+              onClick={openWhatsAppConfirmPrompt}
+              disabled={!selectedActivityId || sendingWhatsApp || archiving}
+              className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
+                !selectedActivityId || sendingWhatsApp || archiving
+                  ? 'border-[var(--color-border)] text-[#888] cursor-not-allowed'
+                  : 'border-green-200 text-green-700 hover:bg-green-50'
+              }`}
+              title={!selectedActivityId ? 'Select a recent log first, then click WhatsApp' : 'Send selected AI log by WhatsApp'}
+            >
+              {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+              <span className="leading-none">WhatsApp</span>
             </button>
           </div>
         </div>
@@ -2173,16 +2210,9 @@ export function ChatPage() {
                     className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] text-[#222] placeholder:text-[#999]"
                   />
                 </div>
-                <div>
-                  <label className="block text-[12px] font-semibold text-[#333] mb-1">Message</label>
-                  <textarea
-                    value={whatsAppMessage}
-                    onChange={(e) => setWhatsAppMessage(e.target.value)}
-                    rows={6}
-                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] text-[#222] resize-y"
-                  />
-                </div>
-                <p className="text-[11px] text-[#777]">This sends only when you click send. It does not auto-send.</p>
+                <p className="text-[11px] text-[#777]">
+                  Uses approved WhatsApp template automatically (same simple flow as email send).
+                </p>
               </div>
               <div className="px-4 sm:px-5 py-3 border-t border-[var(--color-border)] flex items-center justify-end gap-2">
                 <button
@@ -2299,6 +2329,26 @@ export function ChatPage() {
                   }`}
                 >
                   {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={openWhatsAppConfirmPrompt}
+                  disabled={!selectedActivityId || sendingWhatsApp || archiving}
+                  aria-label={sendingWhatsApp ? 'Sending WhatsApp…' : 'Send WhatsApp'}
+                  title={
+                    !selectedActivityId
+                      ? 'Select a recent log first, then click to send WhatsApp'
+                      : sendingWhatsApp
+                        ? 'Sending…'
+                        : 'Send selected recent log by WhatsApp'
+                  }
+                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors ${
+                    !selectedActivityId || sendingWhatsApp || archiving
+                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
+                      : 'border-green-200 text-green-700 hover:bg-green-50 active:bg-green-100'
+                  }`}
+                >
+                  {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
                 </button>
 
                 <button
@@ -2445,6 +2495,26 @@ export function ChatPage() {
                   }`}
                 >
                   {sendingEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={openWhatsAppConfirmPrompt}
+                  disabled={!selectedActivityId || sendingWhatsApp || archiving}
+                  aria-label={sendingWhatsApp ? 'Sending WhatsApp…' : 'Send WhatsApp'}
+                  title={
+                    !selectedActivityId
+                      ? 'Select a recent log first, then click to send WhatsApp'
+                      : sendingWhatsApp
+                        ? 'Sending…'
+                        : 'Send selected recent log by WhatsApp'
+                  }
+                  className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white transition-colors ${
+                    !selectedActivityId || sendingWhatsApp || archiving
+                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
+                      : 'border-green-200 text-green-700 hover:bg-green-50 active:bg-green-100'
+                  }`}
+                >
+                  {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
                 </button>
                 <button
                   type="button"
