@@ -1596,10 +1596,40 @@ export function ChatPage() {
         to: whatsAppTo.trim(),
         message,
       })
+
       toast.success(`WhatsApp sent${res.to ? ` to ${res.to}` : ''}.`)
       setWhatsAppConfirmOpen(false)
+      return
     } catch (err) {
-      const message = (err as Error).message || 'Failed to send WhatsApp'
+      const asErr = err as Error & { status?: number }
+      const isSessionClosed =
+        asErr?.status === 409 && /24h session is closed|free-form message/i.test(asErr?.message || '')
+
+      if (isSessionClosed) {
+        try {
+          const cfg = await api.whatsapp.getConfig()
+          const sid = (cfg?.defaultTemplateSid || '').trim()
+          if (!sid) {
+            throw new Error('Session closed and no default WhatsApp template is configured on backend.')
+          }
+          const templateVariables = JSON.stringify({ 1: customer || 'Customer' })
+          const res = await api.whatsapp.send({
+            to: whatsAppTo.trim(),
+            contentSid: sid,
+            contentVariables: templateVariables,
+          })
+          toast.success(`24h session closed. Template message sent${res.to ? ` to ${res.to}` : ''}.`)
+          setWhatsAppConfirmOpen(false)
+          return
+        } catch (fallbackErr) {
+          const fallbackMessage = (fallbackErr as Error).message || 'Failed to send fallback template message'
+          setError(fallbackMessage)
+          toast.error(fallbackMessage)
+          return
+        }
+      }
+
+      const message = asErr.message || 'Failed to send WhatsApp'
       setError(message)
       toast.error(message)
     } finally {
