@@ -47,6 +47,8 @@ type StructuredActivity = {
   customer?: string
   summary?: string
   part_name?: string
+  /** Up to 5-character physical-location tag at the plant (e.g. A12, B-7). */
+  location?: string
   intent?: string
   severity?: number
   outcome?: string
@@ -72,6 +74,8 @@ type ActivityDetail = {
     userId?: { _id?: string; name?: string; email?: string }
   }[]
   customer?: string
+  /** Up to 5-character physical-location tag (top-level). */
+  location?: string
   summary?: string
   rawConversation?: string
   structuredData?: StructuredActivity | (StructuredActivity & Record<string, unknown>)
@@ -176,7 +180,12 @@ const MAX_ATTACHMENTS_PER_ENTRY = 10
 const MAX_ATTACHMENT_FILE_BYTES = 50 * 1024 * 1024 // 50 MB — keep in sync with Backend attachment middleware
 const MAX_ATTACHMENT_FILE_ERROR = 'Maximum attachment size is 50 MB.'
 const DEFAULT_ISSUE_SEVERITY = 0 as const
-const DEFAULT_WHATSAPP_TEMPLATE_SID = String(import.meta.env.VITE_WHATSAPP_TEMPLATE_SID || '').trim()
+const MAX_LOCATION_LENGTH = 5
+
+/** Up-to-5-char physical location tag. Letters, digits, and dash only; uppercased. */
+function normalizeLocationInput(raw: string): string {
+  return raw.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, MAX_LOCATION_LENGTH)
+}
 
 function parseIssueSeverity(raw: unknown): 0 | 1 | 2 | 3 {
   const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN
@@ -265,12 +274,20 @@ export function ChatPage() {
   const [validation, setValidation] = useState<ValidationResult | null>(null)
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
   const [recentActivities, setRecentActivities] = useState<
-    { _id: string; customer?: string; summary?: string; createdAt: string; isOwner?: boolean }[]
+    {
+      _id: string
+      customer?: string
+      location?: string
+      summary?: string
+      createdAt: string
+      isOwner?: boolean
+    }[]
   >([])
   const [loadingRecent, setLoadingRecent] = useState(false)
   const [loadingCustomers, setLoadingCustomers] = useState(false)
   const [editSummary, setEditSummary] = useState('')
   const [editPartName, setEditPartName] = useState('')
+  const [editLocation, setEditLocation] = useState('')
   const [editIntent, setEditIntent] = useState('')
   const [editSeverity, setEditSeverity] = useState<0 | 1 | 2 | 3>(DEFAULT_ISSUE_SEVERITY)
   const [editOutcome, setEditOutcome] = useState('')
@@ -313,7 +330,6 @@ export function ChatPage() {
   const [whatsAppConfirmOpen, setWhatsAppConfirmOpen] = useState(false)
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false)
   const [whatsAppTo, setWhatsAppTo] = useState('')
-  const [whatsAppTemplateSid, setWhatsAppTemplateSid] = useState(DEFAULT_WHATSAPP_TEMPLATE_SID)
 
   const mainLogLocked =
     Boolean(selectedActivityId && activityDetail && user && user.role !== 'admin' && activityOwnerId(activityDetail) !== user.id)
@@ -1015,6 +1031,7 @@ export function ChatPage() {
     setText('')
     setEditSummary('')
     setEditPartName('')
+    setEditLocation('')
     setEditIntent('')
     setEditSeverity(DEFAULT_ISSUE_SEVERITY)
     setEditOutcome('')
@@ -1066,6 +1083,7 @@ export function ChatPage() {
       const structured = (data.structured || {}) as StructuredActivity
       setEditSummary(structured.summary ?? '')
       setEditPartName(structured.part_name ?? '')
+      setEditLocation(normalizeLocationInput(structured.location ?? ''))
       setEditIntent(structured.intent ?? '')
       setEditSeverity(parseIssueSeverity(structured.severity))
       setEditOutcome(structured.outcome ?? '')
@@ -1134,6 +1152,9 @@ export function ChatPage() {
         (typeof base.customer === 'string' && base.customer.trim() ? base.customer.trim() : '')
       const resolvedSummary = editSummary || base.summary || ''
       const resolvedPartName = editPartName || base.part_name || ''
+      const resolvedLocation = normalizeLocationInput(
+        editLocation || (typeof base.location === 'string' ? base.location : '') || ''
+      )
       const resolvedIntent = editIntent || base.intent || ''
       const resolvedSeverity = editSeverity
       const resolvedOutcome = editOutcome || base.outcome || ''
@@ -1158,6 +1179,7 @@ export function ChatPage() {
         (result.rawText || '').trim(),
         String(resolvedSummary).trim(),
         String(resolvedPartName).trim(),
+        String(resolvedLocation).trim(),
         String(resolvedIntent).trim(),
         String(resolvedSeverity),
         String(resolvedOutcome).trim(),
@@ -1179,6 +1201,7 @@ export function ChatPage() {
         customer: resolvedCustomer || base.customer,
         summary: resolvedSummary || base.summary,
         part_name: resolvedPartName || base.part_name,
+        location: resolvedLocation || base.location,
         intent: resolvedIntent || base.intent,
         severity: resolvedSeverity,
         outcome: resolvedOutcome || base.outcome,
@@ -1194,12 +1217,14 @@ export function ChatPage() {
             structured: editedStructured,
             images: imageUrls,
             attachments,
+            location: resolvedLocation,
           })
         : await api.activities.create({
             rawText: resolvedRawText,
             structured: editedStructured,
             images: imageUrls.length ? imageUrls : undefined,
             attachments: attachments.length ? attachments : undefined,
+            location: resolvedLocation || undefined,
           })
 
       const saved = activity as {
@@ -1239,6 +1264,7 @@ export function ChatPage() {
         const nextItem = {
           _id: (activity as any)._id,
           customer: (activity as any).customer,
+          location: (activity as any).location,
           summary: (activity as any).summary,
           createdAt: (activity as any).createdAt,
           isOwner: true,
@@ -1332,6 +1358,7 @@ export function ChatPage() {
         setValidation(null)
         setEditSummary('')
         setEditPartName('')
+        setEditLocation('')
         setEditIntent('')
         setEditSeverity(DEFAULT_ISSUE_SEVERITY)
         setEditOutcome('')
@@ -1345,6 +1372,13 @@ export function ChatPage() {
         })
         setEditSummary(structured.summary ?? '')
         setEditPartName(structured.part_name ?? '')
+        setEditLocation(
+          normalizeLocationInput(
+            (typeof detail.location === 'string' && detail.location) ||
+              (typeof structured.location === 'string' && structured.location) ||
+              ''
+          )
+        )
         setEditIntent(structured.intent ?? '')
         setEditSeverity(parseIssueSeverity(structured.severity))
         setEditOutcome(structured.outcome ?? '')
@@ -1386,6 +1420,13 @@ export function ChatPage() {
           merged.trim(),
           String(structured.summary ?? '').trim(),
           String(structured.part_name ?? '').trim(),
+          String(
+            normalizeLocationInput(
+              (typeof detail.location === 'string' && detail.location) ||
+                (typeof structured.location === 'string' && structured.location) ||
+                ''
+            )
+          ).trim(),
           String(structured.intent ?? '').trim(),
           String(parseIssueSeverity(structured.severity)),
           String(structured.outcome ?? '').trim(),
@@ -1436,6 +1477,7 @@ export function ChatPage() {
       setText('')
       setEditSummary('')
       setEditPartName('')
+      setEditLocation('')
       setEditIntent('')
       setEditSeverity(DEFAULT_ISSUE_SEVERITY)
       setEditOutcome('')
@@ -1497,14 +1539,6 @@ export function ChatPage() {
     }
     setError(null)
     setSaveMessage(null)
-    if (!whatsAppTemplateSid.trim()) {
-      try {
-        const cfg = await api.whatsapp.getConfig()
-        if (cfg?.defaultTemplateSid) setWhatsAppTemplateSid(cfg.defaultTemplateSid)
-      } catch {
-        if (DEFAULT_WHATSAPP_TEMPLATE_SID) setWhatsAppTemplateSid(DEFAULT_WHATSAPP_TEMPLATE_SID)
-      }
-    }
     setWhatsAppConfirmOpen(true)
   }
 
@@ -1550,13 +1584,9 @@ export function ChatPage() {
       setError('Enter a WhatsApp number (for example +917986729952).')
       return
     }
-    if (!whatsAppTemplateSid.trim()) {
-      setError('WhatsApp template is not configured. Set TWILIO_WHATSAPP_TEMPLATE_SID on backend.')
-      return
-    }
     const customer = (activityDetail?.customer || 'Customer').trim()
     const summary = (activityDetail?.summary || 'Activity update').trim()
-    const contentVariables = JSON.stringify({ 1: customer, 2: summary })
+    const message = `Customer: ${customer}\nUpdate: ${summary}`
 
     setSendingWhatsApp(true)
     setError(null)
@@ -1564,8 +1594,7 @@ export function ChatPage() {
     try {
       const res = await api.whatsapp.send({
         to: whatsAppTo.trim(),
-        contentSid: whatsAppTemplateSid.trim(),
-        contentVariables,
+        message,
       })
       toast.success(`WhatsApp sent${res.to ? ` to ${res.to}` : ''}.`)
       setWhatsAppConfirmOpen(false)
@@ -2211,7 +2240,7 @@ export function ChatPage() {
                   />
                 </div>
                 <p className="text-[11px] text-[#777]">
-                  Uses approved WhatsApp template automatically (same simple flow as email send).
+                  Sends a normal WhatsApp message when an active 24-hour session is available.
                 </p>
               </div>
               <div className="px-4 sm:px-5 py-3 border-t border-[var(--color-border)] flex items-center justify-end gap-2">
@@ -2285,6 +2314,7 @@ export function ChatPage() {
                     setText('')
                     setEditSummary('')
                     setEditPartName('')
+                    setEditLocation('')
                     setEditIntent('')
                     setEditSeverity(DEFAULT_ISSUE_SEVERITY)
                     setEditOutcome('')
@@ -2394,7 +2424,9 @@ export function ChatPage() {
                             </span>
                           )}
                           <span className="truncate">
-                            {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                            {act.customer || 'Unknown customer'}
+                            {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
+                            {' · '}{new Date(act.createdAt).toLocaleString()}
                           </span>
                         </p>
                         <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
@@ -2453,6 +2485,7 @@ export function ChatPage() {
                     setText('')
                     setEditSummary('')
                     setEditPartName('')
+                    setEditLocation('')
                     setEditIntent('')
                     setEditSeverity(DEFAULT_ISSUE_SEVERITY)
                     setEditOutcome('')
@@ -2552,7 +2585,9 @@ export function ChatPage() {
                           </span>
                         )}
                         <span className="truncate">
-                          {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                          {act.customer || 'Unknown customer'}
+                          {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
+                          {' · '}{new Date(act.createdAt).toLocaleString()}
                         </span>
                       </p>
                       <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
@@ -2635,7 +2670,9 @@ export function ChatPage() {
                         </span>
                       )}
                       <span className="truncate">
-                        {act.customer || 'Unknown customer'} · {new Date(act.createdAt).toLocaleString()}
+                        {act.customer || 'Unknown customer'}
+                        {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
+                        {' · '}{new Date(act.createdAt).toLocaleString()}
                       </span>
                     </p>
                     <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
@@ -2779,6 +2816,22 @@ export function ChatPage() {
                           onChange={(e) => setEditPartName(e.target.value)}
                           className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
                           placeholder="e.g. wheel liner, BCM, IP"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#555] mb-1">
+                          Location <span className="font-normal text-[#999]">(up to 5 chars — where to find it)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={editLocation}
+                          onChange={(e) => setEditLocation(normalizeLocationInput(e.target.value))}
+                          maxLength={MAX_LOCATION_LENGTH}
+                          inputMode="text"
+                          autoCapitalize="characters"
+                          spellCheck={false}
+                          className="w-full uppercase tracking-wider rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                          placeholder="A12, B-7, ZN102"
                         />
                       </div>
                       <div>

@@ -69,6 +69,8 @@ function formatActivitySeverityLabel(structuredData: Record<string, unknown> | u
 type AdminActivity = {
   _id: string
   customer?: string
+  /** Up to 5-character physical-location tag at the plant (e.g. A12, B-7). */
+  location?: string
   summary?: string
   createdAt: string
   archivedAt?: string
@@ -86,6 +88,8 @@ type ActivityAttachment = {
 type ActivityDetail = {
   _id: string
   customer?: string
+  /** Up to 5-character physical-location tag at the plant (e.g. A12, B-7). */
+  location?: string
   summary?: string
   rawConversation?: string
   structuredData?: { summary?: string; notes?: string } | Record<string, unknown>
@@ -1119,6 +1123,14 @@ export function AdminActivityPage() {
                     <p className="text-[12px] text-[var(--color-text-secondary)] md:truncate break-words">
                       <span className="font-semibold text-[var(--color-text)] md:hidden">Customer: </span>
                       {a.customer || '—'}
+                      {a.location ? (
+                        <span
+                          className="ml-1 inline-flex items-center rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-1 py-[1px] font-mono text-[10px] tracking-wide text-[var(--color-text)]"
+                          title="Physical location at the plant"
+                        >
+                          {a.location}
+                        </span>
+                      ) : null}
                     </p>
                     <p className="text-[11px] sm:text-[12px] text-[var(--color-text-secondary)] break-words">
                       <span className="font-semibold text-[var(--color-text)] md:hidden">Date: </span>
@@ -1306,8 +1318,19 @@ export function AdminActivityPage() {
                         (selectedActivityDetail.structuredData as { summary?: string } | undefined)?.summary ||
                         'No summary'}
                     </p>
-                    <p className="mt-1 text-[11px] text-[var(--color-text-secondary)]">
-                      {new Date(selectedActivityDetail.createdAt).toLocaleString()}
+                    <p className="mt-1 text-[11px] text-[var(--color-text-secondary)] flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span>{new Date(selectedActivityDetail.createdAt).toLocaleString()}</span>
+                      {selectedActivityDetail.customer ? (
+                        <span className="text-[var(--color-text)]">· {selectedActivityDetail.customer}</span>
+                      ) : null}
+                      {selectedActivityDetail.location ? (
+                        <span
+                          className="inline-flex items-center gap-1 rounded border border-[var(--color-border)] bg-white px-1.5 py-[1px] font-mono text-[10px] tracking-wide text-[var(--color-text)]"
+                          title="Physical location at the plant — where to walk to"
+                        >
+                          Location: {selectedActivityDetail.location}
+                        </span>
+                      ) : null}
                     </p>
                   </div>
 

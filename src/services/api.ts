@@ -151,6 +151,8 @@ export const api = {
       structured: unknown
       images?: string[]
       attachments?: { url: string; name: string; mime?: string; size?: number }[]
+      /** Up to 5 chars (uppercase letters/digits/dash). Optional — managers use it to find the spot. */
+      location?: string
     }) =>
       request<{ activity: unknown }>('/api/activities', {
         method: 'POST',
@@ -163,6 +165,8 @@ export const api = {
         structured?: unknown
         images?: string[]
         attachments?: { url: string; name: string; mime?: string; size?: number }[]
+        /** Pass '' to clear the existing location. */
+        location?: string
       }
     ) =>
       request<{ activity: unknown }>(`/api/activities/${id}`, {
@@ -175,7 +179,14 @@ export const api = {
       search.set('limit', String(params?.limit ?? 20))
       if (params?.page) search.set('page', String(params.page))
       return request<{
-        activities: { _id: string; customer?: string; summary?: string; createdAt: string; isOwner?: boolean }[]
+        activities: {
+          _id: string
+          customer?: string
+          location?: string
+          summary?: string
+          createdAt: string
+          isOwner?: boolean
+        }[]
         total: number
         page: number
         limit: number
@@ -201,6 +212,7 @@ export const api = {
             userId?: { _id?: string; name?: string; email?: string }
           }[]
           customer?: string
+          location?: string
           summary?: string
           rawConversation?: string
           structuredData?: unknown
@@ -229,6 +241,7 @@ export const api = {
         activity: {
           _id: string
           customer?: string
+          location?: string
           summary?: string
           rawConversation?: string
           structuredData?: unknown
@@ -297,6 +310,7 @@ export const api = {
         activities: {
           _id: string
           customer?: string
+          location?: string
           summary?: string
           createdAt: string
           userId?: { _id: string; name?: string; email?: string; role?: string }
@@ -333,6 +347,7 @@ export const api = {
         activities: {
           _id: string
           customer?: string
+          location?: string
           summary?: string
           createdAt: string
           archivedAt?: string
