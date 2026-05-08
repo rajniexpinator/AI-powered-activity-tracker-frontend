@@ -1586,7 +1586,8 @@ export function ChatPage() {
     }
     const customer = (activityDetail?.customer || 'Customer').trim()
     const summary = (activityDetail?.summary || 'Activity update').trim()
-    const message = `Customer: ${customer}\nUpdate: ${summary}`
+    const rawConversation = (activityDetail?.rawConversation || '').trim()
+    const message = rawConversation || `Customer: ${customer}\nUpdate: ${summary}`
 
     setSendingWhatsApp(true)
     setError(null)
@@ -1606,27 +1607,11 @@ export function ChatPage() {
         asErr?.status === 409 && /24h session is closed|free-form message/i.test(asErr?.message || '')
 
       if (isSessionClosed) {
-        try {
-          const cfg = await api.whatsapp.getConfig()
-          const sid = (cfg?.defaultTemplateSid || '').trim()
-          if (!sid) {
-            throw new Error('Session closed and no default WhatsApp template is configured on backend.')
-          }
-          const templateVariables = JSON.stringify({ 1: customer || 'Customer' })
-          const res = await api.whatsapp.send({
-            to: whatsAppTo.trim(),
-            contentSid: sid,
-            contentVariables: templateVariables,
-          })
-          toast.success(`24h session closed. Template message sent${res.to ? ` to ${res.to}` : ''}.`)
-          setWhatsAppConfirmOpen(false)
-          return
-        } catch (fallbackErr) {
-          const fallbackMessage = (fallbackErr as Error).message || 'Failed to send fallback template message'
-          setError(fallbackMessage)
-          toast.error(fallbackMessage)
-          return
-        }
+        const sessionClosedMessage =
+          'WhatsApp 24h session is closed, so the exact AI log message was not sent. Ask the recipient to reply first, then send again.'
+        setError(sessionClosedMessage)
+        toast.error(sessionClosedMessage)
+        return
       }
 
       const message = asErr.message || 'Failed to send WhatsApp'

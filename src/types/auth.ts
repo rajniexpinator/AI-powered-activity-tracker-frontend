@@ -4,6 +4,11 @@ export interface User {
   name?: string
   role: 'admin' | 'employee'
   isActive?: boolean
+  whatsAppNumber?: string
+  whatsAppNotifications?: {
+    enabled?: boolean
+    severityLevels?: number[]
+  }
 }
 
 export interface AuthState {

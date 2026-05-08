@@ -22,6 +22,7 @@ import {
   MoreVertical,
   Search,
   KeyRound,
+  MessageSquare,
 } from 'lucide-react'
 import type { User } from '@/types/auth'
 import { api } from '@/services/api'
@@ -37,7 +38,7 @@ const ROLE_STYLES: Record<User['role'], string> = {
 }
 
 export function UserManagementPage() {
-  const { user: currentUser } = useAuth()
+  const { user: currentUser, setUser } = useAuth()
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -61,6 +62,12 @@ export function UserManagementPage() {
   const [showAdminNewPassword, setShowAdminNewPassword] = useState(false)
   const [savingPasswordUpdate, setSavingPasswordUpdate] = useState(false)
   const [passwordUpdateError, setPasswordUpdateError] = useState('')
+  const [notificationTarget, setNotificationTarget] = useState<User | null>(null)
+  const [notificationWhatsAppNumber, setNotificationWhatsAppNumber] = useState('')
+  const [notificationEnabled, setNotificationEnabled] = useState(false)
+  const [notificationLevels, setNotificationLevels] = useState<number[]>([])
+  const [savingNotificationSettings, setSavingNotificationSettings] = useState(false)
+  const [notificationSettingsError, setNotificationSettingsError] = useState('')
   const [openActionsForUserId, setOpenActionsForUserId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
@@ -193,6 +200,76 @@ export function UserManagementPage() {
     setPasswordUpdateError('')
   }
 
+  function closeNotificationSettingsModal() {
+    setNotificationTarget(null)
+    setNotificationWhatsAppNumber('')
+    setNotificationEnabled(false)
+    setNotificationLevels([])
+    setSavingNotificationSettings(false)
+    setNotificationSettingsError('')
+  }
+
+  function startNotificationSettingsFlow(u: User) {
+    setOpenActionsForUserId(null)
+    setNotificationTarget(u)
+    setNotificationWhatsAppNumber((u.whatsAppNumber || '').trim())
+    setNotificationEnabled(Boolean(u.whatsAppNotifications?.enabled))
+    setNotificationLevels(
+      Array.isArray(u.whatsAppNotifications?.severityLevels)
+        ? [...new Set(u.whatsAppNotifications?.severityLevels.filter((v) => Number.isInteger(v) && v >= 1 && v <= 3))].sort(
+            (a, b) => a - b
+          )
+        : []
+    )
+    setNotificationSettingsError('')
+  }
+
+  function toggleNotificationLevel(level: number) {
+    setNotificationLevels((prev) => {
+      if (prev.includes(level)) return prev.filter((v) => v !== level)
+      return [...prev, level].sort((a, b) => a - b)
+    })
+  }
+
+  async function handleSaveNotificationSettings(e: React.FormEvent) {
+    e.preventDefault()
+    if (!notificationTarget) return
+    if (notificationEnabled && !notificationWhatsAppNumber.trim()) {
+      setNotificationSettingsError('WhatsApp number is required when push notification is enabled.')
+      return
+    }
+    if (notificationEnabled && notificationLevels.length === 0) {
+      setNotificationSettingsError('Select at least one severity level.')
+      return
+    }
+
+    setSavingNotificationSettings(true)
+    setNotificationSettingsError('')
+    try {
+      const payload = {
+        whatsAppNumber: notificationWhatsAppNumber.trim(),
+        whatsAppNotifications: {
+          enabled: notificationEnabled,
+          severityLevels: notificationEnabled ? notificationLevels : [],
+        },
+      }
+      const { user: updated } = await api.auth.updateUser(notificationTarget.id, payload)
+      setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
+      if (currentUser?.id === updated.id) {
+        // Keep local auth user aligned when admin edits own notification settings.
+        setUser(updated)
+      }
+      toast.success('Push notification settings updated.')
+      closeNotificationSettingsModal()
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to update push notification settings'
+      setNotificationSettingsError(msg)
+      toast.error(msg)
+    } finally {
+      setSavingNotificationSettings(false)
+    }
+  }
+
   async function handleSaveAdminPassword(e: React.FormEvent) {
     e.preventDefault()
     if (!passwordUpdateTarget || adminNewPassword.length < 6) return
@@ -287,6 +364,23 @@ export function UserManagementPage() {
   }, [page, totalPages])
 
   const paginatedUsers = filteredUsers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  function getPushBadge(u: User) {
+    const enabled = Boolean(u.whatsAppNotifications?.enabled)
+    const levelsRaw = Array.isArray(u.whatsAppNotifications?.severityLevels) ? u.whatsAppNotifications?.severityLevels : []
+    const levels = [...new Set(levelsRaw.filter((v) => Number.isInteger(v) && v >= 1 && v <= 3))].sort((a, b) => a - b)
+    if (!enabled) {
+      return {
+        label: 'Push: Off',
+        className: 'bg-[var(--color-bg)] text-[var(--color-text-secondary)] border border-[var(--color-border)]',
+      }
+    }
+    const levelText = levels.length > 0 ? `L${levels.join('+L')}` : 'On'
+    return {
+      label: `Push: ${levelText}`,
+      className: 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border border-[var(--color-primary)]/30',
+    }
+  }
 
   return (
     <AdminShell>
@@ -512,6 +606,115 @@ export function UserManagementPage() {
         </div>
       )}
 
+      {/* Admin: configure WhatsApp push notifications for a user */}
+      {notificationTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
+          <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeNotificationSettingsModal} aria-hidden="true" />
+          <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[var(--color-border)] overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)] bg-[var(--color-bg)]/50">
+              <h2 className="text-lg font-semibold text-[var(--color-text)]">Push notification</h2>
+              <button
+                type="button"
+                onClick={closeNotificationSettingsModal}
+                className="p-2 rounded-lg text-[var(--color-text-secondary)] hover:bg-black/5 hover:text-[var(--color-text)] transition-colors"
+                aria-label="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <form onSubmit={handleSaveNotificationSettings} className="p-6 space-y-4">
+              <p className="text-[13px] text-[var(--color-text-secondary)]">
+                Configure WhatsApp push alerts for <span className="font-medium text-[var(--color-text)]">{notificationTarget.email}</span>.
+              </p>
+              {notificationSettingsError ? (
+                <div className="flex items-center gap-3 p-3 rounded-xl bg-red-50 border border-red-100 text-red-700 text-[13px]">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  {notificationSettingsError}
+                </div>
+              ) : null}
+              <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3.5 py-3">
+                <div>
+                  <p className="text-[13px] font-semibold text-[var(--color-text)]">Enable push notification</p>
+                  <p className="text-[12px] text-[var(--color-text-secondary)]">Only sent when a new AI log is saved.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNotificationEnabled((v) => !v)}
+                  className={`inline-flex h-7 w-12 rounded-full p-1 transition-colors ${
+                    notificationEnabled ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'
+                  }`}
+                  aria-pressed={notificationEnabled}
+                  aria-label="Toggle push notification"
+                >
+                  <span className={`h-5 w-5 rounded-full bg-white transition-transform ${notificationEnabled ? 'translate-x-5' : ''}`} />
+                </button>
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                  WhatsApp number
+                </label>
+                <input
+                  type="text"
+                  value={notificationWhatsAppNumber}
+                  onChange={(e) => setNotificationWhatsAppNumber(e.target.value)}
+                  placeholder="+917986729952"
+                  className="w-full px-4 py-3 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[15px] focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] disabled:opacity-60"
+                  disabled={!notificationEnabled}
+                />
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-2 uppercase tracking-wider">
+                  Severity levels
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {[1, 2, 3].map((level) => (
+                    <button
+                      key={level}
+                      type="button"
+                      disabled={!notificationEnabled}
+                      onClick={() => toggleNotificationLevel(level)}
+                      className={`px-3 py-2 rounded-xl border text-[13px] font-medium transition-colors disabled:opacity-60 ${
+                        notificationLevels.includes(level)
+                          ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                          : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)]'
+                      }`}
+                    >
+                      Level {level}
+                    </button>
+                  ))}
+                </div>
+                <p className="mt-2 text-[12px] text-[var(--color-text-secondary)]">
+                  Notification sends only for selected levels when a new log is saved.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={closeNotificationSettingsModal}
+                  className="flex-1 px-4 py-3 rounded-xl border border-[var(--color-border)] text-[var(--color-text)] font-medium text-[15px] hover:bg-[var(--color-bg)] transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingNotificationSettings}
+                  className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-3 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 rounded-xl text-[15px] font-semibold !text-white transition-colors"
+                >
+                  {savingNotificationSettings ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      Saving…
+                    </>
+                  ) : (
+                    'Save settings'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <main className="py-1 sm:py-0">
               {/* Page header */}
               <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-6 mb-8">
@@ -657,6 +860,9 @@ export function UserManagementPage() {
                               {u.isActive !== false ? <CheckCircle className="w-3 h-3" /> : <XCircle className="w-3 h-3" />}
                               {u.isActive !== false ? 'Active' : 'Inactive'}
                             </span>
+                            <span className={`mt-1 inline-flex items-center px-2.5 py-1 rounded-full text-[11px] font-semibold ${getPushBadge(u).className}`}>
+                              {getPushBadge(u).label}
+                            </span>
                           </div>
 
                           <div className="flex items-center justify-between gap-2 pt-1 border-t border-[var(--color-border)]/80">
@@ -683,67 +889,71 @@ export function UserManagementPage() {
                               )}
                             </div>
 
-                            {u.id === currentUser?.id ? (
-                              <span className="text-[12px] font-medium text-[var(--color-text-secondary)]">Current user</span>
-                            ) : (
-                              <div className="relative" data-user-actions-menu-root="true">
-                                <button
-                                  type="button"
-                                  onClick={() => toggleActionsMenu(u.id)}
-                                  className="inline-flex items-center justify-center h-9 w-9 rounded-xl border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]"
-                                  aria-label={`Open actions for ${u.email}`}
-                                >
-                                  <MoreVertical className="w-4 h-4" />
-                                </button>
-                                {openActionsForUserId === u.id && (
-                                  <div className="absolute right-0 top-9 z-20 w-52 rounded-xl border border-[var(--color-border)] bg-white shadow-lg p-1">
-                                    {u.role === 'employee' && (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          openEditModal(u)
-                                          setOpenActionsForUserId(null)
-                                        }}
-                                        className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
-                                      >
-                                        <Pencil className="w-3.5 h-3.5" />
-                                        Edit
-                                      </button>
-                                    )}
-                                    <button
-                                      type="button"
-                                      onClick={() => startUpdatePasswordFlow(u)}
-                                      className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
-                                    >
-                                      <KeyRound className="w-3.5 h-3.5" />
-                                      Update password
-                                    </button>
+                            <div className="relative" data-user-actions-menu-root="true">
+                              <button
+                                type="button"
+                                onClick={() => toggleActionsMenu(u.id)}
+                                className="inline-flex items-center justify-center h-9 w-9 rounded-xl border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]"
+                                aria-label={`Open actions for ${u.email}`}
+                              >
+                                <MoreVertical className="w-4 h-4" />
+                              </button>
+                              {openActionsForUserId === u.id && (
+                                <div className="absolute right-0 top-9 z-20 w-52 rounded-xl border border-[var(--color-border)] bg-white shadow-lg p-1">
+                                  {u.role === 'employee' && (
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        openDeleteModal(u, 'deleteUserWording')
-                                        setOpenActionsForUserId(null)
-                                      }}
-                                      className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-red-600 hover:bg-red-50"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                      Delete password
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        void handleToggleActive(u)
+                                        openEditModal(u)
                                         setOpenActionsForUserId(null)
                                       }}
                                       className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
                                     >
-                                      {u.isActive !== false ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                                      {u.isActive !== false ? 'Deactivate' : 'Activate'}
+                                      <Pencil className="w-3.5 h-3.5" />
+                                      Edit
                                     </button>
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => startUpdatePasswordFlow(u)}
+                                    className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                                  >
+                                    <KeyRound className="w-3.5 h-3.5" />
+                                    Update password
+                                  </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => startNotificationSettingsFlow(u)}
+                                      className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                                    >
+                                      <MessageSquare className="w-3.5 h-3.5" />
+                                      Push notification
+                                    </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      openDeleteModal(u, 'deleteUserWording')
+                                      setOpenActionsForUserId(null)
+                                    }}
+                                    className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-red-600 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                    Delete password
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      void handleToggleActive(u)
+                                      setOpenActionsForUserId(null)
+                                    }}
+                                    className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                                  >
+                                    {u.isActive !== false ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                                    {u.isActive !== false ? 'Deactivate' : 'Activate'}
+                                  </button>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -852,70 +1062,81 @@ export function UserManagementPage() {
                         )}
                         {u.isActive !== false ? 'Active' : 'Inactive'}
                       </span>
+                      <div className="mt-2">
+                        <span
+                          className={`inline-flex items-center px-2.5 py-1.5 rounded-lg text-[12px] font-medium ${getPushBadge(u).className}`}
+                        >
+                          {getPushBadge(u).label}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-5 sm:px-6 md:px-8 py-4 text-right">
-                      {u.id === currentUser?.id ? (
-                        <span className="text-[13px] text-[var(--color-text-secondary)]">You</span>
-                      ) : (
-                        <div className="relative inline-flex" data-user-actions-menu-root="true">
-                          <button
-                            type="button"
-                            onClick={() => toggleActionsMenu(u.id)}
-                            className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]"
-                            aria-label={`Open actions for ${u.email}`}
-                            title="Actions"
-                          >
-                            <MoreVertical className="w-4 h-4" />
-                          </button>
-                          {openActionsForUserId === u.id && (
-                            <div className="absolute right-0 top-10 z-20 w-52 rounded-xl border border-[var(--color-border)] bg-white shadow-lg p-1 text-left">
-                              {u.role === 'employee' && (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    openEditModal(u)
-                                    setOpenActionsForUserId(null)
-                                  }}
-                                  className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                  Edit
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => startUpdatePasswordFlow(u)}
-                                className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
-                              >
-                                <KeyRound className="w-3.5 h-3.5" />
-                                Update password
-                              </button>
+                      <div className="relative inline-flex" data-user-actions-menu-root="true">
+                        <button
+                          type="button"
+                          onClick={() => toggleActionsMenu(u.id)}
+                          className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-[var(--color-border)] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg)]"
+                          aria-label={`Open actions for ${u.email}`}
+                          title="Actions"
+                        >
+                          <MoreVertical className="w-4 h-4" />
+                        </button>
+                        {openActionsForUserId === u.id && (
+                          <div className="absolute right-0 top-10 z-20 w-52 rounded-xl border border-[var(--color-border)] bg-white shadow-lg p-1 text-left">
+                            {u.role === 'employee' && (
                               <button
                                 type="button"
                                 onClick={() => {
-                                  openDeleteModal(u, 'deleteUserWording')
-                                  setOpenActionsForUserId(null)
-                                }}
-                                className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-red-600 hover:bg-red-50"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                                Delete password
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void handleToggleActive(u)
+                                  openEditModal(u)
                                   setOpenActionsForUserId(null)
                                 }}
                                 className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
                               >
-                                {u.isActive !== false ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
-                                {u.isActive !== false ? 'Deactivate' : 'Activate'}
+                                <Pencil className="w-3.5 h-3.5" />
+                                Edit
                               </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => startUpdatePasswordFlow(u)}
+                              className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                              Update password
+                            </button>
+                              <button
+                                type="button"
+                                onClick={() => startNotificationSettingsFlow(u)}
+                                className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                              >
+                                <MessageSquare className="w-3.5 h-3.5" />
+                                Push notification
+                              </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                openDeleteModal(u, 'deleteUserWording')
+                                setOpenActionsForUserId(null)
+                              }}
+                              className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Delete password
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleToggleActive(u)
+                                setOpenActionsForUserId(null)
+                              }}
+                              className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                            >
+                              {u.isActive !== false ? <XCircle className="w-3.5 h-3.5" /> : <CheckCircle className="w-3.5 h-3.5" />}
+                              {u.isActive !== false ? 'Deactivate' : 'Activate'}
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))

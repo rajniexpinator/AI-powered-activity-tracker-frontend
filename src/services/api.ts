@@ -109,7 +109,15 @@ export const api = {
       }>('/api/auth/coworkers', { method: 'GET' }),
     updateUser: (
       id: string,
-      data: { role?: User['role']; isActive?: boolean; name?: string; email?: string; resetPassword?: string }
+      data: {
+        role?: User['role']
+        isActive?: boolean
+        name?: string
+        email?: string
+        resetPassword?: string
+        whatsAppNumber?: string
+        whatsAppNotifications?: { enabled?: boolean; severityLevels?: number[] }
+      }
     ) =>
       request<{ user: User }>(`/api/auth/users/${id}`, {
         method: 'PATCH',
