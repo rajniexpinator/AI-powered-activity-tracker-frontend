@@ -73,6 +73,17 @@ export function AdminShell({ children }: AdminShellProps) {
               <MessageSquare className="w-4 h-4 opacity-80" />
               AI logs
             </Link>
+            <Link
+              to="/profile"
+              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                isActive('/profile')
+                  ? 'bg-[#3F4B9D] text-white'
+                  : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+              }`}
+            >
+              <UserCircle className="w-4 h-4 opacity-80" />
+              Profile & alerts
+            </Link>
             {canViewActivity && (
               <Link
                 to="/activity"
@@ -279,6 +290,18 @@ export function AdminShell({ children }: AdminShellProps) {
               >
                 <MessageSquare className="w-4 h-4 opacity-80" />
                 AI logs
+              </Link>
+              <Link
+                to="/profile"
+                onClick={() => setMobileOpen(false)}
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                  isActive('/profile')
+                    ? 'bg-[#3F4B9D] text-white'
+                    : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                }`}
+              >
+                <UserCircle className="w-4 h-4 opacity-80" />
+                Profile & alerts
               </Link>
               {canViewActivity && (
                 <Link

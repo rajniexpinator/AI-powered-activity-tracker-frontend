@@ -96,7 +96,13 @@ export const api = {
         body: JSON.stringify({ email, password, name, role }),
       }),
     getMe: () => request<{ user: User }>('/api/auth/me', { method: 'GET' }),
-    updateMe: (data: { name?: string; currentPassword?: string; newPassword?: string }) =>
+    updateMe: (data: {
+      name?: string
+      currentPassword?: string
+      newPassword?: string
+      whatsAppNumber?: string
+      whatsAppNotifications?: { enabled?: boolean; severityLevels?: number[] }
+    }) =>
       request<{ user: User }>('/api/auth/me', {
         method: 'PATCH',
         body: JSON.stringify(data),
@@ -550,16 +556,29 @@ export const api = {
 
   whatsapp: {
     getConfig: () =>
-      request<{ configured: boolean; defaultTemplateSid?: string }>('/api/whatsapp/config', {
+      request<{
+        configured: boolean
+        defaultTemplateSid?: string
+        customerTemplateSid?: string
+        userLogTemplateSid?: string
+      }>('/api/whatsapp/config', {
         method: 'GET',
       }),
-    send: (payload: { to: string; message?: string; contentSid?: string; contentVariables?: string }) =>
+    send: (payload: {
+      to: string
+      message?: string
+      contentSid?: string
+      contentVariables?: string
+      /** When sending a customer template, queue full log for delivery after recipient replies. */
+      pendingActivityId?: string
+    }) =>
       request<{
         success: boolean
         messageSid: string
         status?: string
         to?: string
         from?: string
+        pendingLogQueued?: boolean
       }>('/api/whatsapp/send', {
         method: 'POST',
         body: JSON.stringify(payload),

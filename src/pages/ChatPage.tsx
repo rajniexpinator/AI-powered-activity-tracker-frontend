@@ -47,6 +47,9 @@ type StructuredActivity = {
   customer?: string
   summary?: string
   part_name?: string
+  part_number?: string
+  partNumber?: string
+  partName?: string
   /** Up to 5-character physical-location tag at the plant (e.g. A12, B-7). */
   location?: string
   intent?: string
@@ -253,6 +256,16 @@ function needsBarcodeMappingStep(p: PendingBarcodeClarification): boolean {
   if (f.includes('customer') && !String(m?.customer || '').trim()) return true
   if (f.includes('partName') && !String(m?.partName || m?.productName || '').trim()) return true
   return false
+}
+
+function partNumberFromActivityStructured(structured: unknown): string {
+  if (!structured || typeof structured !== 'object') return 'N/A'
+  const s = structured as Record<string, unknown>
+  const candidates = [s.partNumber, s.part_number, s.partName, s.part_name]
+  for (const c of candidates) {
+    if (typeof c === 'string' && c.trim()) return c.trim().slice(0, 200)
+  }
+  return 'N/A'
 }
 
 export function ChatPage() {
@@ -1607,11 +1620,39 @@ export function ChatPage() {
         asErr?.status === 409 && /24h session is closed|free-form message/i.test(asErr?.message || '')
 
       if (isSessionClosed) {
-        const sessionClosedMessage =
-          'WhatsApp 24h session is closed, so the exact AI log message was not sent. Ask the recipient to reply first, then send again.'
-        setError(sessionClosedMessage)
-        toast.error(sessionClosedMessage)
-        return
+        try {
+          const cfg = await api.whatsapp.getConfig()
+          const sid = (cfg.customerTemplateSid || cfg.defaultTemplateSid || '').trim()
+          if (!sid) {
+            throw new Error('No customer WhatsApp template is configured. Set TWILIO_WHATSAPP_CUSTOMER_TEMPLATE_SID (or TWILIO_WHATSAPP_TEMPLATE_SID) on the server.')
+          }
+          const structured = activityDetail?.structuredData
+          const partNum = partNumberFromActivityStructured(structured)
+          const greeting = customer.split(/\s+/).filter(Boolean)[0] || customer || 'there'
+          const templateVariables = JSON.stringify({
+            1: greeting.slice(0, 120),
+            2: customer.slice(0, 120),
+            3: partNum.slice(0, 120),
+          })
+          const res = await api.whatsapp.send({
+            to: whatsAppTo.trim(),
+            contentSid: sid,
+            contentVariables: templateVariables,
+            pendingActivityId: selectedActivityId,
+          })
+          toast.success(
+            res.pendingLogQueued
+              ? `Template sent${res.to ? ` to ${res.to}` : ''}. When they reply (e.g. YES), the full AI log and file links will follow automatically.`
+              : `Session closed: template sent${res.to ? ` to ${res.to}` : ''}. Reply on WhatsApp to open chat; full log could not be queued — try again or contact support.`
+          )
+          setWhatsAppConfirmOpen(false)
+          return
+        } catch (fallbackErr) {
+          const fallbackMessage = (fallbackErr as Error).message || 'Failed to send WhatsApp template'
+          setError(fallbackMessage)
+          toast.error(fallbackMessage)
+          return
+        }
       }
 
       const message = asErr.message || 'Failed to send WhatsApp'
@@ -2255,7 +2296,8 @@ export function ChatPage() {
                   />
                 </div>
                 <p className="text-[11px] text-[#777]">
-                  Sends a normal WhatsApp message when an active 24-hour session is available.
+                  Sends the full log when a 24-hour WhatsApp session is open. If the session is closed, sends the approved
+                  customer activity template first (name, customer, part); the recipient can reply to receive details.
                 </p>
               </div>
               <div className="px-4 sm:px-5 py-3 border-t border-[var(--color-border)] flex items-center justify-end gap-2">
