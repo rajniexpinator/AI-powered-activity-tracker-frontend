@@ -19,6 +19,8 @@ import {
   ChevronsLeft,
   ChevronsRight,
   ChevronDown,
+  Clock,
+  Tag,
   Loader2,
   Trash2,
   MoreVertical,
@@ -28,6 +30,17 @@ import {
 import { toast } from 'react-toastify'
 
 type SeverityFilterValue = 'all' | '0' | '1' | '2' | '3' | 'min2'
+
+type ActivityDatePeriod = 'all' | 'today' | '3days' | 'week' | '2weeks' | 'month'
+
+const DATE_PERIOD_OPTIONS: { value: ActivityDatePeriod; label: string }[] = [
+  { value: 'all', label: 'All dates' },
+  { value: 'today', label: 'Today' },
+  { value: '3days', label: '3 days' },
+  { value: 'week', label: 'Week' },
+  { value: '2weeks', label: '2 weeks' },
+  { value: 'month', label: 'Month' },
+]
 
 function severityQueryFromFilter(f: SeverityFilterValue): { severity?: string; minSeverity?: string } {
   if (f === 'all') return {}
@@ -53,6 +66,8 @@ type LoadActivitiesOpts = {
   to?: string
   page?: number
   severityFilter?: SeverityFilterValue
+  period?: ActivityDatePeriod
+  customers?: string[]
 }
 
 function formatActivitySeverityLabel(structuredData: Record<string, unknown> | undefined): string {
@@ -132,12 +147,18 @@ function buildPaginationItems(current: number, total: number): Array<number | 'e
 
 export function AdminActivityPage() {
   const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
   const [activities, setActivities] = useState<AdminActivity[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [customers, setCustomers] = useState<{ _id: string; name: string }[]>([])
 
   const [selectedUserId, setSelectedUserId] = useState<string>('all')
-  const [selectedCustomer, setSelectedCustomer] = useState<string>('all')
+  const [datePeriod, setDatePeriod] = useState<ActivityDatePeriod>('all')
+  const [selectedCustomers, setSelectedCustomers] = useState<string[]>([])
+  const [dateMenuOpen, setDateMenuOpen] = useState(false)
+  const [customerMenuOpen, setCustomerMenuOpen] = useState(false)
+  const dateFilterRef = useRef<HTMLDivElement | null>(null)
+  const customerFilterRef = useRef<HTMLDivElement | null>(null)
   const [from, setFrom] = useState<string>('')
   const [to, setTo] = useState<string>('')
   const [tab, setTab] = useState<'active' | 'archived'>('active')
@@ -187,41 +208,56 @@ export function AdminActivityPage() {
   useEffect(() => {
     const loadFilterData = async () => {
       try {
-        const [{ users }, { customers }] = await Promise.all([
-          api.auth.getUsers(),
-          api.customers.list(),
-        ])
-        const employees = users.filter((u) => u.role === 'employee')
-        setUsers(employees)
+        const { customers } = await api.customers.list()
         setCustomers(customers.map((c) => ({ _id: c._id, name: c.name })))
+        if (isAdmin) {
+          const { users } = await api.auth.getUsers()
+          const employees = users.filter((u) => u.role === 'employee')
+          setUsers(employees)
+        }
       } catch {
         // non-blocking for page
       }
     }
     void loadFilterData()
-  }, [])
+  }, [isAdmin])
 
-  const appliedFilters = useMemo(
-    () => ({
+  const datePeriodLabel =
+    DATE_PERIOD_OPTIONS.find((o) => o.value === datePeriod)?.label ?? 'All dates'
+
+  const customerFilterLabel =
+    selectedCustomers.length === 0
+      ? 'All customers'
+      : selectedCustomers.length === 1
+        ? selectedCustomers[0]
+        : `${selectedCustomers.length} customers`
+
+  const appliedFilters = useMemo(() => {
+    const useCustomDates = Boolean(from || to)
+    return {
       userId: selectedUserId !== 'all' ? selectedUserId : undefined,
-      customer: selectedCustomer !== 'all' ? selectedCustomer : undefined,
+      customers: selectedCustomers.length ? selectedCustomers : undefined,
+      period: !useCustomDates && datePeriod !== 'all' ? datePeriod : undefined,
       from: from || undefined,
       to: to || undefined,
       limit: pageSize,
       page,
       ...severityQueryFromFilter(severityFilter),
-    }),
-    [selectedUserId, selectedCustomer, from, to, page, severityFilter]
-  )
+    }
+  }, [selectedUserId, selectedCustomers, datePeriod, from, to, page, severityFilter])
 
   async function loadActivities(opts?: LoadActivitiesOpts) {
     const effFrom = opts?.from !== undefined ? opts.from : from
     const effTo = opts?.to !== undefined ? opts.to : to
     const effPage = opts?.page ?? page
     const effSeverity = opts?.severityFilter ?? severityFilter
+    const effPeriod = opts?.period ?? datePeriod
+    const effCustomers = opts?.customers ?? selectedCustomers
+    const useCustomDates = Boolean(effFrom || effTo)
     const params = {
       userId: selectedUserId !== 'all' ? selectedUserId : undefined,
-      customer: selectedCustomer !== 'all' ? selectedCustomer : undefined,
+      customers: effCustomers.length ? effCustomers : undefined,
+      period: !useCustomDates && effPeriod !== 'all' ? effPeriod : undefined,
       from: effFrom || undefined,
       to: effTo || undefined,
       limit: pageSize,
@@ -261,7 +297,23 @@ export function AdminActivityPage() {
     setSelectedDetailError('')
     setFailedSelectedImages({})
     setLoadingSelectedImages({})
-  }, [tab, selectedUserId, selectedCustomer, from, to])
+  }, [tab, selectedUserId, selectedCustomers, datePeriod, from, to])
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (dateFilterRef.current && !dateFilterRef.current.contains(t)) setDateMenuOpen(false)
+      if (customerFilterRef.current && !customerFilterRef.current.contains(t)) setCustomerMenuOpen(false)
+    }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
+  }, [])
+
+  useEffect(() => {
+    setPage(1)
+    void loadActivities({ page: 1 })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [datePeriod, selectedCustomers])
 
   useEffect(() => {
     const urls = selectedActivityDetail?.images ?? []
@@ -275,6 +327,10 @@ export function AdminActivityPage() {
     }, {})
     setLoadingSelectedImages(next)
   }, [selectedActivityDetail])
+
+  useEffect(() => {
+    if (!isAdmin && tab === 'archived') setTab('active')
+  }, [isAdmin, tab])
 
   useEffect(() => {
     void loadActivities()
@@ -310,8 +366,22 @@ export function AdminActivityPage() {
     }
   }
 
+  function toggleCustomerFilter(name: string) {
+    setSelectedCustomers((prev) =>
+      prev.includes(name) ? prev.filter((c) => c !== name) : [...prev, name]
+    )
+  }
+
+  function selectDatePeriod(value: ActivityDatePeriod) {
+    setDatePeriod(value)
+    setFrom('')
+    setTo('')
+    setDateMenuOpen(false)
+  }
+
   async function handleApplyFilters(e: React.FormEvent) {
     e.preventDefault()
+    if (from || to) setDatePeriod('all')
     setPage(1)
     await loadActivities({ page: 1 })
   }
@@ -350,7 +420,8 @@ export function AdminActivityPage() {
   async function handleResetFilters() {
     setActionMenuId(null)
     setSelectedUserId('all')
-    setSelectedCustomer('all')
+    setDatePeriod('all')
+    setSelectedCustomers([])
     setFrom('')
     setTo('')
     setSeverityFilter('all')
@@ -495,7 +566,7 @@ export function AdminActivityPage() {
     try {
       const { report, reportId, imageGallery } = await api.activities.generateWeeklyReport({
         ...appliedFilters,
-        includeCustomerSummaries: includeCustomerSummaries && selectedCustomer === 'all',
+        includeCustomerSummaries: includeCustomerSummaries && selectedCustomers.length === 0,
       })
       setReport(report)
       setReportId(reportId)
@@ -516,7 +587,8 @@ export function AdminActivityPage() {
       setActionMenuId(null)
       const search = new URLSearchParams()
       if (appliedFilters.userId) search.set('userId', appliedFilters.userId)
-      if (appliedFilters.customer) search.set('customer', appliedFilters.customer)
+      if (appliedFilters.customers?.length) search.set('customers', appliedFilters.customers.join(','))
+      if (appliedFilters.period) search.set('period', appliedFilters.period)
       if (appliedFilters.from) search.set('from', appliedFilters.from)
       if (appliedFilters.to) search.set('to', appliedFilters.to)
       if (appliedFilters.limit) search.set('limit', String(appliedFilters.limit))
@@ -557,7 +629,8 @@ export function AdminActivityPage() {
       setActionMenuId(null)
       const search = new URLSearchParams()
       if (appliedFilters.userId) search.set('userId', appliedFilters.userId)
-      if (appliedFilters.customer) search.set('customer', appliedFilters.customer)
+      if (appliedFilters.customers?.length) search.set('customers', appliedFilters.customers.join(','))
+      if (appliedFilters.period) search.set('period', appliedFilters.period)
       if (appliedFilters.from) search.set('from', appliedFilters.from)
       if (appliedFilters.to) search.set('to', appliedFilters.to)
       if (appliedFilters.severity) search.set('severity', appliedFilters.severity)
@@ -651,6 +724,92 @@ export function AdminActivityPage() {
           </div>
         </section>
 
+        <section className="mb-4 flex flex-wrap gap-2">
+          <div ref={dateFilterRef} className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setDateMenuOpen((o) => !o)
+                setCustomerMenuOpen(false)
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-semibold transition-colors ${
+                datePeriod !== 'all'
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                  : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)]'
+              }`}
+            >
+              <Clock className="w-4 h-4" />
+              {datePeriodLabel}
+              <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+            </button>
+            {dateMenuOpen && (
+              <div className="absolute left-0 z-50 mt-1 min-w-[10rem] rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg">
+                {DATE_PERIOD_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => selectDatePeriod(opt.value)}
+                    className={`w-full px-3 py-2 text-left text-[13px] hover:bg-black/[0.04] ${
+                      datePeriod === opt.value
+                        ? 'font-semibold text-[var(--color-primary)]'
+                        : 'text-[var(--color-text)]'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div ref={customerFilterRef} className="relative">
+            <button
+              type="button"
+              onClick={() => {
+                setCustomerMenuOpen((o) => !o)
+                setDateMenuOpen(false)
+              }}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-semibold transition-colors ${
+                selectedCustomers.length > 0
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                  : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)]'
+              }`}
+            >
+              <Tag className="w-4 h-4" />
+              {customerFilterLabel}
+              <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+            </button>
+            {customerMenuOpen && (
+              <div className="absolute left-0 z-50 mt-1 min-w-[14rem] max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-white py-2 shadow-lg">
+                <button
+                  type="button"
+                  onClick={() => setSelectedCustomers([])}
+                  className="w-full px-3 py-1.5 text-left text-[12px] font-semibold text-[var(--color-primary)] hover:bg-black/[0.04]"
+                >
+                  All customers
+                </button>
+                {customers.length === 0 ? (
+                  <p className="px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">No customers loaded</p>
+                ) : (
+                  customers.map((c) => (
+                    <label
+                      key={c._id}
+                      className="flex items-center gap-2 px-3 py-1.5 text-[13px] text-[var(--color-text)] hover:bg-black/[0.04] cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedCustomers.includes(c.name)}
+                        onChange={() => toggleCustomerFilter(c.name)}
+                        className="rounded border-[var(--color-border)]"
+                      />
+                      <span className="truncate">{c.name}</span>
+                    </label>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        </section>
+
         {/* Filters + report CTA */}
         <section className="mb-5 rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-3 sm:p-5 min-w-0">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-3 mb-2 sm:mb-3">
@@ -669,6 +828,7 @@ export function AdminActivityPage() {
                 }`}
               />
             </button>
+            {isAdmin && (
             <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
               <label className="inline-flex items-start gap-2 text-[12px] text-[var(--color-text-secondary)] select-none sm:items-center">
                 <input
@@ -676,11 +836,11 @@ export function AdminActivityPage() {
                   className="mt-0.5 sm:mt-0 shrink-0"
                   checked={includeCustomerSummaries}
                   onChange={(e) => setIncludeCustomerSummaries(e.target.checked)}
-                  disabled={selectedCustomer !== 'all'}
+                  disabled={selectedCustomers.length > 0}
                 />
                 <span className="leading-snug">
                   Customer summaries
-                  {selectedCustomer !== 'all' && (
+                  {selectedCustomers.length > 0 && (
                     <span className="block text-[11px] opacity-70 sm:inline sm:ml-1">
                       (select “All customers” to enable)
                     </span>
@@ -717,12 +877,14 @@ export function AdminActivityPage() {
               </button>
               </div>
             </div>
+            )}
           </div>
           {filtersOpen && (
             <form
               onSubmit={handleApplyFilters}
               className="mt-3 grid gap-3 sm:grid-cols-2 md:grid-cols-5 items-end"
             >
+              {isAdmin && (
               <div>
                 <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
                   Employee
@@ -745,6 +907,7 @@ export function AdminActivityPage() {
                   </select>
                 </div>
               </div>
+              )}
 
               <div>
                 <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-text-secondary)]">
@@ -754,18 +917,9 @@ export function AdminActivityPage() {
                   <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-text-secondary)]">
                     <Building2 className="w-3.5 h-3.5" />
                   </span>
-                  <select
-                    value={selectedCustomer}
-                    onChange={(e) => setSelectedCustomer(e.target.value)}
-                    className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 py-2 text-[13px] text-[var(--color-text)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/25"
-                  >
-                    <option value="all">All customers</option>
-                    {customers.map((c) => (
-                      <option key={c._id} value={c.name}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
+                  <p className="w-full rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] pl-9 pr-3 py-2 text-[12px] text-[var(--color-text-secondary)]">
+                    Use the customer filter above the table (multi-select).
+                  </p>
                 </div>
               </div>
 
@@ -906,6 +1060,7 @@ export function AdminActivityPage() {
             </div>
           )}
 
+          {isAdmin && (
           <div className="mt-4 rounded-2xl border border-[var(--color-border)] bg-gradient-to-br from-[var(--color-primary)]/[0.06] to-[var(--color-bg)] p-4 sm:p-5">
             <div className="flex items-start gap-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary)]/15 text-[var(--color-primary)]">
@@ -972,6 +1127,7 @@ export function AdminActivityPage() {
               </div>
             </div>
           </div>
+          )}
         </section>
 
         {/* Activity table + weekly report */}
@@ -982,7 +1138,7 @@ export function AdminActivityPage() {
               <div className="flex items-center gap-2">
                 <BarChart3 className="w-4 h-4 text-[var(--color-primary)]" />
                 <h2 className="text-[15px] font-semibold text-[var(--color-text)]">
-                  {tab === 'archived' ? 'Archived activity' : 'All employee activity'}
+                  {tab === 'archived' ? 'Archived activity' : 'Team activity'}
                 </h2>
               </div>
               <div className="flex flex-col items-stretch gap-2 w-full sm:w-auto sm:items-end sm:flex-row sm:items-center sm:gap-3">
@@ -1002,6 +1158,7 @@ export function AdminActivityPage() {
                     <BarChart3 className="w-3.5 h-3.5 shrink-0" />
                     Active
                   </button>
+                  {isAdmin && (
                   <button
                     type="button"
                     onClick={() => {
@@ -1017,6 +1174,7 @@ export function AdminActivityPage() {
                     <Archive className="w-3.5 h-3.5 shrink-0" />
                     Archived
                   </button>
+                  )}
                 </div>
               </div>
             </div>

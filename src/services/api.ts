@@ -188,10 +188,17 @@ export const api = {
         body: JSON.stringify(payload),
       }),
 
-    list: (params?: { limit?: number; page?: number }) => {
+    list: (params?: {
+      limit?: number
+      page?: number
+      period?: 'all' | 'today' | '3days' | 'week' | '2weeks' | 'month'
+      customers?: string[]
+    }) => {
       const search = new URLSearchParams()
-      search.set('limit', String(params?.limit ?? 20))
+      search.set('limit', String(params?.limit ?? 100))
       if (params?.page) search.set('page', String(params.page))
+      if (params?.period && params.period !== 'all') search.set('period', params.period)
+      if (params?.customers?.length) search.set('customers', params.customers.join(','))
       return request<{
         activities: {
           _id: string
@@ -300,6 +307,8 @@ export const api = {
     adminList: (params: {
       userId?: string
       customer?: string
+      customers?: string[]
+      period?: 'all' | 'today' | '3days' | 'week' | '2weeks' | 'month'
       from?: string
       to?: string
       limit?: number
@@ -312,6 +321,8 @@ export const api = {
       const search = new URLSearchParams()
       if (params.userId) search.set('userId', params.userId)
       if (params.customer) search.set('customer', params.customer)
+      if (params.customers?.length) search.set('customers', params.customers.join(','))
+      if (params.period && params.period !== 'all') search.set('period', params.period)
       if (params.from) search.set('from', params.from)
       if (params.to) search.set('to', params.to)
       if (params.severity) search.set('severity', params.severity)
@@ -377,6 +388,8 @@ export const api = {
     generateWeeklyReport: (payload: {
       userId?: string
       customer?: string
+      customers?: string[]
+      period?: 'all' | 'today' | '3days' | 'week' | '2weeks' | 'month'
       from?: string
       to?: string
       limit?: number

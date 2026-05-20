@@ -8,7 +8,6 @@ import {
   useState,
   type ReactNode,
 } from 'react'
-import { toast } from 'react-toastify'
 import { useAuth } from '@/context/AuthContext'
 import { api } from '@/services/api'
 
@@ -55,23 +54,7 @@ export function SharedLogsNotifyProvider({ children }: { children: ReactNode }) 
           lastIdsRef.current = ids
           return
         }
-        const newcomers = activities.filter(
-          (a) => !lastIdsRef.current!.has(a._id) && a.isOwner === false
-        )
         lastIdsRef.current = ids
-        if (newcomers.length > 0) {
-          const one = newcomers[0]
-          toast.info(
-            newcomers.length === 1
-              ? `New log shared with you — ${one.customer || one.summary || 'open AI logs'}`
-              : `${newcomers.length} new shared logs — check AI logs`
-          )
-          setHighlightIds((prev) => {
-            const next = new Set(prev)
-            newcomers.forEach((a) => next.add(a._id))
-            return next
-          })
-        }
       } catch {
         /* ignore */
       }

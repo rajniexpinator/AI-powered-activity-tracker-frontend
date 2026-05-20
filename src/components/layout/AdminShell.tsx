@@ -11,7 +11,7 @@ interface AdminShellProps {
 export function AdminShell({ children }: AdminShellProps) {
   const { user, logout } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const canViewActivity = isAdmin
+  const canViewActivity = Boolean(user)
   const location = useLocation()
   const navigate = useNavigate()
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -97,7 +97,7 @@ export function AdminShell({ children }: AdminShellProps) {
                 Activity
               </Link>
             )}
-            {canViewActivity && (
+            {isAdmin && (
               <Link
                 to="/reports"
                 className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
@@ -317,7 +317,7 @@ export function AdminShell({ children }: AdminShellProps) {
                   Activity
                 </Link>
               )}
-              {canViewActivity && (
+              {isAdmin && (
                 <Link
                   to="/reports"
                   onClick={() => setMobileOpen(false)}

@@ -87,6 +87,17 @@ type ActivityDetail = {
   createdAt: string
 }
 
+type ActivityDatePeriod = 'all' | 'today' | '3days' | 'week' | '2weeks' | 'month'
+
+const DATE_PERIOD_OPTIONS: { value: ActivityDatePeriod; label: string }[] = [
+  { value: 'all', label: 'All dates' },
+  { value: 'today', label: 'Today' },
+  { value: '3days', label: '3 days' },
+  { value: 'week', label: 'Week' },
+  { value: '2weeks', label: '2 weeks' },
+  { value: 'month', label: 'Month' },
+]
+
 function activityOwnerId(d: ActivityDetail | null): string | null {
   if (!d?.userId) return null
   const u = d.userId as { _id?: string } | string
@@ -344,9 +355,6 @@ export function ChatPage() {
   const [sendingWhatsApp, setSendingWhatsApp] = useState(false)
   const [whatsAppTo, setWhatsAppTo] = useState('')
 
-  const mainLogLocked =
-    Boolean(selectedActivityId && activityDetail && user && user.role !== 'admin' && activityOwnerId(activityDetail) !== user.id)
-
   const canArchiveSelected =
     Boolean(selectedActivityId && activityDetail && user && (user.role === 'admin' || activityOwnerId(activityDetail) === user.id))
 
@@ -354,16 +362,14 @@ export function ChatPage() {
     activityDetail && user && (user.role === 'admin' || activityOwnerId(activityDetail) === user.id)
   )
 
-  const canAddCollabNote = Boolean(
-    activityDetail &&
-      user &&
-      (user.role === 'admin' ||
-        activityOwnerId(activityDetail) === user.id ||
-        activityDetail.sharedWith?.some((s) => String(s._id) === user.id))
-  )
+  const canAddCollabNote = Boolean(activityDetail && user)
 
-  const [dateFilter, setDateFilter] = useState<'all' | 'today'>('all')
-  const [customerFilter, setCustomerFilter] = useState<string>('') // '' = all customers
+  const [datePeriod, setDatePeriod] = useState<ActivityDatePeriod>('all')
+  const [selectedCustomers, setSelectedCustomers] = useState<string[]>([])
+  const [dateMenuOpen, setDateMenuOpen] = useState(false)
+  const [customerMenuOpen, setCustomerMenuOpen] = useState(false)
+  const dateFilterRef = useRef<HTMLDivElement | null>(null)
+  const customerFilterRef = useRef<HTMLDivElement | null>(null)
   const [savedResultKey, setSavedResultKey] = useState<string | null>(null)
   const [scannerOpen, setScannerOpen] = useState(false)
   const [scannerError, setScannerError] = useState<string | null>(null)
@@ -400,10 +406,17 @@ export function ChatPage() {
   const [recentModalOpen, setRecentModalOpen] = useState(false)
   const newLogButtonRef = useRef<HTMLButtonElement | null>(null)
 
-  const recentActivitiesEditable = useMemo(() => {
-    if (user?.role === 'admin') return recentActivities
-    return recentActivities.filter((a) => a.isOwner)
-  }, [recentActivities, user?.role])
+  const recentActivitiesEditable = recentActivities
+
+  const datePeriodLabel =
+    DATE_PERIOD_OPTIONS.find((o) => o.value === datePeriod)?.label ?? 'All dates'
+
+  const customerFilterLabel =
+    selectedCustomers.length === 0
+      ? 'All customers'
+      : selectedCustomers.length === 1
+        ? selectedCustomers[0]
+        : `${selectedCustomers.length} customers`
 
   const loadTeamForSharing = useCallback(async () => {
     if (!user) return
@@ -907,21 +920,41 @@ export function ChatPage() {
     }
   }
 
-  /** List refresh only; new shared-log toasts run app-wide in SharedLogsNotifyProvider */
-  const refreshRecentList = useCallback(async (opts?: { silent?: boolean }) => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
-    if (!opts?.silent) setLoadingRecent(true)
-    try {
-      const { activities } = await api.activities.list({ limit: 20 })
-      setRecentActivities(activities)
-    } catch {
-    } finally {
-      if (!opts?.silent) setLoadingRecent(false)
+  /** List refresh; filters applied server-side */
+  const refreshRecentList = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      if (!opts?.silent) setLoadingRecent(true)
+      try {
+        const { activities } = await api.activities.list({
+          limit: 100,
+          period: datePeriod,
+          customers: selectedCustomers.length ? selectedCustomers : undefined,
+        })
+        setRecentActivities(activities)
+      } catch {
+      } finally {
+        if (!opts?.silent) setLoadingRecent(false)
+      }
+    },
+    [datePeriod, selectedCustomers]
+  )
+
+  useEffect(() => {
+    const onDocClick = (e: MouseEvent) => {
+      const t = e.target as Node
+      if (dateFilterRef.current && !dateFilterRef.current.contains(t)) setDateMenuOpen(false)
+      if (customerFilterRef.current && !customerFilterRef.current.contains(t)) setCustomerMenuOpen(false)
     }
+    document.addEventListener('mousedown', onDocClick)
+    return () => document.removeEventListener('mousedown', onDocClick)
   }, [])
 
   useEffect(() => {
     void refreshRecentList({ silent: false })
+  }, [datePeriod, selectedCustomers, refreshRecentList])
+
+  useEffect(() => {
     const loadCustomers = async () => {
       setLoadingCustomers(true)
       try {
@@ -933,7 +966,7 @@ export function ChatPage() {
       }
     }
     void loadCustomers()
-  }, [refreshRecentList])
+  }, [])
 
   useEffect(() => {
     const id = window.setInterval(() => void refreshRecentList({ silent: true }), POLL_ACTIVITY_LIST_MS)
@@ -1070,10 +1103,6 @@ export function ChatPage() {
       setError('Please describe the activity before logging with AI.')
       return
     }
-    if (mainLogLocked) {
-      setError('This log is shared with you in read-only mode. Ask the owner to edit main fields.')
-      return
-    }
     const effectiveCustomerHint = (overrideCustomerHint ?? customerHint).trim()
     if (isEmployee) {
       const hasDropdownChoice = Boolean(selectedCustomerId)
@@ -1128,10 +1157,6 @@ export function ChatPage() {
 
   async function handleSave() {
     if (!result) return
-    if (mainLogLocked) {
-      toast.error('Only the log owner can edit the main fields. You can add collaboration notes below.')
-      return
-    }
     if (isEmployee) {
       const hasDropdownChoice = Boolean(selectedCustomerId)
       const hasTypedCustomer = Boolean(customerHint.trim())
@@ -1663,22 +1688,14 @@ export function ChatPage() {
     }
   }
 
-  const filteredActivities = recentActivities.filter((act) => {
-    if (dateFilter === 'today') {
-      const actDate = new Date(act.createdAt)
-      const today = new Date()
-      if (
-        actDate.getFullYear() !== today.getFullYear() ||
-        actDate.getMonth() !== today.getMonth() ||
-        actDate.getDate() !== today.getDate()
-      ) {
-        return false
-      }
-    }
-    if (customerFilter && act.customer !== customerFilter) return false
-    return true
-  })
+  const filteredActivities = recentActivities
   const mobileRecentPreview = filteredActivities.slice(0, 3)
+
+  function toggleCustomerFilter(name: string) {
+    setSelectedCustomers((prev) =>
+      prev.includes(name) ? prev.filter((c) => c !== name) : [...prev, name]
+    )
+  }
   const hasRecentSharedHighlight = highlightSharedIds.size > 0
 
   return (
@@ -1706,30 +1723,90 @@ export function ChatPage() {
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:w-auto sm:justify-end">
-            <button
-              type="button"
-              onClick={() => setDateFilter((prev) => (prev === 'today' ? 'all' : 'today'))}
-              className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
-                dateFilter === 'today'
-                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-                  : 'border-[var(--color-border)] text-[#444] hover:bg-black/[0.03]'
-              }`}
-            >
-              <Clock className="w-4 h-4" />
-              <span className="leading-none">Today</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setCustomerFilter('')}
-              className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
-                !customerFilter
-                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-                  : 'border-[var(--color-border)] text-[#444] hover:bg-black/[0.03]'
-              }`}
-            >
-              <Tag className="w-4 h-4" />
-              <span className="leading-none">All customers</span>
-            </button>
+            <div ref={dateFilterRef} className="relative w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setDateMenuOpen((o) => !o)
+                  setCustomerMenuOpen(false)
+                }}
+                className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
+                  datePeriod !== 'all'
+                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                    : 'border-[var(--color-border)] text-[#444] hover:bg-black/[0.03]'
+                }`}
+              >
+                <Clock className="w-4 h-4" />
+                <span className="leading-none truncate max-w-[8rem] sm:max-w-none">{datePeriodLabel}</span>
+                <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+              </button>
+              {dateMenuOpen && (
+                <div className="absolute left-0 right-0 sm:left-auto sm:right-0 z-50 mt-1 min-w-[10rem] rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg">
+                  {DATE_PERIOD_OPTIONS.map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      onClick={() => {
+                        setDatePeriod(opt.value)
+                        setDateMenuOpen(false)
+                      }}
+                      className={`w-full px-3 py-2 text-left text-[13px] hover:bg-black/[0.04] ${
+                        datePeriod === opt.value ? 'font-semibold text-[var(--color-primary)]' : 'text-[#333]'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div ref={customerFilterRef} className="relative w-full sm:w-auto">
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomerMenuOpen((o) => !o)
+                  setDateMenuOpen(false)
+                }}
+                className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
+                  selectedCustomers.length > 0
+                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                    : 'border-[var(--color-border)] text-[#444] hover:bg-black/[0.03]'
+                }`}
+              >
+                <Tag className="w-4 h-4" />
+                <span className="leading-none truncate max-w-[8rem] sm:max-w-none">{customerFilterLabel}</span>
+                <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+              </button>
+              {customerMenuOpen && (
+                <div className="absolute left-0 right-0 sm:left-auto sm:right-0 z-50 mt-1 w-full sm:min-w-[14rem] sm:max-w-[18rem] max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-white py-2 shadow-lg">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedCustomers([])}
+                    className="w-full px-3 py-1.5 text-left text-[12px] font-semibold text-[var(--color-primary)] hover:bg-black/[0.04]"
+                  >
+                    All customers
+                  </button>
+                  {customers.length === 0 ? (
+                    <p className="px-3 py-2 text-[12px] text-[#888]">No customers loaded</p>
+                  ) : (
+                    customers.map((c) => (
+                      <label
+                        key={c._id}
+                        className="flex items-center gap-2 px-3 py-1.5 text-[13px] text-[#333] hover:bg-black/[0.04] cursor-pointer"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedCustomers.includes(c.name)}
+                          onChange={() => toggleCustomerFilter(c.name)}
+                          className="rounded border-[var(--color-border)]"
+                        />
+                        <span className="truncate">{c.name}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
             <button
               type="button"
               onClick={() => void startScanner()}
@@ -2477,7 +2554,7 @@ export function ChatPage() {
                         <p className="text-xs font-medium text-[#999] mb-0.5 truncate flex flex-wrap items-center gap-1.5">
                           {act.isOwner === false && (
                             <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-sky-100 text-sky-800 border border-sky-200">
-                              Shared
+                              Team
                             </span>
                           )}
                           <span className="truncate">
@@ -2498,8 +2575,8 @@ export function ChatPage() {
                     <p className="text-sm text-[#666]">
                       {recentActivities.length === 0
                         ? 'Use the form to describe an activity. The AI will extract a structured log for you.'
-                        : dateFilter === 'today' || customerFilter
-                          ? 'Try "All customers" or show all dates.'
+                        : datePeriod !== 'all' || selectedCustomers.length > 0
+                          ? 'Try clearing date or customer filters.'
                           : 'Use the form to add a new activity.'}
                     </p>
                   </div>
@@ -2638,7 +2715,7 @@ export function ChatPage() {
                       <p className="text-xs font-medium text-[#999] mb-0.5 truncate flex flex-wrap items-center gap-1.5">
                         {act.isOwner === false && (
                           <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-sky-100 text-sky-800 border border-sky-200">
-                            Shared
+                            Team
                           </span>
                         )}
                         <span className="truncate">
@@ -2661,7 +2738,7 @@ export function ChatPage() {
                   <p className="text-sm text-[#666]">
                     {recentActivities.length === 0
                       ? 'Use the form on the right to describe an activity. The AI will extract a structured log for you.'
-                      : dateFilter === 'today' || customerFilter
+                      : datePeriod !== 'all' || selectedCustomers.length > 0
                         ? 'Try "All customers" or show all dates.'
                         : 'Use the form on the right to add a new activity.'}
                   </p>
@@ -2723,7 +2800,7 @@ export function ChatPage() {
                     <p className="text-xs font-medium text-[#999] mb-0.5 truncate flex flex-wrap items-center gap-1.5">
                       {act.isOwner === false && (
                         <span className="shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide bg-sky-100 text-sky-800 border border-sky-200">
-                          Shared
+                          Team
                         </span>
                       )}
                       <span className="truncate">
@@ -2744,7 +2821,7 @@ export function ChatPage() {
                   <p className="text-sm text-[#666]">
                     {recentActivities.length === 0
                       ? 'Use the form below to describe an activity.'
-                      : dateFilter === 'today' || customerFilter
+                      : datePeriod !== 'all' || selectedCustomers.length > 0
                         ? 'Try "All customers" or show all dates.'
                         : 'Use the form below to add a new activity.'}
                   </p>
@@ -2805,7 +2882,7 @@ export function ChatPage() {
 
               {result && (
                 <fieldset
-                  disabled={mainLogLocked}
+                  disabled={false}
                   className="mt-2 space-y-3 min-w-0 border-0 p-0 m-0 disabled:opacity-[0.85]"
                 >
                   <div className="flex flex-wrap items-center justify-between mb-1 gap-2">
@@ -2987,7 +3064,7 @@ export function ChatPage() {
             {/* Input */}
             <div className="border-t border-[var(--color-border)] px-4 sm:px-5 py-3 bg-white">
               <fieldset
-                disabled={mainLogLocked}
+                disabled={false}
                 className="flex flex-col gap-2 min-w-0 border-0 p-0 m-0 disabled:opacity-[0.85]"
               >
                 <textarea
@@ -3458,14 +3535,6 @@ export function ChatPage() {
                   </div>
 
                   <div className="px-4 py-3 space-y-3">
-                    {mainLogLocked && (
-                      <div className="rounded-xl border border-amber-200/90 bg-amber-50/90 px-3 py-2.5 text-[12px] text-amber-950 leading-relaxed">
-                        <span className="font-semibold">Read-only for you.</span> This log was shared with you—open{' '}
-                        <span className="font-semibold">Notes</span> to participate. Ask the owner if the main activity
-                        text needs to change.
-                      </div>
-                    )}
-
                     <div
                       className="flex gap-1 p-1 rounded-xl bg-[var(--color-bg)] border border-[var(--color-border)]"
                       role="tablist"
@@ -3548,8 +3617,8 @@ export function ChatPage() {
                                   Who can view &amp; comment
                                 </p>
                                 <p className="text-[11px] text-[var(--color-text-secondary)] mt-0.5 max-w-md">
-                                  Multi-select below. Shared teammates can open this log and post notes—they cannot edit the
-                                  main AI fields.
+                                  Optional: notify teammates about this log. All team members can view and edit every log
+                                  from the list—sharing only controls note notifications.
                                 </p>
                               </div>
                               <button

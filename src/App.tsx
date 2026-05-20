@@ -93,9 +93,7 @@ function App() {
                 path="activity"
                 element={
                   <ProtectedRoute>
-                    <AdminRoute roles={['admin']}>
-                      <AdminActivityPage />
-                    </AdminRoute>
+                    <AdminActivityPage />
                   </ProtectedRoute>
                 }
               />
