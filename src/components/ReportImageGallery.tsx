@@ -1,5 +1,5 @@
-import { useState } from 'react'
 import { ImageIcon } from 'lucide-react'
+import { LazyActivityImage } from '@/components/LazyActivityImage'
 
 export type ReportImageGalleryEntry = {
   activityId?: string
@@ -15,8 +15,6 @@ type Props = {
 }
 
 export function ReportImageGallery({ entries, className = '' }: Props) {
-  const [broken, setBroken] = useState<Record<string, boolean>>({})
-
   if (!entries || entries.length === 0) return null
 
   return (
@@ -54,30 +52,17 @@ export function ReportImageGallery({ entries, className = '' }: Props) {
               <div className="mt-3 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                 {urls.map((url, ui) => {
                   const key = `${gi}-${ui}-${url.slice(0, 48)}`
-                  const failed = broken[key]
                   return (
-                    <a
+                    <LazyActivityImage
                       key={key}
+                      src={url}
+                      alt=""
                       href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="relative aspect-square rounded-lg overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)] group"
-                      title="Open full image"
-                    >
-                      {!failed ? (
-                        <img
-                          src={url}
-                          alt=""
-                          loading="lazy"
-                          className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
-                          onError={() => setBroken((prev) => ({ ...prev, [key]: true }))}
-                        />
-                      ) : (
-                        <div className="h-full w-full flex items-center justify-center text-[10px] text-red-600 px-2 text-center">
-                          Image unavailable
-                        </div>
-                      )}
-                    </a>
+                      linkTitle="Open full image"
+                      wrapperClassName="block aspect-square rounded-lg border border-[var(--color-border)] group"
+                      className="h-full w-full object-cover transition-transform group-hover:scale-[1.02]"
+                      failedLabel="Image unavailable"
+                    />
                   )
                 })}
               </div>

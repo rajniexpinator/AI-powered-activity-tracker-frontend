@@ -26,6 +26,7 @@ import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
+import { LazyActivityImage } from '@/components/LazyActivityImage'
 import { useAuth } from '@/context/AuthContext'
 import { useSharedLogsNotify } from '@/context/SharedLogsNotifyContext'
 
@@ -190,6 +191,7 @@ const OTHER_AVATAR_STYLES = [
 const MAX_IMAGES_PER_ENTRY = 8
 const MAX_IMAGE_FILE_BYTES = 10 * 1024 * 1024 // 10 MB — keep in sync with Backend upload middleware
 const MAX_IMAGE_FILE_ERROR = 'Maximum file size up to 10 MB.'
+type PendingImage = { id: string; file: File; preview: string }
 const MAX_ATTACHMENTS_PER_ENTRY = 10
 const MAX_ATTACHMENT_FILE_BYTES = 50 * 1024 * 1024 // 50 MB — keep in sync with Backend attachment middleware
 const MAX_ATTACHMENT_FILE_ERROR = 'Maximum attachment size is 50 MB.'
@@ -317,11 +319,8 @@ export function ChatPage() {
   const [editOutcome, setEditOutcome] = useState('')
   const [editNextActions, setEditNextActions] = useState('')
   const [editNotes, setEditNotes] = useState('')
-  const [imageFile, setImageFile] = useState<File | null>(null)
-  const [imagePreview, setImagePreview] = useState<string | null>(null)
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([])
   const [imageUrls, setImageUrls] = useState<string[]>([])
-  const [previewLoadFailed, setPreviewLoadFailed] = useState(false)
-  const [failedUploadedImages, setFailedUploadedImages] = useState<Record<string, boolean>>({})
   const [failedAttachmentVideos, setFailedAttachmentVideos] = useState<Record<string, boolean>>({})
   const [uploadingImage, setUploadingImage] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
@@ -381,6 +380,7 @@ export function ChatPage() {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const imageInputRef = useRef<HTMLInputElement | null>(null)
+  const addImageInputRef = useRef<HTMLInputElement | null>(null)
   const [barcodeModal, setBarcodeModal] = useState<{
     barcode: string
     mode: 'new' | 'existing'
@@ -490,6 +490,109 @@ export function ChatPage() {
     const type = (file.type || '').toLowerCase()
     const name = (file.name || '').toLowerCase()
     return type.includes('heic') || type.includes('heif') || name.endsWith('.heic') || name.endsWith('.heif')
+  }
+
+  const totalSelectedImageCount = imageUrls.length + pendingImages.length
+
+  const clearPendingImages = useCallback(() => {
+    setPendingImages((prev) => {
+      prev.forEach((p) => URL.revokeObjectURL(p.preview))
+      return []
+    })
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      setPendingImages((prev) => {
+        prev.forEach((p) => URL.revokeObjectURL(p.preview))
+        return []
+      })
+    }
+  }, [])
+
+  function validateImageFile(file: File): string | null {
+    if (isUnsupportedIphoneImage(file)) {
+      return 'This iPhone image format (HEIC/HEIF) may not display reliably in web preview. Please use JPG/PNG, or set iPhone Camera > Formats > Most Compatible.'
+    }
+    if (file.size > MAX_IMAGE_FILE_BYTES) return MAX_IMAGE_FILE_ERROR
+    return null
+  }
+
+  function queuePendingImage(file: File, mode: 'append' | 'replace-first') {
+    const validationError = validateImageFile(file)
+    if (validationError) {
+      setUploadError(validationError)
+      return false
+    }
+    if (totalSelectedImageCount >= MAX_IMAGES_PER_ENTRY) {
+      setUploadError(`You can attach up to ${MAX_IMAGES_PER_ENTRY} images per entry.`)
+      return false
+    }
+    setUploadError(null)
+    const entry: PendingImage = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+      preview: URL.createObjectURL(file),
+    }
+    setPendingImages((prev) => {
+      if (mode === 'replace-first' && prev.length > 0) {
+        URL.revokeObjectURL(prev[0].preview)
+        return [entry, ...prev.slice(1)]
+      }
+      return [...prev, entry]
+    })
+    return true
+  }
+
+  function handleImageInputChange(
+    e: React.ChangeEvent<HTMLInputElement>,
+    mode: 'append' | 'replace-first'
+  ) {
+    const file = e.target.files?.[0]
+    if (file) queuePendingImage(file, mode)
+    e.target.value = ''
+  }
+
+  async function uploadPendingImages(): Promise<string[]> {
+    if (pendingImages.length === 0) return imageUrls
+    const slotsLeft = MAX_IMAGES_PER_ENTRY - imageUrls.length
+    if (slotsLeft <= 0) {
+      setUploadError(`You can attach up to ${MAX_IMAGES_PER_ENTRY} images per entry.`)
+      return imageUrls
+    }
+    const toUpload = pendingImages.slice(0, slotsLeft)
+    if (toUpload.length < pendingImages.length) {
+      setUploadError(`Only ${slotsLeft} more image${slotsLeft === 1 ? '' : 's'} can be added (max ${MAX_IMAGES_PER_ENTRY} per entry).`)
+    }
+    setUploadingImage(true)
+    setUploadError(null)
+    try {
+      const uploaded: string[] = []
+      for (const pending of toUpload) {
+        const { url } = await api.upload.image(pending.file)
+        uploaded.push(url)
+      }
+      let mergedUrls = imageUrls
+      setImageUrls((prev) => {
+        mergedUrls = [...prev, ...uploaded]
+        return mergedUrls
+      })
+      const uploadedIds = new Set(toUpload.map((p) => p.id))
+      setPendingImages((prev) => {
+        const remaining = prev.filter((p) => !uploadedIds.has(p.id))
+        prev.filter((p) => uploadedIds.has(p.id)).forEach((p) => URL.revokeObjectURL(p.preview))
+        return remaining
+      })
+      if (imageInputRef.current) imageInputRef.current.value = ''
+      if (addImageInputRef.current) addImageInputRef.current.value = ''
+      return mergedUrls
+    } catch (err) {
+      const msg = (err as Error).message || 'Failed to upload images'
+      setUploadError(msg)
+      throw err
+    } finally {
+      setUploadingImage(false)
+    }
   }
 
   function openBarcodeModal(payload: NonNullable<typeof barcodeModal>) {
@@ -1084,12 +1187,10 @@ export function ChatPage() {
     setEditNextActions('')
     setEditNotes('')
     setImageUrls([])
-    setImageFile(null)
-    setImagePreview(null)
-    setPreviewLoadFailed(false)
-    setFailedUploadedImages({})
+    clearPendingImages()
     setFailedAttachmentVideos({})
     if (imageInputRef.current) imageInputRef.current.value = ''
+    if (addImageInputRef.current) addImageInputRef.current.value = ''
     setAttachments([])
     setAttachmentFile(null)
     if (attachmentInputRef.current) attachmentInputRef.current.value = ''
@@ -1145,7 +1246,9 @@ export function ChatPage() {
     setSaveMessage(null)
     setLoadingValidate(true)
     try {
-      const data = await api.ai.validateActivity(result.structured, result.rawText, imageUrls)
+      const urlsForValidation =
+        pendingImages.length > 0 ? await uploadPendingImages() : imageUrls
+      const data = await api.ai.validateActivity(result.structured, result.rawText, urlsForValidation)
       setValidation(data)
     } catch (err) {
       const message = (err as Error).message || 'Failed to validate activity'
@@ -1170,7 +1273,8 @@ export function ChatPage() {
     setSaveMessage(null)
     setSaving(true)
     try {
-      if (imageUrls.length > MAX_IMAGES_PER_ENTRY) {
+      const urlsForSave = pendingImages.length > 0 ? await uploadPendingImages() : imageUrls
+      if (urlsForSave.length > MAX_IMAGES_PER_ENTRY) {
         setError(`You can attach up to ${MAX_IMAGES_PER_ENTRY} images per entry.`)
         return
       }
@@ -1207,7 +1311,7 @@ export function ChatPage() {
       const resolvedNotes = editNotes || base.notes || ''
 
       const nextActionsKey = Array.isArray(resolvedNextActions) ? resolvedNextActions.join('\n') : ''
-      const imagesKey = imageUrls.slice().join('|')
+      const imagesKey = urlsForSave.slice().join('|')
       const attachmentsKey = attachments
         .map((a) => a.url)
         .slice()
@@ -1253,14 +1357,14 @@ export function ChatPage() {
         ? await api.activities.update(selectedActivityId, {
             rawText: resolvedRawText,
             structured: editedStructured,
-            images: imageUrls,
+            images: urlsForSave,
             attachments,
             location: resolvedLocation,
           })
         : await api.activities.create({
             rawText: resolvedRawText,
             structured: editedStructured,
-            images: imageUrls.length ? imageUrls : undefined,
+            images: urlsForSave.length ? urlsForSave : undefined,
             attachments: attachments.length ? attachments : undefined,
             location: resolvedLocation || undefined,
           })
@@ -1429,12 +1533,10 @@ export function ChatPage() {
       setAttachments(Array.isArray(detail.attachments) ? detail.attachments : [])
       setAttachmentFile(null)
       if (attachmentInputRef.current) attachmentInputRef.current.value = ''
-      setImageFile(null)
-      setImagePreview(null)
-      setPreviewLoadFailed(false)
-      setFailedUploadedImages({})
+      clearPendingImages()
       setFailedAttachmentVideos({})
       if (imageInputRef.current) imageInputRef.current.value = ''
+      if (addImageInputRef.current) addImageInputRef.current.value = ''
       const detailCustomer =
         (typeof detail.customer === 'string' && detail.customer.trim()) ||
         (typeof structured.customer === 'string' && structured.customer.trim()) ||
@@ -1522,14 +1624,13 @@ export function ChatPage() {
       setEditNextActions('')
       setEditNotes('')
       setImageUrls([])
-      setImageFile(null)
-      setImagePreview(null)
-      setPreviewLoadFailed(false)
-      setFailedUploadedImages({})
+      clearPendingImages()
       setFailedAttachmentVideos({})
       setAttachments([])
       setAttachmentFile(null)
       if (attachmentInputRef.current) attachmentInputRef.current.value = ''
+      if (imageInputRef.current) imageInputRef.current.value = ''
+      if (addImageInputRef.current) addImageInputRef.current.value = ''
       setSavedResultKey(null)
       if (opts?.closeRecentModal) setRecentModalOpen(false)
     } catch (err) {
@@ -2455,14 +2556,12 @@ export function ChatPage() {
                     setEditNextActions('')
                     setEditNotes('')
                     setImageUrls([])
-                    setImageFile(null)
-                    setImagePreview(null)
-                    setPreviewLoadFailed(false)
-                    setFailedUploadedImages({})
+                    clearPendingImages()
                     setFailedAttachmentVideos({})
                     setAttachments([])
                     setAttachmentFile(null)
                     if (attachmentInputRef.current) attachmentInputRef.current.value = ''
+                    if (addImageInputRef.current) addImageInputRef.current.value = ''
                     setSavedResultKey(null)
                     setCustomerHintTouched(false)
                     setRecentModalOpen(false)
@@ -2626,14 +2725,12 @@ export function ChatPage() {
                     setEditNextActions('')
                     setEditNotes('')
                     setImageUrls([])
-                    setImageFile(null)
-                    setImagePreview(null)
-                    setPreviewLoadFailed(false)
-                    setFailedUploadedImages({})
+                    clearPendingImages()
                     setFailedAttachmentVideos({})
                     setAttachments([])
                     setAttachmentFile(null)
                     if (attachmentInputRef.current) attachmentInputRef.current.value = ''
+                    if (addImageInputRef.current) addImageInputRef.current.value = ''
                     setSavedResultKey(null)
                     setCustomerHintTouched(false)
                   }}
@@ -3114,153 +3211,144 @@ export function ChatPage() {
                   />
                 </div>
                 {/* Image upload section */}
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex items-center gap-2">
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <label className="inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-[11px] sm:text-xs text-[#444] cursor-pointer hover:bg-black/[0.03]">
                       <ImageIcon className="w-3.5 h-3.5" />
-                      <span>{imageFile ? 'Change image' : 'Attach image (optional)'}</span>
+                      <span>
+                        {pendingImages.length === 1
+                          ? 'Change image'
+                          : pendingImages.length > 1
+                            ? 'Replace first image'
+                            : 'Attach image (optional)'}
+                      </span>
                       <input
                         ref={imageInputRef}
                         type="file"
                         accept="image/*"
                         className="hidden"
-                        onChange={(e) => {
-                          const file = e.target.files?.[0]
-                          if (file) {
-                            if (isUnsupportedIphoneImage(file)) {
-                              setUploadError(
-                                'This iPhone image format (HEIC/HEIF) may not display reliably in web preview. Please use JPG/PNG, or set iPhone Camera > Formats > Most Compatible.'
-                              )
-                              if (imageInputRef.current) imageInputRef.current.value = ''
-                              setImageFile(null)
-                              setImagePreview(null)
-                              setPreviewLoadFailed(false)
-                              return
-                            }
-                            if (file.size > MAX_IMAGE_FILE_BYTES) {
-                              setUploadError(MAX_IMAGE_FILE_ERROR)
-                              if (imageInputRef.current) imageInputRef.current.value = ''
-                              setImageFile(null)
-                              setImagePreview(null)
-                              setPreviewLoadFailed(false)
-                              return
-                            }
-                            setImageFile(file)
-                            setImagePreview(URL.createObjectURL(file))
-                            setPreviewLoadFailed(false)
-                            setUploadError(null)
-                          }
-                        }}
+                        onChange={(e) =>
+                          handleImageInputChange(
+                            e,
+                            pendingImages.length === 1 ? 'replace-first' : 'append'
+                          )
+                        }
                       />
                     </label>
-                    {imageFile && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setImageFile(null)
-                          setImagePreview(null)
-                          setPreviewLoadFailed(false)
-                          if (imageInputRef.current) imageInputRef.current.value = ''
-                        }}
-                        className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] text-[#666] hover:bg-black/[0.03]"
+                    {(pendingImages.length > 0 || imageUrls.length > 0) && (
+                      <label
+                        className={`inline-flex items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-[11px] sm:text-xs text-[#444] hover:bg-black/[0.03] ${
+                          totalSelectedImageCount >= MAX_IMAGES_PER_ENTRY
+                            ? 'opacity-50 pointer-events-none cursor-not-allowed'
+                            : 'cursor-pointer'
+                        }`}
                       >
-                        <X className="w-3 h-3" />
-                        Clear
-                      </button>
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add additional image</span>
+                        <input
+                          ref={addImageInputRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={totalSelectedImageCount >= MAX_IMAGES_PER_ENTRY}
+                          onChange={(e) => handleImageInputChange(e, 'append')}
+                        />
+                      </label>
                     )}
-                    {imageFile && (
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (!imageFile) return
-                          if (imageFile.size > MAX_IMAGE_FILE_BYTES) {
-                            setUploadError(MAX_IMAGE_FILE_ERROR)
-                            return
-                          }
-                          if (imageUrls.length >= MAX_IMAGES_PER_ENTRY) {
-                            setUploadError(`You can attach up to ${MAX_IMAGES_PER_ENTRY} images per entry.`)
-                            return
-                          }
-                          setUploadingImage(true)
-                          setUploadError(null)
-                          try {
-                            const { url } = await api.upload.image(imageFile)
-                            setImageUrls((prev) => [...prev, url])
-                            setImageFile(null)
-                            setImagePreview(null)
-                            setPreviewLoadFailed(false)
+                    {pendingImages.length > 0 && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            clearPendingImages()
                             if (imageInputRef.current) imageInputRef.current.value = ''
-                          } catch (err) {
-                            const msg = (err as Error).message || 'Failed to upload image'
-                            setUploadError(msg)
-                          } finally {
-                            setUploadingImage(false)
-                          }
-                        }}
-                        disabled={uploadingImage || imageUrls.length >= MAX_IMAGES_PER_ENTRY}
-                        className="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)] px-3 py-1 text-[11px] sm:text-xs font-medium hover:bg-[var(--color-primary)]/15 disabled:opacity-60"
-                      >
-                        {uploadingImage
-                          ? 'Uploading…'
-                          : imageUrls.length >= MAX_IMAGES_PER_ENTRY
-                            ? 'Max images reached'
-                            : 'Upload image'}
-                      </button>
+                            if (addImageInputRef.current) addImageInputRef.current.value = ''
+                          }}
+                          className="inline-flex items-center gap-1 rounded-full border border-[var(--color-border)] px-2 py-0.5 text-[10px] text-[#666] hover:bg-black/[0.03]"
+                        >
+                          <X className="w-3 h-3" />
+                          Clear selected
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void uploadPendingImages()}
+                          disabled={uploadingImage || imageUrls.length >= MAX_IMAGES_PER_ENTRY}
+                          className="inline-flex items-center gap-1.5 rounded-[var(--radius)] bg-[var(--color-primary)]/10 text-[var(--color-primary)] px-3 py-1 text-[11px] sm:text-xs font-medium hover:bg-[var(--color-primary)]/15 disabled:opacity-60"
+                        >
+                          {uploadingImage
+                            ? 'Uploading…'
+                            : imageUrls.length >= MAX_IMAGES_PER_ENTRY
+                              ? 'Max images reached'
+                              : `Upload ${pendingImages.length} image${pendingImages.length !== 1 ? 's' : ''}`}
+                        </button>
+                      </>
                     )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {imagePreview && (
-                      <div className="h-10 w-10 rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)]">
-                        {!previewLoadFailed ? (
-                          <img
-                            src={imagePreview}
-                            alt="Preview"
-                            className="h-full w-full object-cover"
-                            onError={() => setPreviewLoadFailed(true)}
-                          />
-                        ) : (
-                          <div className="h-full w-full flex items-center justify-center text-[9px] text-red-600 px-1 text-center">
-                            Load failed
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    {imageUrls.length > 0 && (
-                      <p className="text-[10px] text-[#777]">
-                        {imageUrls.length}/{MAX_IMAGES_PER_ENTRY} image{imageUrls.length !== 1 ? 's' : ''} attached
+                    {totalSelectedImageCount > 0 && (
+                      <p className="text-[10px] text-[#777] w-full sm:w-auto">
+                        {imageUrls.length} uploaded
+                        {pendingImages.length > 0
+                          ? ` · ${pendingImages.length} ready to upload`
+                          : ''}{' '}
+                        ({totalSelectedImageCount}/{MAX_IMAGES_PER_ENTRY})
                       </p>
                     )}
                   </div>
+                  {pendingImages.length > 0 && (
+                    <p className="text-[10px] text-[#888] leading-snug">
+                      On iPhone, pick one photo at a time, then tap &quot;Add additional image&quot; for more. Upload
+                      all when ready.
+                    </p>
+                  )}
                 </div>
                 {uploadError && (
                   <p className="text-[11px] text-red-600">{uploadError}</p>
                 )}
-                {imageUrls.length > 0 && (
+                {(pendingImages.length > 0 || imageUrls.length > 0) && (
                   <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2">
+                    {pendingImages.map((pending, idx) => (
+                      <div
+                        key={pending.id}
+                        className="relative rounded-md overflow-hidden border border-dashed border-[var(--color-primary)]/50 bg-[var(--color-bg)] group"
+                      >
+                        <img
+                          src={pending.preview}
+                          alt={`Selected image ${idx + 1}`}
+                          className="h-20 w-full object-cover opacity-90"
+                        />
+                        <span className="absolute bottom-1 left-1 rounded px-1 py-0.5 text-[8px] font-medium bg-black/60 text-white">
+                          Not uploaded
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPendingImages((prev) => {
+                              const next = prev.filter((p) => p.id !== pending.id)
+                              URL.revokeObjectURL(pending.preview)
+                              return next
+                            })
+                          }}
+                          className="absolute top-1 right-1 inline-flex h-5 w-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80"
+                          aria-label={`Remove selected image ${idx + 1}`}
+                          title="Remove selected image"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
                     {imageUrls.map((url, idx) => (
                       <div
                         key={`${url}-${idx}`}
                         className="relative rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)] group"
                       >
-                        <a href={url} target="_blank" rel="noreferrer" title="Open image">
-                          {!failedUploadedImages[url] ? (
-                            <img
-                              src={url}
-                              alt={`Uploaded activity ${idx + 1}`}
-                              className="h-20 w-full object-cover transition-transform group-hover:scale-[1.02]"
-                              onError={() =>
-                                setFailedUploadedImages((prev) => ({
-                                  ...prev,
-                                  [url]: true,
-                                }))
-                              }
-                            />
-                          ) : (
-                            <div className="h-20 w-full flex items-center justify-center text-[10px] text-red-600 px-2 text-center bg-[var(--color-bg)]">
-                              Image load failed
-                            </div>
-                          )}
-                        </a>
+                        <LazyActivityImage
+                          src={url}
+                          alt={`Uploaded activity ${idx + 1}`}
+                          href={url}
+                          linkTitle="Open image"
+                          wrapperClassName="block h-20 w-full"
+                          className="h-20 w-full object-cover transition-transform group-hover:scale-[1.02]"
+                          failedLabel="Image load failed"
+                        />
                         <button
                           type="button"
                           onClick={() =>
@@ -3450,8 +3538,8 @@ export function ChatPage() {
                 )}
                 <p className="text-[11px] text-[#777] leading-relaxed">
                   Upload up to {MAX_IMAGES_PER_ENTRY} photos as evidence for this activity (defect, part label/barcode,
-                  workstation condition, or before/after repair). Each image may be up to 10 MB. Use clear images that
-                  help explain the issue and resolution.
+                  workstation condition, or before/after repair). Each image may be up to 10 MB. On iPhone you can add
+                  several photos one at a time, then upload them together.
                 </p>
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                   <p className="text-[11px] text-[#999] hidden sm:block">

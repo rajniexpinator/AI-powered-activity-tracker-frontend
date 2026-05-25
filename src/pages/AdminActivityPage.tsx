@@ -4,6 +4,7 @@ import { useAuth } from '@/context/AuthContext'
 import type { User } from '@/types/auth'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { ReportImageGallery } from '@/components/ReportImageGallery'
+import { LazyActivityImage } from '@/components/LazyActivityImage'
 import {
   BarChart3,
   Filter,
@@ -191,8 +192,6 @@ export function AdminActivityPage() {
   const [selectedActivityDetail, setSelectedActivityDetail] = useState<ActivityDetail | null>(null)
   const [loadingSelectedActivity, setLoadingSelectedActivity] = useState(false)
   const [selectedDetailError, setSelectedDetailError] = useState('')
-  const [failedSelectedImages, setFailedSelectedImages] = useState<Record<string, boolean>>({})
-  const [loadingSelectedImages, setLoadingSelectedImages] = useState<Record<string, boolean>>({})
   const mediaPanelRef = useRef<HTMLDivElement | null>(null)
   const requestSeq = useRef(0)
   const paginationItems = useMemo(
@@ -295,8 +294,6 @@ export function AdminActivityPage() {
     setSelectedActivityId(null)
     setSelectedActivityDetail(null)
     setSelectedDetailError('')
-    setFailedSelectedImages({})
-    setLoadingSelectedImages({})
   }, [tab, selectedUserId, selectedCustomers, datePeriod, from, to])
 
   useEffect(() => {
@@ -316,19 +313,6 @@ export function AdminActivityPage() {
   }, [datePeriod, selectedCustomers])
 
   useEffect(() => {
-    const urls = selectedActivityDetail?.images ?? []
-    if (!urls.length) {
-      setLoadingSelectedImages({})
-      return
-    }
-    const next = urls.reduce<Record<string, boolean>>((acc, url) => {
-      acc[url] = true
-      return acc
-    }, {})
-    setLoadingSelectedImages(next)
-  }, [selectedActivityDetail])
-
-  useEffect(() => {
     if (!isAdmin && tab === 'archived') setTab('active')
   }, [isAdmin, tab])
 
@@ -341,8 +325,6 @@ export function AdminActivityPage() {
     setSelectedActivityId(id)
     setLoadingSelectedActivity(true)
     setSelectedDetailError('')
-    setFailedSelectedImages({})
-    setLoadingSelectedImages({})
     try {
       const res = tab === 'archived' ? await api.activities.adminGetOne(id) : await api.activities.getOne(id)
       setSelectedActivityDetail(res.activity as ActivityDetail)
@@ -1495,41 +1477,17 @@ export function AdminActivityPage() {
                   {selectedActivityDetail.images?.length ? (
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                       {selectedActivityDetail.images.map((url, idx) => (
-                        <a
+                        <LazyActivityImage
                           key={`${url}-${idx}`}
+                          src={url}
+                          alt={`Activity image ${idx + 1}`}
                           href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="relative block rounded-md overflow-hidden border border-[var(--color-border)] bg-[var(--color-bg)]"
-                          title={`Open image ${idx + 1}`}
-                        >
-                          {!failedSelectedImages[url] ? (
-                            <>
-                              <img
-                                src={url}
-                                alt={`Activity image ${idx + 1}`}
-                                className={`h-28 sm:h-20 w-full object-cover transition-opacity duration-300 ${
-                                  loadingSelectedImages[url] ? 'opacity-0' : 'opacity-100'
-                                }`}
-                                onLoad={() => setLoadingSelectedImages((prev) => ({ ...prev, [url]: false }))}
-                                onError={() => {
-                                  setFailedSelectedImages((prev) => ({ ...prev, [url]: true }))
-                                  setLoadingSelectedImages((prev) => ({ ...prev, [url]: false }))
-                                }}
-                              />
-                              {loadingSelectedImages[url] && (
-                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-slate-100/90">
-                                  <Loader2 className="w-4 h-4 animate-spin text-[var(--color-primary)]" />
-                                  <span className="text-[10px] text-[var(--color-text-secondary)]">Loading image...</span>
-                                </div>
-                              )}
-                            </>
-                          ) : (
-                            <div className="h-28 sm:h-20 w-full flex items-center justify-center text-[10px] text-red-600 px-2 text-center bg-[var(--color-bg)]">
-                              Image load failed
-                            </div>
-                          )}
-                        </a>
+                          linkTitle={`Open image ${idx + 1}`}
+                          wrapperClassName="block h-28 sm:h-20 w-full rounded-md border border-[var(--color-border)]"
+                          className="h-28 sm:h-20 w-full object-cover"
+                          failedLabel="Image load failed"
+                          loadingLabel="Loading image…"
+                        />
                       ))}
                     </div>
                   ) : (
