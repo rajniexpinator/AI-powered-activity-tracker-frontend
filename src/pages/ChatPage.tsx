@@ -44,6 +44,9 @@ type ValidationResult = {
   suggestions: string[]
 }
 
+const VEHICLE_LINE_OPTIONS = ['Super Duty', 'Expedition', 'Navigator'] as const
+type VehicleLineOption = (typeof VEHICLE_LINE_OPTIONS)[number]
+
 type StructuredActivity = {
   customer?: string
   summary?: string
@@ -51,6 +54,10 @@ type StructuredActivity = {
   part_number?: string
   partNumber?: string
   partName?: string
+  supplier_code?: string
+  supplierCode?: string
+  vehicle_line?: string[]
+  vehicleLine?: string[]
   /** Up to 5-character physical-location tag at the plant (e.g. A12, B-7). */
   location?: string
   intent?: string
@@ -197,10 +204,36 @@ const MAX_ATTACHMENT_FILE_BYTES = 50 * 1024 * 1024 // 50 MB — keep in sync wit
 const MAX_ATTACHMENT_FILE_ERROR = 'Maximum attachment size is 50 MB.'
 const DEFAULT_ISSUE_SEVERITY = 0 as const
 const MAX_LOCATION_LENGTH = 5
+const MAX_SUPPLIER_CODE_LENGTH = 5
 
 /** Up-to-5-char physical location tag. Letters, digits, and dash only; uppercased. */
 function normalizeLocationInput(raw: string): string {
   return raw.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, MAX_LOCATION_LENGTH)
+}
+
+/** Up-to-5-char supplier code. Letters and digits only; uppercased. */
+function normalizeSupplierCodeInput(raw: string): string {
+  return raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, MAX_SUPPLIER_CODE_LENGTH)
+}
+
+function readPartNumberFromStructured(structured: StructuredActivity | Record<string, unknown>): string {
+  const s = structured as Record<string, unknown>
+  const v = s.part_number ?? s.partNumber
+  return typeof v === 'string' ? v.trim() : ''
+}
+
+function readSupplierCodeFromStructured(structured: StructuredActivity | Record<string, unknown>): string {
+  const s = structured as Record<string, unknown>
+  const v = s.supplier_code ?? s.supplierCode
+  return typeof v === 'string' ? normalizeSupplierCodeInput(v) : ''
+}
+
+function readVehicleLineFromStructured(structured: StructuredActivity | Record<string, unknown>): VehicleLineOption[] {
+  const s = structured as Record<string, unknown>
+  const raw = s.vehicle_line ?? s.vehicleLine
+  if (!Array.isArray(raw)) return []
+  const picked = new Set(raw.map((x) => String(x).trim()))
+  return VEHICLE_LINE_OPTIONS.filter((opt) => picked.has(opt))
 }
 
 function parseIssueSeverity(raw: unknown): 0 | 1 | 2 | 3 {
@@ -273,12 +306,8 @@ function needsBarcodeMappingStep(p: PendingBarcodeClarification): boolean {
 
 function partNumberFromActivityStructured(structured: unknown): string {
   if (!structured || typeof structured !== 'object') return 'N/A'
-  const s = structured as Record<string, unknown>
-  const candidates = [s.partNumber, s.part_number, s.partName, s.part_name]
-  for (const c of candidates) {
-    if (typeof c === 'string' && c.trim()) return c.trim().slice(0, 200)
-  }
-  return 'N/A'
+  const pn = readPartNumberFromStructured(structured as StructuredActivity)
+  return pn ? pn.slice(0, 200) : 'N/A'
 }
 
 export function ChatPage() {
@@ -313,6 +342,9 @@ export function ChatPage() {
   const [loadingCustomers, setLoadingCustomers] = useState(false)
   const [editSummary, setEditSummary] = useState('')
   const [editPartName, setEditPartName] = useState('')
+  const [editPartNumber, setEditPartNumber] = useState('')
+  const [editSupplierCode, setEditSupplierCode] = useState('')
+  const [editVehicleLine, setEditVehicleLine] = useState<VehicleLineOption[]>([])
   const [editLocation, setEditLocation] = useState('')
   const [editIntent, setEditIntent] = useState('')
   const [editSeverity, setEditSeverity] = useState<0 | 1 | 2 | 3>(DEFAULT_ISSUE_SEVERITY)
@@ -714,7 +746,18 @@ export function ChatPage() {
     closeBarcodeIntegration()
   }
 
-  async function flushBarcodeToNewLog(snippet: string, hintCustomer?: string) {
+  function applyBarcodeFormHints(hints?: { partNumber?: string; partName?: string }) {
+    if (hints?.partNumber?.trim()) setEditPartNumber(hints.partNumber.trim())
+    if (hints?.partName?.trim()) {
+      setEditPartName((prev) => prev.trim() || hints.partName!.trim())
+    }
+  }
+
+  async function flushBarcodeToNewLog(
+    snippet: string,
+    hintCustomer?: string,
+    barcodeHints?: { partNumber?: string; partName?: string }
+  ) {
     closeBarcodeIntegration()
     resetToNewLog()
     setText(snippet)
@@ -728,9 +771,14 @@ export function ChatPage() {
     setCustomerHintTouched(false)
     toast.info('Review the extracted log fields, then save to add it to your tracker.')
     await handleExtract(snippet, hintCustomer)
+    applyBarcodeFormHints(barcodeHints)
   }
 
-  async function flushBarcodeToExistingLog(activityId: string, snippet: string) {
+  async function flushBarcodeToExistingLog(
+    activityId: string,
+    snippet: string,
+    barcodeHints?: { partNumber?: string; partName?: string }
+  ) {
     closeBarcodeIntegration()
     const { merged, detailCustomer } = await handleSelectRecent(activityId, {
       appendSnippet: snippet,
@@ -742,6 +790,7 @@ export function ChatPage() {
     }
     toast.info('Barcode text added — review extracted fields, then save to update this log.')
     await handleExtract(merged, detailCustomer)
+    applyBarcodeFormHints(barcodeHints)
   }
 
   async function onBarcodeIntegrationCreateNew() {
@@ -759,7 +808,10 @@ export function ChatPage() {
       m?.partNumber,
       undefined
     )
-    await flushBarcodeToNewLog(snippet, m?.customer)
+    await flushBarcodeToNewLog(snippet, m?.customer, {
+      partNumber: m?.partNumber,
+      partName: m?.partName || m?.productName,
+    })
   }
 
   function onBarcodeIntegrationAddToExisting() {
@@ -782,7 +834,10 @@ export function ChatPage() {
       m?.partNumber,
       undefined
     )
-    await flushBarcodeToExistingLog(activityId, snippet)
+    await flushBarcodeToExistingLog(activityId, snippet, {
+      partNumber: m?.partNumber,
+      partName: m?.partName || m?.productName,
+    })
   }
 
   async function startScanner() {
@@ -1180,6 +1235,9 @@ export function ChatPage() {
     setText('')
     setEditSummary('')
     setEditPartName('')
+    setEditPartNumber('')
+    setEditSupplierCode('')
+    setEditVehicleLine([])
     setEditLocation('')
     setEditIntent('')
     setEditSeverity(DEFAULT_ISSUE_SEVERITY)
@@ -1226,6 +1284,9 @@ export function ChatPage() {
       const structured = (data.structured || {}) as StructuredActivity
       setEditSummary(structured.summary ?? '')
       setEditPartName(structured.part_name ?? '')
+      setEditPartNumber(readPartNumberFromStructured(structured))
+      setEditSupplierCode(readSupplierCodeFromStructured(structured))
+      setEditVehicleLine(readVehicleLineFromStructured(structured))
       setEditLocation(normalizeLocationInput(structured.location ?? ''))
       setEditIntent(structured.intent ?? '')
       setEditSeverity(parseIssueSeverity(structured.severity))
@@ -1294,6 +1355,12 @@ export function ChatPage() {
         (typeof base.customer === 'string' && base.customer.trim() ? base.customer.trim() : '')
       const resolvedSummary = editSummary || base.summary || ''
       const resolvedPartName = editPartName || base.part_name || ''
+      const resolvedPartNumber = editPartNumber.trim() || readPartNumberFromStructured(base) || ''
+      const resolvedSupplierCode = normalizeSupplierCodeInput(
+        editSupplierCode || readSupplierCodeFromStructured(base) || ''
+      )
+      const resolvedVehicleLine =
+        editVehicleLine.length > 0 ? editVehicleLine : readVehicleLineFromStructured(base)
       const resolvedLocation = normalizeLocationInput(
         editLocation || (typeof base.location === 'string' ? base.location : '') || ''
       )
@@ -1321,6 +1388,9 @@ export function ChatPage() {
         (result.rawText || '').trim(),
         String(resolvedSummary).trim(),
         String(resolvedPartName).trim(),
+        String(resolvedPartNumber).trim(),
+        String(resolvedSupplierCode).trim(),
+        resolvedVehicleLine.slice().sort().join(','),
         String(resolvedLocation).trim(),
         String(resolvedIntent).trim(),
         String(resolvedSeverity),
@@ -1343,6 +1413,9 @@ export function ChatPage() {
         customer: resolvedCustomer || base.customer,
         summary: resolvedSummary || base.summary,
         part_name: resolvedPartName || base.part_name,
+        part_number: resolvedPartNumber || undefined,
+        supplier_code: resolvedSupplierCode || undefined,
+        vehicle_line: resolvedVehicleLine.length ? resolvedVehicleLine : undefined,
         location: resolvedLocation || base.location,
         intent: resolvedIntent || base.intent,
         severity: resolvedSeverity,
@@ -1500,6 +1573,9 @@ export function ChatPage() {
         setValidation(null)
         setEditSummary('')
         setEditPartName('')
+        setEditPartNumber('')
+        setEditSupplierCode('')
+        setEditVehicleLine([])
         setEditLocation('')
         setEditIntent('')
         setEditSeverity(DEFAULT_ISSUE_SEVERITY)
@@ -1514,6 +1590,9 @@ export function ChatPage() {
         })
         setEditSummary(structured.summary ?? '')
         setEditPartName(structured.part_name ?? '')
+        setEditPartNumber(readPartNumberFromStructured(structured))
+        setEditSupplierCode(readSupplierCodeFromStructured(structured))
+        setEditVehicleLine(readVehicleLineFromStructured(structured))
         setEditLocation(
           normalizeLocationInput(
             (typeof detail.location === 'string' && detail.location) ||
@@ -1560,6 +1639,9 @@ export function ChatPage() {
           merged.trim(),
           String(structured.summary ?? '').trim(),
           String(structured.part_name ?? '').trim(),
+          String(readPartNumberFromStructured(structured)).trim(),
+          String(readSupplierCodeFromStructured(structured)).trim(),
+          readVehicleLineFromStructured(structured).slice().sort().join(','),
           String(
             normalizeLocationInput(
               (typeof detail.location === 'string' && detail.location) ||
@@ -1617,6 +1699,9 @@ export function ChatPage() {
       setText('')
       setEditSummary('')
       setEditPartName('')
+      setEditPartNumber('')
+      setEditSupplierCode('')
+      setEditVehicleLine([])
       setEditLocation('')
       setEditIntent('')
       setEditSeverity(DEFAULT_ISSUE_SEVERITY)
@@ -2319,12 +2404,18 @@ export function ChatPage() {
 
                         if (intent?.kind === 'newLog') {
                           closeBarcodeModal()
-                          await flushBarcodeToNewLog(snippet, payload.customer)
+                          await flushBarcodeToNewLog(snippet, payload.customer, {
+                            partNumber: payload.partNumber,
+                            partName: payload.partName,
+                          })
                           return
                         }
                         if (intent?.kind === 'existingLog') {
                           closeBarcodeModal()
-                          await flushBarcodeToExistingLog(intent.activityId, snippet)
+                          await flushBarcodeToExistingLog(intent.activityId, snippet, {
+                            partNumber: payload.partNumber,
+                            partName: payload.partName,
+                          })
                           return
                         }
 
@@ -2549,6 +2640,9 @@ export function ChatPage() {
                     setText('')
                     setEditSummary('')
                     setEditPartName('')
+                    setEditPartNumber('')
+                    setEditSupplierCode('')
+                    setEditVehicleLine([])
                     setEditLocation('')
                     setEditIntent('')
                     setEditSeverity(DEFAULT_ISSUE_SEVERITY)
@@ -2718,6 +2812,9 @@ export function ChatPage() {
                     setText('')
                     setEditSummary('')
                     setEditPartName('')
+                    setEditPartNumber('')
+                    setEditSupplierCode('')
+                    setEditVehicleLine([])
                     setEditLocation('')
                     setEditIntent('')
                     setEditSeverity(DEFAULT_ISSUE_SEVERITY)
@@ -3048,6 +3145,64 @@ export function ChatPage() {
                           className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
                           placeholder="e.g. wheel liner, BCM, IP"
                         />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#555] mb-1">
+                          Part number
+                        </label>
+                        <input
+                          type="text"
+                          value={editPartNumber}
+                          onChange={(e) => setEditPartNumber(e.target.value)}
+                          className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                          placeholder="e.g. BCZM-1023"
+                        />
+                        <p className="text-[10px] text-[#999] mt-0.5">
+                          Filled automatically when you scan a mapped barcode; you can type or edit anytime.
+                        </p>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#555] mb-1">
+                          Supplier code{' '}
+                          <span className="font-normal text-[#999]">(5 characters)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={editSupplierCode}
+                          onChange={(e) => setEditSupplierCode(normalizeSupplierCodeInput(e.target.value))}
+                          maxLength={MAX_SUPPLIER_CODE_LENGTH}
+                          inputMode="text"
+                          autoCapitalize="characters"
+                          spellCheck={false}
+                          className="w-full uppercase tracking-wider rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                          placeholder="AB12C"
+                        />
+                      </div>
+                      <div>
+                        <span className="block text-[11px] font-semibold text-[#555] mb-1.5">Vehicle line</span>
+                        <div className="flex flex-wrap gap-3">
+                          {VEHICLE_LINE_OPTIONS.map((line) => {
+                            const checked = editVehicleLine.includes(line)
+                            return (
+                              <label
+                                key={line}
+                                className="inline-flex items-center gap-2 text-[12px] text-[#333] cursor-pointer select-none"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={() => {
+                                    setEditVehicleLine((prev) =>
+                                      checked ? prev.filter((l) => l !== line) : [...prev, line]
+                                    )
+                                  }}
+                                  className="h-3.5 w-3.5 rounded border-[var(--color-border)] text-[var(--color-primary)] focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                                />
+                                {line}
+                              </label>
+                            )
+                          })}
+                        </div>
                       </div>
                       <div>
                         <label className="block text-[11px] font-semibold text-[#555] mb-1">
