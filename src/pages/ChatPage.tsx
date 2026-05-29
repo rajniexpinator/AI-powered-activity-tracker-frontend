@@ -30,7 +30,14 @@ import { AdminShell } from '@/components/layout/AdminShell'
 import { LazyActivityImage } from '@/components/LazyActivityImage'
 import { useAuth } from '@/context/AuthContext'
 import { useSharedLogsNotify } from '@/context/SharedLogsNotifyContext'
-import { canUseNativeShare, shareActivityLog } from '@/lib/shareActivityLog'
+import {
+  areSharePhotosReady,
+  canUseNativeShare,
+  clearShareImageCache,
+  isSharePhotosLoading,
+  preloadShareImages,
+  shareActivityLog,
+} from '@/lib/shareActivityLog'
 
 type ExtractResult = {
   structured: unknown
@@ -379,6 +386,7 @@ export function ChatPage() {
   const [archiving, setArchiving] = useState(false)
   const [sendingEmail, setSendingEmail] = useState(false)
   const [sharingLog, setSharingLog] = useState(false)
+  const [sharePhotosReady, setSharePhotosReady] = useState(true)
   const [emailConfirmOpen, setEmailConfirmOpen] = useState(false)
   const [emailRecipientsLoading, setEmailRecipientsLoading] = useState(false)
   const [emailCustomerRecipients, setEmailCustomerRecipients] = useState<string[]>([])
@@ -1222,10 +1230,39 @@ export function ChatPage() {
     }
   }, [customers, customerHint, selectedCustomerId])
 
+  useEffect(() => {
+    if (!activityDetail?._id) {
+      setSharePhotosReady(true)
+      return
+    }
+    const imageCount = activityDetail.images?.length ?? 0
+    if (imageCount === 0) {
+      setSharePhotosReady(true)
+      return
+    }
+    setSharePhotosReady(areSharePhotosReady(activityDetail))
+    let cancelled = false
+    void preloadShareImages(activityDetail).then(() => {
+      if (!cancelled) setSharePhotosReady(areSharePhotosReady(activityDetail))
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activityDetail?._id, activityDetail?.images])
+
+  function isShareBlockedForPhotos(): boolean {
+    if (!activityDetail || !selectedActivityId) return false
+    if (String(activityDetail._id) !== String(selectedActivityId)) return false
+    const imageCount = activityDetail.images?.length ?? 0
+    if (imageCount === 0) return false
+    return !sharePhotosReady || isSharePhotosLoading(activityDetail)
+  }
+
   function resetToNewLog() {
     clearSharedLogHighlight()
     setSelectedActivityId(null)
     setActivityDetail(null)
+    setSharePhotosReady(true)
     setShareSelection([])
     setShareSearch('')
     setCollabNote('')
@@ -1463,6 +1500,8 @@ export function ChatPage() {
           const d = refreshed.activity as ActivityDetail
           setActivityDetail(d)
           setShareSelection((d.sharedWith ?? []).map((s) => s._id))
+          clearShareImageCache(String(d._id))
+          void preloadShareImages(d)
         } catch {
         }
       } else if (!selectedActivityId && newId) {
@@ -1472,6 +1511,8 @@ export function ChatPage() {
           const d = refreshed.activity as ActivityDetail
           setActivityDetail(d)
           setShareSelection((d.sharedWith ?? []).map((s) => s._id))
+          clearShareImageCache(String(d._id))
+          void preloadShareImages(d)
         } catch {
           setActivityDetail(activity as ActivityDetail)
         }
@@ -1612,6 +1653,8 @@ export function ChatPage() {
 
       setText(merged)
       setImageUrls(detail.images ?? [])
+      clearShareImageCache(String(detail._id))
+      void preloadShareImages(detail)
       setAttachments(Array.isArray(detail.attachments) ? detail.attachments : [])
       setAttachmentFile(null)
       if (attachmentInputRef.current) attachmentInputRef.current.value = ''
@@ -1774,19 +1817,25 @@ export function ChatPage() {
       setError('Select a log from the list before sharing.')
       return
     }
+    if (
+      !activityDetail ||
+      String(activityDetail._id) !== String(selectedActivityId)
+    ) {
+      setError('Wait for the log to finish loading, then tap Share again.')
+      return
+    }
     setSharingLog(true)
     setError(null)
     setSaveMessage(null)
     try {
-      const { activity } = await api.activities.getOne(selectedActivityId)
-      const detail = activity as ActivityDetail
+      const detail = activityDetail
       const imageCount = Array.isArray(detail.images) ? detail.images.length : 0
       const result = await shareActivityLog(detail)
       if (result.mode === 'native') {
         if (result.imageCount > 0) {
-          toast.success(`Share sheet opened with ${result.imageCount} photo${result.imageCount === 1 ? '' : 's'}.`)
-        } else if (imageCount > 0) {
-          toast.success('Share sheet opened. Photo links are included in the message text.')
+          toast.success(
+            `Share opened with ${result.imageCount} photo${result.imageCount === 1 ? '' : 's'} attached. Full-resolution links are in the message caption.`
+          )
         } else {
           toast.success('Share sheet opened.')
         }
@@ -1794,7 +1843,7 @@ export function ChatPage() {
       }
       toast.info(
         imageCount > 0
-          ? 'Native share is not available here. Log text copied — photo links are included.'
+          ? 'Share not available here. Log copied with photo and video links (blank line between each link).'
           : 'Native share is not available here. Log text copied to clipboard.'
       )
     } catch (err) {
@@ -2079,22 +2128,30 @@ export function ChatPage() {
             <button
               type="button"
               onClick={() => void handleShareLog()}
-              disabled={!selectedActivityId || sharingLog || archiving}
+              disabled={!selectedActivityId || sharingLog || archiving || isShareBlockedForPhotos()}
               className={`flex w-full md:w-auto h-10 items-center justify-center gap-2 rounded-lg border px-2.5 md:px-3.5 text-[12px] md:text-[13px] font-medium shadow-sm transition-colors ${
-                !selectedActivityId || sharingLog || archiving
+                !selectedActivityId || sharingLog || archiving || isShareBlockedForPhotos()
                   ? 'border-[var(--color-border)] bg-[#f3f3f3] text-[#999] cursor-not-allowed shadow-none'
                   : 'border-sky-300/70 bg-sky-50 text-sky-900 hover:bg-sky-100'
               }`}
               title={
                 !selectedActivityId
                   ? 'Select a recent log first, then click Share'
-                  : canUseNativeShare()
-                    ? 'Share this log via your phone apps (Mail, Messages, WhatsApp, etc.)'
-                    : 'Share this log (copies text when native share is unavailable)'
+                  : isShareBlockedForPhotos()
+                    ? 'Loading photos for WhatsApp — wait a few seconds'
+                    : canUseNativeShare()
+                      ? 'Share log with photos attached in WhatsApp (links for full size below)'
+                      : 'Share this log (copies text and links when native share is unavailable)'
               }
             >
-              {sharingLog ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" /> : <Share2 className="w-4 h-4 shrink-0" />}
-              <span className="leading-none">Share</span>
+              {sharingLog || isShareBlockedForPhotos() ? (
+                <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+              ) : (
+                <Share2 className="w-4 h-4 shrink-0" />
+              )}
+              <span className="leading-none">
+                {isShareBlockedForPhotos() ? 'Loading photos…' : 'Share'}
+              </span>
             </button>
               </div>
             </div>
