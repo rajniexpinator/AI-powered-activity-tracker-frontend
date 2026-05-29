@@ -21,6 +21,7 @@ import {
   RefreshCw,
   ChevronDown,
   ChevronRight,
+  Share2,
 } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { toast } from 'react-toastify'
@@ -29,6 +30,7 @@ import { AdminShell } from '@/components/layout/AdminShell'
 import { LazyActivityImage } from '@/components/LazyActivityImage'
 import { useAuth } from '@/context/AuthContext'
 import { useSharedLogsNotify } from '@/context/SharedLogsNotifyContext'
+import { canUseNativeShare, shareActivityLog } from '@/lib/shareActivityLog'
 
 type ExtractResult = {
   structured: unknown
@@ -376,6 +378,7 @@ export function ChatPage() {
   const [savingNote, setSavingNote] = useState(false)
   const [archiving, setArchiving] = useState(false)
   const [sendingEmail, setSendingEmail] = useState(false)
+  const [sharingLog, setSharingLog] = useState(false)
   const [emailConfirmOpen, setEmailConfirmOpen] = useState(false)
   const [emailRecipientsLoading, setEmailRecipientsLoading] = useState(false)
   const [emailCustomerRecipients, setEmailCustomerRecipients] = useState<string[]>([])
@@ -1766,6 +1769,44 @@ export function ChatPage() {
     setWhatsAppConfirmOpen(true)
   }
 
+  async function handleShareLog() {
+    if (!selectedActivityId) {
+      setError('Select a log from the list before sharing.')
+      return
+    }
+    setSharingLog(true)
+    setError(null)
+    setSaveMessage(null)
+    try {
+      const { activity } = await api.activities.getOne(selectedActivityId)
+      const detail = activity as ActivityDetail
+      const imageCount = Array.isArray(detail.images) ? detail.images.length : 0
+      const result = await shareActivityLog(detail)
+      if (result.mode === 'native') {
+        if (result.imageCount > 0) {
+          toast.success(`Share sheet opened with ${result.imageCount} photo${result.imageCount === 1 ? '' : 's'}.`)
+        } else if (imageCount > 0) {
+          toast.success('Share sheet opened. Photo links are included in the message text.')
+        } else {
+          toast.success('Share sheet opened.')
+        }
+        return
+      }
+      toast.info(
+        imageCount > 0
+          ? 'Native share is not available here. Log text copied — photo links are included.'
+          : 'Native share is not available here. Log text copied to clipboard.'
+      )
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return
+      const message = (err as Error).message || 'Failed to share log'
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSharingLog(false)
+    }
+  }
+
   async function handleSendLogEmail() {
     if (!selectedActivityId) {
       setError('Select a log from the list before sending email.')
@@ -1894,37 +1935,40 @@ export function ChatPage() {
         }
       `}</style>
       <main className="max-w-6xl mx-auto px-5 sm:px-6 md:px-8 py-4 md:py-6 overflow-x-hidden">
-        {/* Header row */}
-        <div className="mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-[#111] flex items-center gap-2">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
+        {/* Page header: title + description above toolbar */}
+        <div className="mb-6 space-y-4">
+          <div className="min-w-0">
+            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight text-[#111] flex items-center gap-2.5">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-primary)]/10 text-[var(--color-primary)]">
                 <MessageSquare className="w-4 h-4" />
               </span>
               AI Chat Logging
             </h1>
-            <p className="mt-1 text-sm text-[#666] max-w-xl">
+            <p className="mt-2 text-sm text-[#666] max-w-3xl leading-relaxed">
               Turn site visits and quality notes into structured logs. Add photos, files, and barcodes, then save them
               to your activity history. Admins can review everything from the Activity screen.
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 w-full sm:flex sm:w-auto sm:justify-end">
-            <div ref={dateFilterRef} className="relative w-full sm:w-auto">
+
+          <div className="rounded-xl border border-[var(--color-border)] bg-[#fafafa] px-3 py-3 md:px-5">
+            <div className="grid grid-cols-2 gap-2 md:flex md:flex-row md:items-center md:justify-between md:gap-2.5">
+              <div className="contents md:flex md:flex-wrap md:items-center md:gap-2.5">
+            <div ref={dateFilterRef} className="relative min-w-0">
               <button
                 type="button"
                 onClick={() => {
                   setDateMenuOpen((o) => !o)
                   setCustomerMenuOpen(false)
                 }}
-                className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
+                className={`flex w-full md:w-auto h-10 md:min-w-[8.5rem] items-center justify-center gap-2 rounded-lg border bg-white px-2.5 md:px-3.5 text-[12px] md:text-[13px] font-medium shadow-sm transition-colors ${
                   datePeriod !== 'all'
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-                    : 'border-[var(--color-border)] text-[#444] hover:bg-black/[0.03]'
+                    ? 'border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                    : 'border-[var(--color-border)] text-[#333] hover:border-[#ccc] hover:bg-white'
                 }`}
               >
-                <Clock className="w-4 h-4" />
-                <span className="leading-none truncate max-w-[8rem] sm:max-w-none">{datePeriodLabel}</span>
-                <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+                <Clock className="w-4 h-4 shrink-0 opacity-80" />
+                <span className="leading-none truncate min-w-0">{datePeriodLabel}</span>
+                <ChevronDown className="w-4 h-4 shrink-0 opacity-60" />
               </button>
               {dateMenuOpen && (
                 <div className="absolute left-0 right-0 sm:left-auto sm:right-0 z-50 mt-1 min-w-[10rem] rounded-xl border border-[var(--color-border)] bg-white py-1 shadow-lg">
@@ -1946,22 +1990,22 @@ export function ChatPage() {
                 </div>
               )}
             </div>
-            <div ref={customerFilterRef} className="relative w-full sm:w-auto">
+            <div ref={customerFilterRef} className="relative min-w-0">
               <button
                 type="button"
                 onClick={() => {
                   setCustomerMenuOpen((o) => !o)
                   setDateMenuOpen(false)
                 }}
-                className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
+                className={`flex w-full md:w-auto h-10 md:min-w-[9.5rem] items-center justify-center gap-2 rounded-lg border bg-white px-2.5 md:px-3.5 text-[12px] md:text-[13px] font-medium shadow-sm transition-colors ${
                   selectedCustomers.length > 0
-                    ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
-                    : 'border-[var(--color-border)] text-[#444] hover:bg-black/[0.03]'
+                    ? 'border-[var(--color-primary)]/40 bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                    : 'border-[var(--color-border)] text-[#333] hover:border-[#ccc] hover:bg-white'
                 }`}
               >
-                <Tag className="w-4 h-4" />
-                <span className="leading-none truncate max-w-[8rem] sm:max-w-none">{customerFilterLabel}</span>
-                <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+                <Tag className="w-4 h-4 shrink-0 opacity-80" />
+                <span className="leading-none truncate min-w-0">{customerFilterLabel}</span>
+                <ChevronDown className="w-4 h-4 shrink-0 opacity-60" />
               </button>
               {customerMenuOpen && (
                 <div className="absolute left-0 right-0 sm:left-auto sm:right-0 z-50 mt-1 w-full sm:min-w-[14rem] sm:max-w-[18rem] max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-white py-2 shadow-lg">
@@ -1993,42 +2037,67 @@ export function ChatPage() {
                 </div>
               )}
             </div>
+              </div>
+
+              <div className="contents md:flex md:flex-wrap md:items-center md:gap-2.5">
             <button
               type="button"
               onClick={() => void startScanner()}
-              className="inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold text-[#444] hover:bg-black/[0.03] transition-colors"
+              className="flex w-full md:w-auto h-10 items-center justify-center gap-2 rounded-lg border border-[var(--color-border)] bg-white px-2.5 md:px-3.5 text-[12px] md:text-[13px] font-medium text-[#333] shadow-sm hover:border-[#ccc] transition-colors"
             >
-              <ScanLine className="w-4 h-4" />
-              <span className="leading-none">Scan barcode</span>
+              <ScanLine className="w-4 h-4 shrink-0 opacity-80" />
+              <span className="leading-none truncate min-w-0">Scan barcode</span>
             </button>
             <button
               type="button"
               onClick={() => void openEmailConfirmPrompt()}
               disabled={!selectedActivityId || sendingEmail || emailRecipientsLoading || archiving}
-              className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
+              className={`flex w-full md:w-auto h-10 items-center justify-center gap-2 rounded-lg border px-2.5 md:px-3.5 text-[12px] md:text-[13px] font-medium shadow-sm transition-colors ${
                 !selectedActivityId || sendingEmail || emailRecipientsLoading || archiving
-                  ? 'border-[var(--color-border)] text-[#888] cursor-not-allowed'
-                  : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50'
+                  ? 'border-[var(--color-border)] bg-[#f3f3f3] text-[#999] cursor-not-allowed shadow-none'
+                  : 'border-emerald-300/70 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
               }`}
               title={!selectedActivityId ? 'Select a recent log first, then click Email' : 'Email selected AI log'}
             >
-              {emailRecipientsLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+              {emailRecipientsLoading ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" /> : <Mail className="w-4 h-4 shrink-0" />}
               <span className="leading-none">Email</span>
             </button>
             <button
               type="button"
               onClick={openWhatsAppConfirmPrompt}
               disabled={!selectedActivityId || sendingWhatsApp || archiving}
-              className={`inline-flex w-full items-center justify-center gap-1.5 rounded-[var(--radius)] border px-2.5 py-2 text-[12px] sm:text-sm font-semibold transition-colors ${
+              className={`flex w-full md:w-auto h-10 items-center justify-center gap-2 rounded-lg border px-2.5 md:px-3.5 text-[12px] md:text-[13px] font-medium shadow-sm transition-colors ${
                 !selectedActivityId || sendingWhatsApp || archiving
-                  ? 'border-[var(--color-border)] text-[#888] cursor-not-allowed'
-                  : 'border-green-200 text-green-700 hover:bg-green-50'
+                  ? 'border-[var(--color-border)] bg-[#f3f3f3] text-[#999] cursor-not-allowed shadow-none'
+                  : 'border-green-300/70 bg-green-50 text-green-900 hover:bg-green-100'
               }`}
               title={!selectedActivityId ? 'Select a recent log first, then click WhatsApp' : 'Send selected AI log by WhatsApp'}
             >
-              {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+              {sendingWhatsApp ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" /> : <MessageSquare className="w-4 h-4 shrink-0" />}
               <span className="leading-none">WhatsApp</span>
             </button>
+            <button
+              type="button"
+              onClick={() => void handleShareLog()}
+              disabled={!selectedActivityId || sharingLog || archiving}
+              className={`flex w-full md:w-auto h-10 items-center justify-center gap-2 rounded-lg border px-2.5 md:px-3.5 text-[12px] md:text-[13px] font-medium shadow-sm transition-colors ${
+                !selectedActivityId || sharingLog || archiving
+                  ? 'border-[var(--color-border)] bg-[#f3f3f3] text-[#999] cursor-not-allowed shadow-none'
+                  : 'border-sky-300/70 bg-sky-50 text-sky-900 hover:bg-sky-100'
+              }`}
+              title={
+                !selectedActivityId
+                  ? 'Select a recent log first, then click Share'
+                  : canUseNativeShare()
+                    ? 'Share this log via your phone apps (Mail, Messages, WhatsApp, etc.)'
+                    : 'Share this log (copies text when native share is unavailable)'
+              }
+            >
+              {sharingLog ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" /> : <Share2 className="w-4 h-4 shrink-0" />}
+              <span className="leading-none">Share</span>
+            </button>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -2512,16 +2581,29 @@ export function ChatPage() {
                   </span>
                 </label>
                 <p className="text-[11px] text-[#777]">
-                  Attachments from this log (images/files) are included automatically.
+                  Attachments from this log (images/files) are included automatically when you use Send.
+                </p>
+                <p className="text-[11px] text-[#777]">
+                  Use Share to open your phone&apos;s share menu (Mail, Messages, WhatsApp, etc.) with log text and
+                  photos.
                 </p>
               </div>
-              <div className="px-4 sm:px-5 py-3 border-t border-[var(--color-border)] flex items-center justify-end gap-2">
+              <div className="px-4 sm:px-5 py-3 border-t border-[var(--color-border)] flex flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setEmailConfirmOpen(false)}
                   className="inline-flex h-9 items-center justify-center rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[#444] hover:bg-black/[0.03]"
                 >
                   Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleShareLog()}
+                  disabled={sharingLog}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-3 text-[12px] font-semibold text-sky-800 hover:bg-sky-100 disabled:opacity-60"
+                >
+                  {sharingLog ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                  Share
                 </button>
                 <button
                   type="button"
@@ -2707,6 +2789,28 @@ export function ChatPage() {
                 >
                   {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => void handleShareLog()}
+                  disabled={!selectedActivityId || sharingLog || archiving}
+                  aria-label={sharingLog ? 'Preparing share…' : 'Share log'}
+                  title={
+                    !selectedActivityId
+                      ? 'Select a recent log first, then click to share'
+                      : sharingLog
+                        ? 'Preparing…'
+                        : canUseNativeShare()
+                          ? 'Share via your phone apps (Mail, Messages, WhatsApp, etc.)'
+                          : 'Share log (copies text when native share is unavailable)'
+                  }
+                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors ${
+                    !selectedActivityId || sharingLog || archiving
+                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
+                      : 'border-sky-200 text-sky-700 hover:bg-sky-50 active:bg-sky-100'
+                  }`}
+                >
+                  {sharingLog ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                </button>
 
                 <button
                   type="button"
@@ -2780,7 +2884,7 @@ export function ChatPage() {
         )}
 
         {/* Two-column layout */}
-        <div className="grid gap-4 md:grid-cols-[minmax(0,_260px)_minmax(0,_1fr)]">
+        <div className="grid gap-4 md:grid-cols-[minmax(0,_330px)_minmax(0,_1fr)]">
           {/* Left: recent activity list */}
           <section
             className={`rounded-[var(--radius-lg)] shadow-[var(--shadow-sm)] overflow-hidden hidden md:block border bg-white transition-[box-shadow,background-color,border-color] duration-300 ${
@@ -2789,15 +2893,15 @@ export function ChatPage() {
                 : 'border-[var(--color-border)]'
             }`}
           >
-            <div className="flex items-center justify-between gap-2 min-w-0 pl-4 pr-5 sm:pr-6 py-3 border-b border-[var(--color-border)]">
+            <div className="flex items-center justify-between gap-3 min-w-0 px-4 py-3 border-b border-[var(--color-border)]">
               <p
-                className={`text-xs font-medium uppercase tracking-[0.14em] shrink min-w-0 ${
+                className={`text-xs font-medium uppercase tracking-[0.14em] shrink-0 whitespace-nowrap ${
                   hasRecentSharedHighlight ? 'text-sky-900 font-semibold' : 'text-[#777]'
                 }`}
               >
                 Recent logs
               </p>
-              <div className="flex flex-wrap items-center justify-end gap-2 shrink-0">
+              <div className="flex flex-nowrap items-center justify-end gap-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -2876,6 +2980,28 @@ export function ChatPage() {
                   }`}
                 >
                   {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleShareLog()}
+                  disabled={!selectedActivityId || sharingLog || archiving}
+                  aria-label={sharingLog ? 'Preparing share…' : 'Share log'}
+                  title={
+                    !selectedActivityId
+                      ? 'Select a recent log first, then click to share'
+                      : sharingLog
+                        ? 'Preparing…'
+                        : canUseNativeShare()
+                          ? 'Share via your phone apps (Mail, Messages, WhatsApp, etc.)'
+                          : 'Share log (copies text when native share is unavailable)'
+                  }
+                  className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white transition-colors ${
+                    !selectedActivityId || sharingLog || archiving
+                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
+                      : 'border-sky-200 text-sky-700 hover:bg-sky-50 active:bg-sky-100'
+                  }`}
+                >
+                  {sharingLog ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
                 </button>
                 <button
                   type="button"
