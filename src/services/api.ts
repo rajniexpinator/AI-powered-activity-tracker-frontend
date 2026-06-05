@@ -484,7 +484,12 @@ export const api = {
           userId?: string
           from?: string
           to?: string
+          period?: string
+          dateMode?: 'fixed' | 'today'
+          aiQuestion?: string
           includeCustomerSummaries?: boolean
+          issueSeverityExact?: number
+          issueSeverityMin?: number
           model?: string
           activityCount?: number
           createdAt: string
@@ -499,11 +504,121 @@ export const api = {
         }
       }>(`/api/reports/${id}`, { method: 'GET' }),
 
+    regenerate: (
+      id: string,
+      payload: {
+        customer?: string
+        from?: string
+        to?: string
+        period?: string
+        dateMode?: 'fixed' | 'today'
+        aiQuestion?: string
+        severity?: string | number
+        minSeverity?: string | number
+        includeCustomerSummaries?: boolean
+      }
+    ) =>
+      request<{
+        report: string
+        reportId: string
+        imageGallery?: Array<{
+          activityId?: string
+          customer?: string
+          summary?: string
+          createdAt?: string
+          imageUrls?: string[]
+        }>
+      }>(`/api/reports/${id}/regenerate`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
     deleteOne: (id: string) =>
       request<{ success: boolean }>(`/api/reports/${id}`, { method: 'DELETE' }),
 
     clearMine: () =>
       request<{ success: boolean; deleted: number }>('/api/reports/clear', { method: 'POST' }),
+  },
+
+  reportDashboard: {
+    list: () =>
+      request<{
+        items: {
+          _id: string
+          displayName: string
+          customer?: string
+          dateMode?: 'fixed' | 'today'
+          period?: string
+          aiQuestion?: string
+          activityCount?: number
+          createdAt: string
+        }[]
+      }>('/api/report-dashboard', { method: 'GET' }),
+
+    add: (payload: { displayName: string; sourceReportId: string }) =>
+      request<{ item: { _id: string; displayName: string } }>('/api/report-dashboard', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    preview: (
+      id: string,
+      payload?: {
+        customer?: string
+        from?: string
+        to?: string
+        period?: string
+        dateMode?: 'fixed' | 'today'
+        aiQuestion?: string
+        severity?: string | number
+        minSeverity?: string | number
+      }
+    ) =>
+      request<{
+        displayName: string
+        dateMode?: string
+        content: string
+        imageGallery?: Array<{
+          activityId?: string
+          customer?: string
+          summary?: string
+          createdAt?: string
+          imageUrls?: string[]
+        }>
+        activityCount?: number
+        customer?: string
+      }>(`/api/report-dashboard/${id}/preview`, {
+        method: 'POST',
+        body: JSON.stringify(payload || {}),
+      }),
+
+    remove: (id: string) =>
+      request<{ success: boolean }>(`/api/report-dashboard/${id}`, { method: 'DELETE' }),
+
+    duplicate: (
+      id: string,
+      payload: {
+        displayName: string
+        customer?: string
+        from?: string
+        to?: string
+        period?: string
+        dateMode?: 'fixed' | 'today'
+        aiQuestion?: string
+        severity?: string | number
+        minSeverity?: string | number
+      }
+    ) =>
+      request<{ item: { _id: string; displayName: string } }>(`/api/report-dashboard/${id}/duplicate`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    createFromAi: (payload: { displayName: string; aiQuestion: string }) =>
+      request<{ item: { _id: string; displayName: string } }>('/api/report-dashboard/from-ai', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
   },
 
   ms365: {

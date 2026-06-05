@@ -26,6 +26,12 @@ const AdminActivityPage = lazy(() =>
   import('@/pages/AdminActivityPage').then((m) => ({ default: m.AdminActivityPage }))
 )
 const ReportsPage = lazy(() => import('@/pages/ReportsPage').then((m) => ({ default: m.ReportsPage })))
+const ReportDashboardPage = lazy(() =>
+  import('@/pages/ReportDashboardPage').then((m) => ({ default: m.ReportDashboardPage }))
+)
+const UserReportDashboardPage = lazy(() =>
+  import('@/pages/UserReportDashboardPage').then((m) => ({ default: m.UserReportDashboardPage }))
+)
 const BarcodeReportsPage = lazy(() =>
   import('@/pages/BarcodeReportsPage').then((m) => ({ default: m.BarcodeReportsPage }))
 )
@@ -104,6 +110,24 @@ function App() {
                     <AdminRoute roles={['admin']}>
                       <ReportsPage />
                     </AdminRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="report-dashboard"
+                element={
+                  <ProtectedRoute>
+                    <AdminRoute roles={['admin']}>
+                      <ReportDashboardPage />
+                    </AdminRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="my-reports"
+                element={
+                  <ProtectedRoute>
+                    <UserReportDashboardPage />
                   </ProtectedRoute>
                 }
               />

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api, getToken } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import type { User } from '@/types/auth'
@@ -1567,8 +1568,15 @@ export function AdminActivityPage() {
                 page.
               </p>
               {reportId && (
-                <p className="mb-2 text-[11px] text-[var(--color-text-secondary)]">
-                  Saved to reports history.
+                <p className="mb-2 text-[12px] text-[var(--color-text-secondary)]">
+                  Saved to{' '}
+                  <Link
+                    to={`/reports?open=${reportId}`}
+                    className="font-semibold text-[var(--color-primary)] hover:underline"
+                  >
+                    Reports
+                  </Link>
+                  {' '}— tap the entry for preview, share, or dashboard options.
                 </p>
               )}
               <div className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3.5 py-3 text-[13px] text-[var(--color-text)] overflow-auto whitespace-pre-wrap">

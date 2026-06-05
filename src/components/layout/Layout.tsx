@@ -18,6 +18,10 @@ export function Layout() {
     location.pathname.startsWith('/activity/') ||
     location.pathname === '/reports' ||
     location.pathname.startsWith('/reports/') ||
+    location.pathname === '/report-dashboard' ||
+    location.pathname.startsWith('/report-dashboard/') ||
+    location.pathname === '/my-reports' ||
+    location.pathname.startsWith('/my-reports/') ||
     location.pathname === '/barcode-reports' ||
     location.pathname.startsWith('/barcode-reports/') ||
     location.pathname === '/profile' ||

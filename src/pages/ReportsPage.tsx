@@ -1,8 +1,28 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { ReportImageGallery } from '@/components/ReportImageGallery'
+import { ReportActionMenu } from '@/components/reports/ReportActionMenu'
+import { AddToDashboardModal } from '@/components/reports/AddToDashboardModal'
+import { ReportChangeModal, type ReportChangeValues } from '@/components/reports/ReportChangeModal'
 import { api } from '@/services/api'
-import { FileText, Loader2, AlertCircle, ChevronLeft, ChevronRight, Mail, ExternalLink, Send, Save, Trash2 } from 'lucide-react'
+import { downloadReportPdf, shareReportPdf } from '@/lib/shareReport'
+import {
+  FileText,
+  Loader2,
+  AlertCircle,
+  ChevronLeft,
+  ChevronRight,
+  Mail,
+  ExternalLink,
+  Send,
+  Save,
+  Trash2,
+  Share2,
+  Download,
+  X,
+  MoreHorizontal,
+} from 'lucide-react'
 import { toast } from 'react-toastify'
 
 type ReportListItem = {
@@ -11,11 +31,45 @@ type ReportListItem = {
   userId?: string
   from?: string
   to?: string
+  period?: string
+  dateMode?: 'fixed' | 'today'
+  aiQuestion?: string
   includeCustomerSummaries?: boolean
   issueSeverityExact?: number
   issueSeverityMin?: number
   activityCount?: number
   createdAt: string
+}
+
+function toDateInput(iso?: string): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toISOString().slice(0, 10)
+}
+
+function changeValuesFromReport(report: {
+  customer?: string
+  from?: string
+  to?: string
+  period?: string
+  dateMode?: 'fixed' | 'today'
+  aiQuestion?: string
+  issueSeverityExact?: number
+  issueSeverityMin?: number
+}): ReportChangeValues {
+  return {
+    customer: report.customer || '',
+    from: toDateInput(report.from),
+    to: toDateInput(report.to),
+    period: report.period || (report.dateMode === 'today' ? 'today' : ''),
+    dateMode: report.dateMode === 'today' ? 'today' : 'fixed',
+    severity:
+      typeof report.issueSeverityExact === 'number' ? String(report.issueSeverityExact) : '',
+    minSeverity:
+      typeof report.issueSeverityMin === 'number' ? String(report.issueSeverityMin) : '',
+    aiQuestion: report.aiQuestion || '',
+  }
 }
 
 function formatReportSeverityLabel(r: ReportListItem): string | null {
@@ -62,6 +116,20 @@ export function ReportsPage() {
   const [emailBodyText, setEmailBodyText] = useState<string>(
     'Please see attached report. Let us know if you have any questions.'
   )
+
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [sharingPdf, setSharingPdf] = useState(false)
+  const [downloadingPdf, setDownloadingPdf] = useState(false)
+  const previewPanelRef = useRef<HTMLDivElement | null>(null)
+
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [actionReport, setActionReport] = useState<ReportListItem | null>(null)
+  const [addDashboardOpen, setAddDashboardOpen] = useState(false)
+  const [savingDashboard, setSavingDashboard] = useState(false)
+  const [changeOpen, setChangeOpen] = useState(false)
+  const [changeReportId, setChangeReportId] = useState('')
+  const [changeValues, setChangeValues] = useState<ReportChangeValues | null>(null)
+  const [regenerating, setRegenerating] = useState(false)
 
   useEffect(() => {
     document.title = 'Reports'
@@ -116,7 +184,65 @@ export function ReportsPage() {
     void loadMs365()
   }, [])
 
-  async function loadOne(id: string) {
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId) return
+    const next = new URLSearchParams(searchParams)
+    next.delete('open')
+    setSearchParams(next, { replace: true })
+
+    const found = reports.find((r) => r._id === openId)
+    if (found) {
+      setActionReport(found)
+      return
+    }
+    void api.reports
+      .getOne(openId)
+      .then(({ report }) => {
+        setActionReport({
+          _id: report._id,
+          customer: report.customer,
+          from: report.from,
+          to: report.to,
+          period: report.period,
+          dateMode: report.dateMode,
+          aiQuestion: report.aiQuestion,
+          issueSeverityExact: report.issueSeverityExact,
+          issueSeverityMin: report.issueSeverityMin,
+          activityCount: report.activityCount,
+          createdAt: report.createdAt,
+        })
+      })
+      .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function openReportActions(r: ReportListItem) {
+    setActionReport(r)
+  }
+
+  async function openChangeReport(id: string) {
+    setChangeReportId(id)
+    try {
+      const { report } = await api.reports.getOne(id)
+      setChangeValues(changeValuesFromReport(report))
+      setChangeOpen(true)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to load report settings')
+    }
+  }
+
+  function reportPreviewTitle(r: ReportListItem | undefined): string {
+    if (!r) return 'Weekly quality report'
+    const customer = r.customer ? r.customer : 'All customers'
+    return `Weekly report · ${customer}`
+  }
+
+  function shouldOpenPreviewModal() {
+    return typeof window !== 'undefined' && window.matchMedia('(max-width: 1023px)').matches
+  }
+
+  async function openPreview(id: string) {
     setSelectedReportId(id)
     setSelectedContent('')
     setSelectedImageGallery([])
@@ -124,14 +250,56 @@ export function ReportsPage() {
     setError('')
     setDraft(null)
     setEmailSubject('')
+    if (shouldOpenPreviewModal()) setPreviewOpen(true)
     try {
       const { report } = await api.reports.getOne(id)
       setSelectedContent(report.content)
       setSelectedImageGallery(Array.isArray(report.imageGallery) ? report.imageGallery : [])
+      window.requestAnimationFrame(() => {
+        previewPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      })
     } catch (err) {
+      setPreviewOpen(false)
       setError(err instanceof Error ? err.message : 'Failed to load report')
     } finally {
       setLoadingOne(false)
+    }
+  }
+
+  async function handleDownloadPdf() {
+    if (!selectedReportId) return
+    setDownloadingPdf(true)
+    setSharingPdf(false)
+    setError('')
+    try {
+      await downloadReportPdf(selectedReportId)
+      toast.success('PDF downloaded.')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to download PDF'
+      toast.error(msg)
+    } finally {
+      setDownloadingPdf(false)
+    }
+  }
+
+  async function handleSharePdf() {
+    if (!selectedReportId) return
+    setSharingPdf(true)
+    setDownloadingPdf(false)
+    setError('')
+    try {
+      const result = await shareReportPdf(selectedReportId, reportPreviewTitle(selected))
+      if (result.mode === 'native') {
+        toast.success('Share sheet opened.')
+      } else {
+        toast.success('Report opened in a new tab — use your browser to print or share.')
+      }
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') return
+      const msg = err instanceof Error ? err.message : 'Failed to share report'
+      toast.error(msg)
+    } finally {
+      setSharingPdf(false)
     }
   }
 
@@ -234,6 +402,37 @@ export function ReportsPage() {
   }
 
   const selected = useMemo(() => reports.find((r) => r._id === selectedReportId), [reports, selectedReportId])
+
+  const previewActions = selectedReportId && selectedContent && !loadingOne && (
+    <div className="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          void handleSharePdf()
+        }}
+        disabled={sharingPdf || downloadingPdf}
+        className="inline-flex items-center justify-center gap-2 h-9 rounded-lg bg-[var(--color-primary)] px-3 text-[12px] font-semibold text-white shadow-sm hover:opacity-95 disabled:opacity-50"
+      >
+        {sharingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+        Share report
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.preventDefault()
+          e.stopPropagation()
+          void handleDownloadPdf()
+        }}
+        disabled={sharingPdf || downloadingPdf}
+        className="inline-flex items-center justify-center gap-2 h-9 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] disabled:opacity-50"
+      >
+        {downloadingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+        Download PDF
+      </button>
+    </div>
+  )
   const pageNumbers = useMemo(() => {
     const maxButtons = 5
     const safeTotal = Math.max(1, totalPages || 1)
@@ -349,7 +548,7 @@ export function ReportsPage() {
                     <div className="flex items-start justify-between gap-3">
                       <button
                         type="button"
-                        onClick={() => void loadOne(r._id)}
+                        onClick={() => openReportActions(r)}
                         className="min-w-0 flex-1 text-left"
                       >
                         <p className="text-[11px] font-medium tracking-[0.14em] uppercase text-[var(--color-text-secondary)] mb-0.5">
@@ -362,6 +561,10 @@ export function ReportsPage() {
                         </p>
                         <p className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">
                           {new Date(r.createdAt).toLocaleString()}
+                        </p>
+                        <p className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-[var(--color-primary)]">
+                          <MoreHorizontal className="w-3.5 h-3.5" />
+                          Tap for options
                         </p>
                       </button>
 
@@ -578,22 +781,28 @@ export function ReportsPage() {
               </div>
             </div>
 
-            <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_16px_45px_rgba(15,23,42,0.14)] overflow-hidden min-w-0">
-              <div className="px-4 sm:px-6 py-4 border-b border-[var(--color-border)] bg-gradient-to-r from-[var(--color-bg)] to-white">
-                <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-[var(--color-text-secondary)]">
-                  Report preview
-                </p>
-                {selected && (
-                  <p className="mt-1 text-[13px] text-[var(--color-text)] font-semibold break-words">
-                    Weekly report · {selected.customer ? selected.customer : 'All customers'}
+            <div
+              ref={previewPanelRef}
+              className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_16px_45px_rgba(15,23,42,0.14)] overflow-hidden min-w-0"
+            >
+              <div className="px-4 sm:px-6 py-4 border-b border-[var(--color-border)] bg-gradient-to-r from-[var(--color-bg)] to-white flex flex-col gap-3">
+                <div>
+                  <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-[var(--color-text-secondary)]">
+                    Report preview
                   </p>
-                )}
-                {selected && (
-                  <p className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">
-                    {new Date(selected.createdAt).toLocaleString()} · {selected.activityCount ?? 0} logs
-                    {selected.includeCustomerSummaries ? ' · customer summaries' : ''}
-                  </p>
-                )}
+                  {selected && (
+                    <p className="mt-1 text-[13px] text-[var(--color-text)] font-semibold break-words">
+                      {reportPreviewTitle(selected)}
+                    </p>
+                  )}
+                  {selected && (
+                    <p className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">
+                      {new Date(selected.createdAt).toLocaleString()} · {selected.activityCount ?? 0} logs
+                      {selected.includeCustomerSummaries ? ' · customer summaries' : ''}
+                    </p>
+                  )}
+                </div>
+                {previewActions}
               </div>
 
               <div className="max-h-[min(62dvh,520px)] sm:max-h-[520px] overflow-auto px-4 sm:px-5 py-4 text-[13px] text-[var(--color-text)] bg-[var(--color-bg)]">
@@ -609,13 +818,176 @@ export function ReportsPage() {
                   </div>
                 ) : (
                   <p className="text-[13px] text-[var(--color-text-secondary)]">
-                    Select a report from the left to view the full AI-generated summary here.
+                    Select a report from the left to preview it here. You can share or download a PDF once it loads.
                   </p>
                 )}
               </div>
             </div>
           </div>
         </section>
+
+        <ReportActionMenu
+          open={Boolean(actionReport)}
+          title={reportPreviewTitle(actionReport || undefined)}
+          subtitle={
+            actionReport
+              ? `${new Date(actionReport.createdAt).toLocaleString()} · ${actionReport.activityCount ?? 0} logs`
+              : undefined
+          }
+          onClose={() => setActionReport(null)}
+          onPreview={() => {
+            if (!actionReport) return
+            const id = actionReport._id
+            setActionReport(null)
+            void openPreview(id)
+          }}
+          onAddToDashboard={() => {
+            if (!actionReport) return
+            setAddDashboardOpen(true)
+          }}
+          onChangeReport={() => {
+            if (!actionReport) return
+            const id = actionReport._id
+            setActionReport(null)
+            void openChangeReport(id)
+          }}
+        />
+
+        <AddToDashboardModal
+          open={addDashboardOpen}
+          reportTitle={reportPreviewTitle(actionReport || undefined)}
+          saving={savingDashboard}
+          onClose={() => {
+            setAddDashboardOpen(false)
+            setActionReport(null)
+          }}
+          onSave={async (displayName) => {
+            if (!actionReport) return
+            setSavingDashboard(true)
+            try {
+              await api.reportDashboard.add({
+                displayName,
+                sourceReportId: actionReport._id,
+              })
+              setAddDashboardOpen(false)
+              setActionReport(null)
+              toast.success('Report has been added to report dashboard.')
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : 'Failed to add to dashboard')
+            } finally {
+              setSavingDashboard(false)
+            }
+          }}
+        />
+
+        <ReportChangeModal
+          open={changeOpen && Boolean(changeValues)}
+          title={reportPreviewTitle(reports.find((r) => r._id === changeReportId))}
+          initial={changeValues || changeValuesFromReport({})}
+          saving={regenerating}
+          onClose={() => {
+            setChangeOpen(false)
+            setChangeReportId('')
+          }}
+          onApply={async (values) => {
+            if (!changeReportId) return
+            setRegenerating(true)
+            setError('')
+            try {
+              const res = await api.reports.regenerate(changeReportId, {
+                customer: values.customer.trim() || undefined,
+                from: values.from || undefined,
+                to: values.to || undefined,
+                period: values.period || undefined,
+                dateMode: values.dateMode,
+                aiQuestion: values.aiQuestion.trim() || undefined,
+                severity: values.severity !== '' ? values.severity : undefined,
+                minSeverity: values.minSeverity !== '' ? values.minSeverity : undefined,
+              })
+              setSelectedReportId(changeReportId)
+              setSelectedContent(res.report)
+              setSelectedImageGallery(Array.isArray(res.imageGallery) ? res.imageGallery : [])
+              setChangeOpen(false)
+              setPreviewOpen(true)
+              await loadList(page)
+              toast.success('Report updated with new filters.')
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : 'Failed to re-run report'
+              setError(msg)
+              toast.error(msg)
+            } finally {
+              setRegenerating(false)
+            }
+          }}
+        />
+
+        {previewOpen && (
+          <div
+            className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="report-preview-title"
+            onClick={(e) => {
+              if (e.target === e.currentTarget) setPreviewOpen(false)
+            }}
+          >
+            <div className="w-full sm:max-w-2xl max-h-[min(92dvh,720px)] rounded-t-2xl sm:rounded-2xl bg-white border border-[var(--color-border)] shadow-2xl flex flex-col overflow-hidden">
+              <div className="px-4 sm:px-5 py-4 border-b border-[var(--color-border)] flex items-start justify-between gap-3 bg-gradient-to-r from-[var(--color-bg)] to-white">
+                <div className="min-w-0">
+                  <p
+                    id="report-preview-title"
+                    className="text-[11px] font-semibold tracking-[0.18em] uppercase text-[var(--color-text-secondary)]"
+                  >
+                    Report preview
+                  </p>
+                  <p className="mt-1 text-[15px] font-semibold text-[var(--color-text)] break-words">
+                    {reportPreviewTitle(selected)}
+                  </p>
+                  {selected && (
+                    <p className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">
+                      {new Date(selected.createdAt).toLocaleString()} · {selected.activityCount ?? 0} logs
+                    </p>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(false)}
+                  className="shrink-0 inline-flex items-center justify-center rounded-xl border border-[var(--color-border)] p-2 text-[var(--color-text)] hover:bg-[var(--color-bg)]"
+                  aria-label="Close preview"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-auto px-4 sm:px-5 py-4 text-[13px] text-[var(--color-text)] bg-[var(--color-bg)]">
+                {loadingOne ? (
+                  <span className="inline-flex items-center gap-2 text-[var(--color-text-secondary)]">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Loading report…
+                  </span>
+                ) : selectedContent ? (
+                  <div>
+                    <div className="whitespace-pre-wrap leading-relaxed">{selectedContent}</div>
+                    <ReportImageGallery entries={selectedImageGallery} />
+                  </div>
+                ) : (
+                  <p className="text-[var(--color-text-secondary)]">Could not load this report.</p>
+                )}
+              </div>
+
+              <div className="px-4 sm:px-5 py-3 border-t border-[var(--color-border)] bg-white flex flex-wrap gap-2">
+                {previewActions}
+                <button
+                  type="button"
+                  onClick={() => setPreviewOpen(false)}
+                  className="inline-flex items-center justify-center h-9 rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[var(--color-text)] hover:bg-[var(--color-bg)] ml-auto"
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </AdminShell>
   )
