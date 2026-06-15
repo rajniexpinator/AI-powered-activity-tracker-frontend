@@ -63,7 +63,6 @@ export function UserManagementPage() {
   const [savingPasswordUpdate, setSavingPasswordUpdate] = useState(false)
   const [passwordUpdateError, setPasswordUpdateError] = useState('')
   const [notificationTarget, setNotificationTarget] = useState<User | null>(null)
-  const [notificationWhatsAppNumber, setNotificationWhatsAppNumber] = useState('')
   const [notificationEnabled, setNotificationEnabled] = useState(false)
   const [notificationLevels, setNotificationLevels] = useState<number[]>([])
   const [savingNotificationSettings, setSavingNotificationSettings] = useState(false)
@@ -202,7 +201,6 @@ export function UserManagementPage() {
 
   function closeNotificationSettingsModal() {
     setNotificationTarget(null)
-    setNotificationWhatsAppNumber('')
     setNotificationEnabled(false)
     setNotificationLevels([])
     setSavingNotificationSettings(false)
@@ -212,11 +210,10 @@ export function UserManagementPage() {
   function startNotificationSettingsFlow(u: User) {
     setOpenActionsForUserId(null)
     setNotificationTarget(u)
-    setNotificationWhatsAppNumber((u.whatsAppNumber || '').trim())
-    setNotificationEnabled(Boolean(u.whatsAppNotifications?.enabled))
+    setNotificationEnabled(Boolean(u.emailNotifications?.enabled))
     setNotificationLevels(
-      Array.isArray(u.whatsAppNotifications?.severityLevels)
-        ? [...new Set(u.whatsAppNotifications?.severityLevels.filter((v) => Number.isInteger(v) && v >= 1 && v <= 3))].sort(
+      Array.isArray(u.emailNotifications?.severityLevels)
+        ? [...new Set(u.emailNotifications?.severityLevels.filter((v) => Number.isInteger(v) && v >= 1 && v <= 3))].sort(
             (a, b) => a - b
           )
         : []
@@ -234,10 +231,6 @@ export function UserManagementPage() {
   async function handleSaveNotificationSettings(e: React.FormEvent) {
     e.preventDefault()
     if (!notificationTarget) return
-    if (notificationEnabled && !notificationWhatsAppNumber.trim()) {
-      setNotificationSettingsError('WhatsApp number is required when push notification is enabled.')
-      return
-    }
     if (notificationEnabled && notificationLevels.length === 0) {
       setNotificationSettingsError('Select at least one severity level.')
       return
@@ -247,8 +240,7 @@ export function UserManagementPage() {
     setNotificationSettingsError('')
     try {
       const payload = {
-        whatsAppNumber: notificationWhatsAppNumber.trim(),
-        whatsAppNotifications: {
+        emailNotifications: {
           enabled: notificationEnabled,
           severityLevels: notificationEnabled ? notificationLevels : [],
         },
@@ -259,7 +251,7 @@ export function UserManagementPage() {
         // Keep local auth user aligned when admin edits own notification settings.
         setUser(updated)
       }
-      toast.success('Push notification settings updated.')
+      toast.success('Email notification settings updated.')
       closeNotificationSettingsModal()
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to update push notification settings'
@@ -366,18 +358,18 @@ export function UserManagementPage() {
   const paginatedUsers = filteredUsers.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   function getPushBadge(u: User) {
-    const enabled = Boolean(u.whatsAppNotifications?.enabled)
-    const levelsRaw = Array.isArray(u.whatsAppNotifications?.severityLevels) ? u.whatsAppNotifications?.severityLevels : []
+    const enabled = Boolean(u.emailNotifications?.enabled)
+    const levelsRaw = Array.isArray(u.emailNotifications?.severityLevels) ? u.emailNotifications?.severityLevels : []
     const levels = [...new Set(levelsRaw.filter((v) => Number.isInteger(v) && v >= 1 && v <= 3))].sort((a, b) => a - b)
     if (!enabled) {
       return {
-        label: 'Push: Off',
+        label: 'Email: Off',
         className: 'bg-[var(--color-bg)] text-[var(--color-text-secondary)] border border-[var(--color-border)]',
       }
     }
     const levelText = levels.length > 0 ? `L${levels.join('+L')}` : 'On'
     return {
-      label: `Push: ${levelText}`,
+      label: `Email: ${levelText}`,
       className: 'bg-[var(--color-primary)]/10 text-[var(--color-primary)] border border-[var(--color-primary)]/30',
     }
   }
@@ -606,13 +598,13 @@ export function UserManagementPage() {
         </div>
       )}
 
-      {/* Admin: configure WhatsApp push notifications for a user */}
+      {/* Admin: configure email notifications for a user */}
       {notificationTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true">
           <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={closeNotificationSettingsModal} aria-hidden="true" />
           <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-[var(--color-border)] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-5 border-b border-[var(--color-border)] bg-[var(--color-bg)]/50">
-              <h2 className="text-lg font-semibold text-[var(--color-text)]">Push notification</h2>
+              <h2 className="text-lg font-semibold text-[var(--color-text)]">Email notifications</h2>
               <button
                 type="button"
                 onClick={closeNotificationSettingsModal}
@@ -624,7 +616,7 @@ export function UserManagementPage() {
             </div>
             <form onSubmit={handleSaveNotificationSettings} className="p-6 space-y-4">
               <p className="text-[13px] text-[var(--color-text-secondary)]">
-                Configure WhatsApp push alerts for <span className="font-medium text-[var(--color-text)]">{notificationTarget.email}</span>.
+                Configure email alerts for <span className="font-medium text-[var(--color-text)]">{notificationTarget.email}</span>.
               </p>
               {notificationSettingsError ? (
                 <div className="flex items-center gap-3 p-3 rounded-xl bg-red-50 border border-red-100 text-red-700 text-[13px]">
@@ -634,8 +626,8 @@ export function UserManagementPage() {
               ) : null}
               <div className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3.5 py-3">
                 <div>
-                  <p className="text-[13px] font-semibold text-[var(--color-text)]">Enable push notification</p>
-                  <p className="text-[12px] text-[var(--color-text-secondary)]">Only sent when a new AI log is saved.</p>
+                  <p className="text-[13px] font-semibold text-[var(--color-text)]">Enable email notifications</p>
+                  <p className="text-[12px] text-[var(--color-text-secondary)]">Sent to this user&apos;s work email when a new AI log is saved.</p>
                 </div>
                 <button
                   type="button"
@@ -644,23 +636,10 @@ export function UserManagementPage() {
                     notificationEnabled ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'
                   }`}
                   aria-pressed={notificationEnabled}
-                  aria-label="Toggle push notification"
+                  aria-label="Toggle email notifications"
                 >
                   <span className={`h-5 w-5 rounded-full bg-white transition-transform ${notificationEnabled ? 'translate-x-5' : ''}`} />
                 </button>
-              </div>
-              <div>
-                <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
-                  WhatsApp number
-                </label>
-                <input
-                  type="text"
-                  value={notificationWhatsAppNumber}
-                  onChange={(e) => setNotificationWhatsAppNumber(e.target.value)}
-                  placeholder="+917986729952"
-                  className="w-full px-4 py-3 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[15px] focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)] disabled:opacity-60"
-                  disabled={!notificationEnabled}
-                />
               </div>
               <div>
                 <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-2 uppercase tracking-wider">
@@ -927,7 +906,7 @@ export function UserManagementPage() {
                                       className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
                                     >
                                       <MessageSquare className="w-3.5 h-3.5" />
-                                      Push notification
+                                      Email notifications
                                     </button>
                                   <button
                                     type="button"
@@ -1110,7 +1089,7 @@ export function UserManagementPage() {
                                 className="w-full inline-flex items-center gap-2 px-3 py-2 rounded-lg text-[12px] text-[var(--color-text)] hover:bg-[var(--color-bg)]"
                               >
                                 <MessageSquare className="w-3.5 h-3.5" />
-                                Push notification
+                                Email notifications
                               </button>
                             <button
                               type="button"

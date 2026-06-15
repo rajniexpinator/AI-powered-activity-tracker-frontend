@@ -100,8 +100,7 @@ export const api = {
       name?: string
       currentPassword?: string
       newPassword?: string
-      whatsAppNumber?: string
-      whatsAppNotifications?: { enabled?: boolean; severityLevels?: number[] }
+      emailNotifications?: { enabled?: boolean; severityLevels?: number[] }
     }) =>
       request<{ user: User }>('/api/auth/me', {
         method: 'PATCH',
@@ -121,8 +120,7 @@ export const api = {
         name?: string
         email?: string
         resetPassword?: string
-        whatsAppNumber?: string
-        whatsAppNotifications?: { enabled?: boolean; severityLevels?: number[] }
+        emailNotifications?: { enabled?: boolean; severityLevels?: number[] }
       }
     ) =>
       request<{ user: User }>(`/api/auth/users/${id}`, {
@@ -680,36 +678,10 @@ export const api = {
       request<{ success: boolean }>(`/api/ms365/drafts/${encodeURIComponent(messageId)}/send`, {
         method: 'POST',
       }),
-  },
 
-  whatsapp: {
-    getConfig: () =>
-      request<{
-        configured: boolean
-        defaultTemplateSid?: string
-        customerTemplateSid?: string
-        userLogTemplateSid?: string
-      }>('/api/whatsapp/config', {
-        method: 'GET',
-      }),
-    send: (payload: {
-      to: string
-      message?: string
-      contentSid?: string
-      contentVariables?: string
-      /** When sending a customer template, queue full log for delivery after recipient replies. */
-      pendingActivityId?: string
-    }) =>
-      request<{
-        success: boolean
-        messageSid: string
-        status?: string
-        to?: string
-        from?: string
-        pendingLogQueued?: boolean
-      }>('/api/whatsapp/send', {
+    sendTestEmailNotification: () =>
+      request<{ success: boolean; to: string }>('/api/ms365/email/test-notification', {
         method: 'POST',
-        body: JSON.stringify(payload),
       }),
   },
 

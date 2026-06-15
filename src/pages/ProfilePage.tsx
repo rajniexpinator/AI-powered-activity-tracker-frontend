@@ -23,20 +23,18 @@ export function ProfilePage() {
   const [success, setSuccess] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const [notifWhatsAppNumber, setNotifWhatsAppNumber] = useState('')
   const [notifEnabled, setNotifEnabled] = useState(false)
   const [notifLevels, setNotifLevels] = useState<number[]>([])
   const [notifSubmitting, setNotifSubmitting] = useState(false)
   const [notifError, setNotifError] = useState('')
 
   useEffect(() => {
-    setNotifWhatsAppNumber((user?.whatsAppNumber || '').trim())
-    setNotifEnabled(Boolean(user?.whatsAppNotifications?.enabled))
-    const raw = user?.whatsAppNotifications?.severityLevels
+    setNotifEnabled(Boolean(user?.emailNotifications?.enabled))
+    const raw = user?.emailNotifications?.severityLevels
     setNotifLevels(
       Array.isArray(raw) ? [...new Set(raw.filter((v) => Number.isInteger(v) && v >= 1 && v <= 3))].sort((a, b) => a - b) : []
     )
-  }, [user?.whatsAppNumber, user?.whatsAppNotifications?.enabled, user?.whatsAppNotifications?.severityLevels])
+  }, [user?.emailNotifications?.enabled, user?.emailNotifications?.severityLevels])
 
   function toggleNotifLevel(level: number) {
     setNotifLevels((prev) => {
@@ -48,10 +46,6 @@ export function ProfilePage() {
   async function handleSaveNotifications(e: React.FormEvent) {
     e.preventDefault()
     setNotifError('')
-    if (notifEnabled && !notifWhatsAppNumber.trim()) {
-      setNotifError('WhatsApp number is required when alerts are enabled.')
-      return
-    }
     if (notifEnabled && notifLevels.length === 0) {
       setNotifError('Select at least one severity level.')
       return
@@ -59,14 +53,13 @@ export function ProfilePage() {
     setNotifSubmitting(true)
     try {
       const { user: updated } = await api.auth.updateMe({
-        whatsAppNumber: notifWhatsAppNumber.trim(),
-        whatsAppNotifications: {
+        emailNotifications: {
           enabled: notifEnabled,
           severityLevels: notifEnabled ? notifLevels : [],
         },
       })
       setUser(updated)
-      toast.success('WhatsApp alert settings saved.')
+      toast.success('Email alert settings saved.')
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Failed to save alert settings'
       setNotifError(msg)
@@ -263,11 +256,11 @@ export function ProfilePage() {
         <div className="px-6 py-5 border-b border-[var(--color-border)] bg-black/[0.02]">
           <div className="flex items-center gap-2">
             <Bell className="w-5 h-5 text-[var(--color-primary)]" />
-            <h2 className="text-lg font-semibold text-[var(--color-text)]">WhatsApp alerts</h2>
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">Email alerts</h2>
           </div>
           <p className="text-[13px] text-[var(--color-text-secondary)] mt-1">
-            Get notified on WhatsApp when a new AI log is saved with a severity you care about. Same settings admins can
-            configure in Users — you can change them here anytime.
+            Get an email when a new AI log is saved with a severity you care about. Messages are sent from info@apexquality.net to
+            your work email ({user.email}). Admins can also configure this from Users.
           </p>
         </div>
         <form onSubmit={handleSaveNotifications} className="p-6 space-y-4">
@@ -279,8 +272,8 @@ export function ProfilePage() {
           ) : null}
           <div className="flex items-center justify-between gap-3 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3.5 py-3">
             <div>
-              <p className="text-[13px] font-semibold text-[var(--color-text)]">Enable WhatsApp alerts</p>
-              <p className="text-[12px] text-[var(--color-text-secondary)]">Turn off to stop all log notifications to your number.</p>
+              <p className="text-[13px] font-semibold text-[var(--color-text)]">Enable email alerts</p>
+              <p className="text-[12px] text-[var(--color-text-secondary)]">Turn off to stop email notifications for new logs.</p>
             </div>
             <button
               type="button"
@@ -289,24 +282,10 @@ export function ProfilePage() {
                 notifEnabled ? 'bg-[var(--color-primary)]' : 'bg-[var(--color-border)]'
               }`}
               aria-pressed={notifEnabled}
-              aria-label="Toggle WhatsApp alerts"
+              aria-label="Toggle email alerts"
             >
               <span className={`h-5 w-5 rounded-full bg-white transition-transform ${notifEnabled ? 'translate-x-5' : ''}`} />
             </button>
-          </div>
-          <div>
-            <label htmlFor="profile-whatsapp" className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
-              WhatsApp number
-            </label>
-            <input
-              id="profile-whatsapp"
-              type="text"
-              value={notifWhatsAppNumber}
-              onChange={(e) => setNotifWhatsAppNumber(e.target.value)}
-              placeholder="+917986729952"
-              disabled={!notifEnabled}
-              className="w-full px-4 py-3 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-[var(--radius)] text-[15px] disabled:opacity-60"
-            />
           </div>
           <div>
             <span className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-2 uppercase tracking-wider">
@@ -337,24 +316,25 @@ export function ProfilePage() {
               ))}
             </div>
             <p className="mt-2 text-[12px] text-[var(--color-text-secondary)]">
-              Pick one or more: you only get a WhatsApp when a new log is saved with that issue severity. Employees manage this
-              here; admins can still override from Users if needed.
+              Pick one or more: you only get an email when a new log is saved with that issue severity.
             </p>
           </div>
-          <button
-            type="submit"
-            disabled={notifSubmitting}
-            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 rounded-[var(--radius)] text-[15px] font-semibold !text-white transition-colors"
-          >
-            {notifSubmitting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                Saving…
-              </>
-            ) : (
-              'Save alert settings'
-            )}
-          </button>
+          <div>
+            <button
+              type="submit"
+              disabled={notifSubmitting}
+              className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 rounded-[var(--radius)] text-[15px] font-semibold !text-white transition-colors"
+            >
+              {notifSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                'Save alert settings'
+              )}
+            </button>
+          </div>
         </form>
       </div>
         </div>

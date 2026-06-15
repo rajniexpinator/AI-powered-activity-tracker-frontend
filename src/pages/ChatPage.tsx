@@ -313,12 +313,6 @@ function needsBarcodeMappingStep(p: PendingBarcodeClarification): boolean {
   return false
 }
 
-function partNumberFromActivityStructured(structured: unknown): string {
-  if (!structured || typeof structured !== 'object') return 'N/A'
-  const pn = readPartNumberFromStructured(structured as StructuredActivity)
-  return pn ? pn.slice(0, 200) : 'N/A'
-}
-
 export function ChatPage() {
   const { user } = useAuth()
   const { highlightSharedIds, clearSharedLogHighlight } = useSharedLogsNotify()
@@ -393,10 +387,6 @@ export function ChatPage() {
   const [selectedCustomerEmailRecipients, setSelectedCustomerEmailRecipients] = useState<string[]>([])
   const [emailManagerCcRecipients, setEmailManagerCcRecipients] = useState<string[]>([])
   const [includeManagerCcRecipients, setIncludeManagerCcRecipients] = useState(true)
-  const [whatsAppConfirmOpen, setWhatsAppConfirmOpen] = useState(false)
-  const [sendingWhatsApp, setSendingWhatsApp] = useState(false)
-  const [whatsAppTo, setWhatsAppTo] = useState('')
-
   const canArchiveSelected =
     Boolean(selectedActivityId && activityDetail && user && (user.role === 'admin' || activityOwnerId(activityDetail) === user.id))
 
@@ -1802,16 +1792,6 @@ export function ChatPage() {
     }
   }
 
-  async function openWhatsAppConfirmPrompt() {
-    if (!selectedActivityId) {
-      setError('Select a log from the list before sending WhatsApp.')
-      return
-    }
-    setError(null)
-    setSaveMessage(null)
-    setWhatsAppConfirmOpen(true)
-  }
-
   async function handleShareLog() {
     if (!selectedActivityId) {
       setError('Select a log from the list before sharing.')
@@ -1886,81 +1866,6 @@ export function ChatPage() {
       toast.error(message)
     } finally {
       setSendingEmail(false)
-    }
-  }
-
-  async function handleSendWhatsApp() {
-    if (!selectedActivityId) {
-      setError('Select a log from the list before sending WhatsApp.')
-      return
-    }
-    if (!whatsAppTo.trim()) {
-      setError('Enter a WhatsApp number (for example +917986729952).')
-      return
-    }
-    const customer = (activityDetail?.customer || 'Customer').trim()
-    const summary = (activityDetail?.summary || 'Activity update').trim()
-    const rawConversation = (activityDetail?.rawConversation || '').trim()
-    const message = rawConversation || `Customer: ${customer}\nUpdate: ${summary}`
-
-    setSendingWhatsApp(true)
-    setError(null)
-    setSaveMessage(null)
-    try {
-      const res = await api.whatsapp.send({
-        to: whatsAppTo.trim(),
-        message,
-      })
-
-      toast.success(`WhatsApp sent${res.to ? ` to ${res.to}` : ''}.`)
-      setWhatsAppConfirmOpen(false)
-      return
-    } catch (err) {
-      const asErr = err as Error & { status?: number }
-      const isSessionClosed =
-        asErr?.status === 409 && /24h session is closed|free-form message/i.test(asErr?.message || '')
-
-      if (isSessionClosed) {
-        try {
-          const cfg = await api.whatsapp.getConfig()
-          const sid = (cfg.customerTemplateSid || cfg.defaultTemplateSid || '').trim()
-          if (!sid) {
-            throw new Error('No customer WhatsApp template is configured. Set TWILIO_WHATSAPP_CUSTOMER_TEMPLATE_SID (or TWILIO_WHATSAPP_TEMPLATE_SID) on the server.')
-          }
-          const structured = activityDetail?.structuredData
-          const partNum = partNumberFromActivityStructured(structured)
-          const greeting = customer.split(/\s+/).filter(Boolean)[0] || customer || 'there'
-          const templateVariables = JSON.stringify({
-            1: greeting.slice(0, 120),
-            2: customer.slice(0, 120),
-            3: partNum.slice(0, 120),
-          })
-          const res = await api.whatsapp.send({
-            to: whatsAppTo.trim(),
-            contentSid: sid,
-            contentVariables: templateVariables,
-            pendingActivityId: selectedActivityId,
-          })
-          toast.success(
-            res.pendingLogQueued
-              ? `Template sent${res.to ? ` to ${res.to}` : ''}. When they reply (e.g. YES), the full AI log and file links will follow automatically.`
-              : `Session closed: template sent${res.to ? ` to ${res.to}` : ''}. Reply on WhatsApp to open chat; full log could not be queued — try again or contact support.`
-          )
-          setWhatsAppConfirmOpen(false)
-          return
-        } catch (fallbackErr) {
-          const fallbackMessage = (fallbackErr as Error).message || 'Failed to send WhatsApp template'
-          setError(fallbackMessage)
-          toast.error(fallbackMessage)
-          return
-        }
-      }
-
-      const message = asErr.message || 'Failed to send WhatsApp'
-      setError(message)
-      toast.error(message)
-    } finally {
-      setSendingWhatsApp(false)
     }
   }
 
@@ -2113,20 +2018,6 @@ export function ChatPage() {
             </button>
             <button
               type="button"
-              onClick={openWhatsAppConfirmPrompt}
-              disabled={!selectedActivityId || sendingWhatsApp || archiving}
-              className={`flex w-full md:w-auto h-10 items-center justify-center gap-2 rounded-lg border px-2.5 md:px-3.5 text-[12px] md:text-[13px] font-medium shadow-sm transition-colors ${
-                !selectedActivityId || sendingWhatsApp || archiving
-                  ? 'border-[var(--color-border)] bg-[#f3f3f3] text-[#999] cursor-not-allowed shadow-none'
-                  : 'border-green-300/70 bg-green-50 text-green-900 hover:bg-green-100'
-              }`}
-              title={!selectedActivityId ? 'Select a recent log first, then click WhatsApp' : 'Send selected AI log by WhatsApp'}
-            >
-              {sendingWhatsApp ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" /> : <MessageSquare className="w-4 h-4 shrink-0" />}
-              <span className="leading-none">WhatsApp</span>
-            </button>
-            <button
-              type="button"
               onClick={() => void handleShareLog()}
               disabled={!selectedActivityId || sharingLog || archiving || isShareBlockedForPhotos()}
               className={`flex w-full md:w-auto h-10 items-center justify-center gap-2 rounded-lg border px-2.5 md:px-3.5 text-[12px] md:text-[13px] font-medium shadow-sm transition-colors ${
@@ -2138,9 +2029,9 @@ export function ChatPage() {
                 !selectedActivityId
                   ? 'Select a recent log first, then click Share'
                   : isShareBlockedForPhotos()
-                    ? 'Loading photos for WhatsApp — wait a few seconds'
+                    ? 'Loading photos — wait a few seconds'
                     : canUseNativeShare()
-                      ? 'Share log with photos attached in WhatsApp (links for full size below)'
+                      ? 'Share log with photos attached (links for full size below)'
                       : 'Share this log (copies text and links when native share is unavailable)'
               }
             >
@@ -2676,60 +2567,6 @@ export function ChatPage() {
           </div>
         )}
 
-        {whatsAppConfirmOpen && (
-          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-            <div className="w-full max-w-lg rounded-2xl bg-white border border-[var(--color-border)] shadow-xl overflow-hidden">
-              <div className="px-4 sm:px-5 py-3 border-b border-[var(--color-border)] flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.14em] text-[#666]">Confirm WhatsApp</p>
-                  <p className="text-sm font-medium text-[#111]">Send this AI log update by WhatsApp:</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setWhatsAppConfirmOpen(false)}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-[#666] hover:bg-black/[0.04]"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-              <div className="px-4 sm:px-5 py-4 space-y-3">
-                <div>
-                  <label className="block text-[12px] font-semibold text-[#333] mb-1">To (WhatsApp number)</label>
-                  <input
-                    type="text"
-                    value={whatsAppTo}
-                    onChange={(e) => setWhatsAppTo(e.target.value)}
-                    placeholder="+917986729952"
-                    className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] text-[#222] placeholder:text-[#999]"
-                  />
-                </div>
-                <p className="text-[11px] text-[#777]">
-                  Sends the full log when a 24-hour WhatsApp session is open. If the session is closed, sends the approved
-                  customer activity template first (name, customer, part); the recipient can reply to receive details.
-                </p>
-              </div>
-              <div className="px-4 sm:px-5 py-3 border-t border-[var(--color-border)] flex items-center justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setWhatsAppConfirmOpen(false)}
-                  className="inline-flex h-9 items-center justify-center rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[#444] hover:bg-black/[0.03]"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleSendWhatsApp()}
-                  disabled={sendingWhatsApp}
-                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 text-[12px] font-semibold text-white hover:bg-green-700 disabled:opacity-60"
-                >
-                  {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
-                  Send WhatsApp
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Mobile: recent logs modal */}
         {recentModalOpen && (
           <div className="fixed inset-0 z-40 bg-black/50 md:hidden">
@@ -2828,26 +2665,6 @@ export function ChatPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={openWhatsAppConfirmPrompt}
-                  disabled={!selectedActivityId || sendingWhatsApp || archiving}
-                  aria-label={sendingWhatsApp ? 'Sending WhatsApp…' : 'Send WhatsApp'}
-                  title={
-                    !selectedActivityId
-                      ? 'Select a recent log first, then click to send WhatsApp'
-                      : sendingWhatsApp
-                        ? 'Sending…'
-                        : 'Send selected recent log by WhatsApp'
-                  }
-                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors ${
-                    !selectedActivityId || sendingWhatsApp || archiving
-                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
-                      : 'border-green-200 text-green-700 hover:bg-green-50 active:bg-green-100'
-                  }`}
-                >
-                  {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
-                </button>
-                <button
-                  type="button"
                   onClick={() => void handleShareLog()}
                   disabled={!selectedActivityId || sharingLog || archiving}
                   aria-label={sharingLog ? 'Preparing share…' : 'Share log'}
@@ -2857,7 +2674,7 @@ export function ChatPage() {
                       : sharingLog
                         ? 'Preparing…'
                         : canUseNativeShare()
-                          ? 'Share via your phone apps (Mail, Messages, WhatsApp, etc.)'
+                          ? 'Share via your phone apps (Mail, Messages, etc.)'
                           : 'Share log (copies text when native share is unavailable)'
                   }
                   className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors ${
@@ -3020,26 +2837,6 @@ export function ChatPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={openWhatsAppConfirmPrompt}
-                  disabled={!selectedActivityId || sendingWhatsApp || archiving}
-                  aria-label={sendingWhatsApp ? 'Sending WhatsApp…' : 'Send WhatsApp'}
-                  title={
-                    !selectedActivityId
-                      ? 'Select a recent log first, then click to send WhatsApp'
-                      : sendingWhatsApp
-                        ? 'Sending…'
-                        : 'Send selected recent log by WhatsApp'
-                  }
-                  className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white transition-colors ${
-                    !selectedActivityId || sendingWhatsApp || archiving
-                      ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
-                      : 'border-green-200 text-green-700 hover:bg-green-50 active:bg-green-100'
-                  }`}
-                >
-                  {sendingWhatsApp ? <Loader2 className="w-4 h-4 animate-spin" /> : <MessageSquare className="w-4 h-4" />}
-                </button>
-                <button
-                  type="button"
                   onClick={() => void handleShareLog()}
                   disabled={!selectedActivityId || sharingLog || archiving}
                   aria-label={sharingLog ? 'Preparing share…' : 'Share log'}
@@ -3049,7 +2846,7 @@ export function ChatPage() {
                       : sharingLog
                         ? 'Preparing…'
                         : canUseNativeShare()
-                          ? 'Share via your phone apps (Mail, Messages, WhatsApp, etc.)'
+                          ? 'Share via your phone apps (Mail, Messages, etc.)'
                           : 'Share log (copies text when native share is unavailable)'
                   }
                   className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white transition-colors ${
