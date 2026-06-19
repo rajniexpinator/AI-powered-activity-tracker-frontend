@@ -30,6 +30,7 @@ import { AdminShell } from '@/components/layout/AdminShell'
 import { LazyActivityImage } from '@/components/LazyActivityImage'
 import { useAuth } from '@/context/AuthContext'
 import { useSharedLogsNotify } from '@/context/SharedLogsNotifyContext'
+import { formatPlantLabel } from '@/constants/plants'
 import {
   areSharePhotosReady,
   canUseNativeShare,
@@ -96,6 +97,8 @@ type ActivityDetail = {
   customer?: string
   /** Up to 5-character physical-location tag (top-level). */
   location?: string
+  /** Reporting plant/OEM stamped at log creation. */
+  reportingPlant?: string
   summary?: string
   rawConversation?: string
   structuredData?: StructuredActivity | (StructuredActivity & Record<string, unknown>)
@@ -315,6 +318,7 @@ function needsBarcodeMappingStep(p: PendingBarcodeClarification): boolean {
 
 export function ChatPage() {
   const { user } = useAuth()
+  const userReportingPlant = formatPlantLabel(user?.assignedPlant, user?.assignedPlantOther)
   const { highlightSharedIds, clearSharedLogHighlight } = useSharedLogsNotify()
   const isEmployee = user?.role === 'employee'
   const [text, setText] = useState('')
@@ -336,6 +340,7 @@ export function ChatPage() {
       _id: string
       customer?: string
       location?: string
+      reportingPlant?: string
       summary?: string
       createdAt: string
       isOwner?: boolean
@@ -1514,6 +1519,7 @@ export function ChatPage() {
           _id: (activity as any)._id,
           customer: (activity as any).customer,
           location: (activity as any).location,
+          reportingPlant: (activity as any).reportingPlant,
           summary: (activity as any).summary,
           createdAt: (activity as any).createdAt,
           isOwner: true,
@@ -2730,6 +2736,9 @@ export function ChatPage() {
                           )}
                           <span className="truncate">
                             {act.customer || 'Unknown customer'}
+                            {act.reportingPlant ? (
+                              <> · <span className="font-medium text-[#555]">{act.reportingPlant}</span></>
+                            ) : null}
                             {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
                             {' · '}{new Date(act.createdAt).toLocaleString()}
                           </span>
@@ -2894,6 +2903,9 @@ export function ChatPage() {
                         )}
                         <span className="truncate">
                           {act.customer || 'Unknown customer'}
+                          {act.reportingPlant ? (
+                            <> · <span className="font-medium text-[#555]">{act.reportingPlant}</span></>
+                          ) : null}
                           {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
                           {' · '}{new Date(act.createdAt).toLocaleString()}
                         </span>
@@ -2979,6 +2991,9 @@ export function ChatPage() {
                       )}
                       <span className="truncate">
                         {act.customer || 'Unknown customer'}
+                        {act.reportingPlant ? (
+                          <> · <span className="font-medium text-[#555]">{act.reportingPlant}</span></>
+                        ) : null}
                         {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
                         {' · '}{new Date(act.createdAt).toLocaleString()}
                       </span>
@@ -3295,6 +3310,22 @@ export function ChatPage() {
 
             {/* Input */}
             <div className="border-t border-[var(--color-border)] px-4 sm:px-5 py-3 bg-white">
+              {userReportingPlant ? (
+                <p className="mb-2 text-[11px] text-[#666]">
+                  Reporting plant: <span className="font-semibold text-[#333]">{userReportingPlant}</span>
+                  {!selectedActivityId ? (
+                    <span className="text-[#999]"> — new logs will be tagged with this plant.</span>
+                  ) : null}
+                </p>
+              ) : (
+                <p className="mb-2 text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1">
+                  Set your reporting plant in{' '}
+                  <Link to="/profile?edit=1" className="font-semibold underline underline-offset-2">
+                    Profile
+                  </Link>{' '}
+                  so logs can be filtered by OEM in reports.
+                </p>
+              )}
               <fieldset
                 disabled={false}
                 className="flex flex-col gap-2 min-w-0 border-0 p-0 m-0 disabled:opacity-[0.85]"
@@ -3817,6 +3848,12 @@ export function ChatPage() {
                         </span>
                       </div>
                     )}
+                    {activityDetail.reportingPlant ? (
+                      <p className="text-[11px] text-[var(--color-text-secondary)] px-0.5">
+                        <span className="font-semibold text-[var(--color-text)]">Reporting plant:</span>{' '}
+                        {activityDetail.reportingPlant}
+                      </p>
+                    ) : null}
 
                     {teamWorkspaceTab === 'sharing' && (
                       <div className="space-y-3">

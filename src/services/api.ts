@@ -101,6 +101,8 @@ export const api = {
       currentPassword?: string
       newPassword?: string
       emailNotifications?: { enabled?: boolean; severityLevels?: number[] }
+      assignedPlant?: string | null
+      assignedPlantOther?: string | null
     }) =>
       request<{ user: User }>('/api/auth/me', {
         method: 'PATCH',
@@ -121,6 +123,8 @@ export const api = {
         email?: string
         resetPassword?: string
         emailNotifications?: { enabled?: boolean; severityLevels?: number[] }
+        assignedPlant?: string | null
+        assignedPlantOther?: string | null
       }
     ) =>
       request<{ user: User }>(`/api/auth/users/${id}`, {

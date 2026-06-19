@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { User, Mail, Shield, Pencil, X, AlertCircle, Lock, Bell, Loader2 } from 'lucide-react'
+import { User, Mail, Shield, Pencil, X, AlertCircle, Lock, Bell, Loader2, MapPin } from 'lucide-react'
 import { toast } from 'react-toastify'
 import { useAuth } from '@/context/AuthContext'
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
+import { PlantSelector } from '@/components/profile/PlantSelector'
+import { PLANT_OPTIONS, formatPlantLabel, type PlantOption } from '@/constants/plants'
 
 export function ProfilePage() {
   const { user, setUser } = useAuth()
@@ -14,14 +16,23 @@ export function ProfilePage() {
     if (searchParams.get('edit') === '1') setEditing(true)
   }, [searchParams])
   const [name, setName] = useState(user?.name ?? '')
-  useEffect(() => {
-    setName(user?.name ?? '')
-  }, [user?.name])
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
+  const [assignedPlant, setAssignedPlant] = useState<PlantOption | ''>('')
+  const [assignedPlantOther, setAssignedPlantOther] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [submitting, setSubmitting] = useState(false)
+
+  useEffect(() => {
+    setName(user?.name ?? '')
+  }, [user?.name])
+
+  useEffect(() => {
+    const plant = user?.assignedPlant
+    setAssignedPlant(plant && PLANT_OPTIONS.includes(plant as PlantOption) ? (plant as PlantOption) : '')
+    setAssignedPlantOther(user?.assignedPlantOther ?? '')
+  }, [user?.assignedPlant, user?.assignedPlantOther])
 
   const [notifEnabled, setNotifEnabled] = useState(false)
   const [notifLevels, setNotifLevels] = useState<number[]>([])
@@ -75,13 +86,36 @@ export function ProfilePage() {
     e.preventDefault()
     setError('')
     setSuccess('')
+
+    const plantChanged =
+      assignedPlant !== (user?.assignedPlant ?? '') ||
+      assignedPlantOther.trim() !== (user?.assignedPlantOther ?? '').trim()
+    if (assignedPlant === 'Other' && !assignedPlantOther.trim()) {
+      setError('Enter a plant name when Other is selected.')
+      return
+    }
+    if (plantChanged && !assignedPlant) {
+      setError('Select a reporting plant.')
+      return
+    }
+
     setSubmitting(true)
     try {
-      const data: { name?: string; currentPassword?: string; newPassword?: string } = {}
+      const data: {
+        name?: string
+        currentPassword?: string
+        newPassword?: string
+        assignedPlant?: string | null
+        assignedPlantOther?: string | null
+      } = {}
       if (name.trim() !== (user?.name ?? '')) data.name = name.trim() || undefined
       if (newPassword) {
         data.currentPassword = currentPassword
         data.newPassword = newPassword
+      }
+      if (plantChanged) {
+        data.assignedPlant = assignedPlant || null
+        data.assignedPlantOther = assignedPlant === 'Other' ? assignedPlantOther.trim() : null
       }
       if (Object.keys(data).length === 0) {
         setEditing(false)
@@ -105,9 +139,14 @@ export function ProfilePage() {
     setName(user?.name ?? '')
     setCurrentPassword('')
     setNewPassword('')
+    const plant = user?.assignedPlant
+    setAssignedPlant(plant && PLANT_OPTIONS.includes(plant as PlantOption) ? (plant as PlantOption) : '')
+    setAssignedPlantOther(user?.assignedPlantOther ?? '')
     setError('')
     setEditing(false)
   }
+
+  const reportingPlantLabel = formatPlantLabel(user?.assignedPlant, user?.assignedPlantOther)
 
   const initial = (user.name || user.email).charAt(0).toUpperCase()
 
@@ -196,6 +235,18 @@ export function ProfilePage() {
                   </div>
                 </div>
               </div>
+              <div>
+                <label className="block text-[13px] font-medium text-[var(--color-text-secondary)] mb-2 uppercase tracking-wider">
+                  Reporting plant / OEM
+                </label>
+                <PlantSelector
+                  value={assignedPlant}
+                  otherValue={assignedPlantOther}
+                  onChange={setAssignedPlant}
+                  onOtherChange={setAssignedPlantOther}
+                  idPrefix="profile"
+                />
+              </div>
               <div className="flex gap-3 pt-2">
                 <button
                   type="submit"
@@ -236,6 +287,13 @@ export function ProfilePage() {
                   <div>
                     <dt className="text-[12px] uppercase tracking-wider text-[var(--color-text-secondary)]">Role</dt>
                     <dd className="text-[16px] text-[var(--color-text)] capitalize">{user.role}</dd>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <MapPin className="w-5 h-5 text-[var(--color-text-secondary)] opacity-70" />
+                  <div>
+                    <dt className="text-[12px] uppercase tracking-wider text-[var(--color-text-secondary)]">Reporting plant</dt>
+                    <dd className="text-[16px] text-[var(--color-text)]">{reportingPlantLabel || '—'}</dd>
                   </div>
                 </div>
               </dl>

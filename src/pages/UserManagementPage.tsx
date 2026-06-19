@@ -28,6 +28,8 @@ import type { User } from '@/types/auth'
 import { api } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import { AdminShell } from '@/components/layout/AdminShell'
+import { PlantSelector } from '@/components/profile/PlantSelector'
+import { PLANT_OPTIONS, formatPlantLabel, type PlantOption } from '@/constants/plants'
 
 const ROLES: User['role'][] = ['admin', 'employee']
 const PAGE_SIZE = 5
@@ -53,6 +55,8 @@ export function UserManagementPage() {
   const [editName, setEditName] = useState('')
   const [editEmail, setEditEmail] = useState('')
   const [editPassword, setEditPassword] = useState('')
+  const [editAssignedPlant, setEditAssignedPlant] = useState<PlantOption | ''>('')
+  const [editAssignedPlantOther, setEditAssignedPlantOther] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
   const [deleteUser, setDeleteUser] = useState<User | null>(null)
   const [deleteConfirmVariant, setDeleteConfirmVariant] = useState<'default' | 'deleteUserWording'>('default')
@@ -136,6 +140,9 @@ export function UserManagementPage() {
     setEditName(u.name || '')
     setEditEmail(u.email || '')
     setEditPassword('')
+    const plant = u.assignedPlant
+    setEditAssignedPlant(plant && PLANT_OPTIONS.includes(plant as PlantOption) ? (plant as PlantOption) : '')
+    setEditAssignedPlantOther(u.assignedPlantOther || '')
     setError('')
   }
 
@@ -144,12 +151,27 @@ export function UserManagementPage() {
     setEditName('')
     setEditEmail('')
     setEditPassword('')
+    setEditAssignedPlant('')
+    setEditAssignedPlantOther('')
     setSavingEdit(false)
   }
 
   async function handleSaveEdit(e: React.FormEvent) {
     e.preventDefault()
     if (!editUser) return
+    if (editAssignedPlant === 'Other' && !editAssignedPlantOther.trim()) {
+      setError('Enter a plant name when Other is selected.')
+      toast.error('Enter a plant name when Other is selected.')
+      return
+    }
+    const plantChanged =
+      editAssignedPlant !== (editUser.assignedPlant ?? '') ||
+      editAssignedPlantOther.trim() !== (editUser.assignedPlantOther ?? '').trim()
+    if (plantChanged && !editAssignedPlant) {
+      setError('Select a reporting plant.')
+      toast.error('Select a reporting plant.')
+      return
+    }
     setSavingEdit(true)
     setError('')
     try {
@@ -157,6 +179,12 @@ export function UserManagementPage() {
         name: editName.trim() || undefined,
         email: editEmail.trim() || undefined,
         resetPassword: editPassword.trim() ? editPassword.trim() : undefined,
+        ...(plantChanged
+          ? {
+              assignedPlant: editAssignedPlant || null,
+              assignedPlantOther: editAssignedPlant === 'Other' ? editAssignedPlantOther.trim() : null,
+            }
+          : {}),
       })
       setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
       toast.success('Employee updated.')
@@ -426,6 +454,18 @@ export function UserManagementPage() {
                   onChange={(e) => setEditPassword(e.target.value)}
                   placeholder="Min 6 characters"
                   className="w-full px-4 py-3 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[15px] focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)]"
+                />
+              </div>
+              <div>
+                <label className="block text-[12px] font-semibold text-[var(--color-text-secondary)] mb-1.5 uppercase tracking-wider">
+                  Reporting plant / OEM
+                </label>
+                <PlantSelector
+                  value={editAssignedPlant}
+                  otherValue={editAssignedPlantOther}
+                  onChange={setEditAssignedPlant}
+                  onOtherChange={setEditAssignedPlantOther}
+                  idPrefix="edit-employee"
                 />
               </div>
 
@@ -951,6 +991,9 @@ export function UserManagementPage() {
                           Role
                         </th>
                         <th className="px-5 sm:px-6 md:px-8 py-4 text-left text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
+                          Plant
+                        </th>
+                        <th className="px-5 sm:px-6 md:px-8 py-4 text-left text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
                           Status
                         </th>
                         <th className="px-5 sm:px-6 md:px-8 py-4 text-right text-[11px] font-semibold text-[var(--color-text-secondary)] uppercase tracking-wider">
@@ -961,7 +1004,7 @@ export function UserManagementPage() {
                     <tbody className="divide-y divide-[var(--color-border)]">
               {paginatedUsers.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-5 sm:px-6 md:px-8 py-16 sm:py-20 text-center">
+                  <td colSpan={5} className="px-5 sm:px-6 md:px-8 py-16 sm:py-20 text-center">
                     <div className="flex flex-col items-center gap-4 text-[var(--color-text-secondary)]">
                       <span className="flex items-center justify-center w-14 h-14 rounded-full bg-[var(--color-bg)]">
                         <Users className="w-7 h-7 text-[var(--color-primary)]/50" />
@@ -1027,6 +1070,9 @@ export function UserManagementPage() {
                           ))}
                         </select>
                       )}
+                    </td>
+                    <td className="px-5 sm:px-6 md:px-8 py-4 text-[13px] text-[var(--color-text)]">
+                      {formatPlantLabel(u.assignedPlant, u.assignedPlantOther) || '—'}
                     </td>
                     <td className="px-5 sm:px-6 md:px-8 py-4">
                       <span

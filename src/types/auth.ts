@@ -8,6 +8,8 @@ export interface User {
     enabled?: boolean
     severityLevels?: number[]
   }
+  assignedPlant?: string
+  assignedPlantOther?: string
 }
 
 export interface AuthState {

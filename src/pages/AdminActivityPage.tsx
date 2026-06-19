@@ -88,6 +88,7 @@ type AdminActivity = {
   customer?: string
   /** Up to 5-character physical-location tag at the plant (e.g. A12, B-7). */
   location?: string
+  reportingPlant?: string
   summary?: string
   createdAt: string
   archivedAt?: string
@@ -107,6 +108,7 @@ type ActivityDetail = {
   customer?: string
   /** Up to 5-character physical-location tag at the plant (e.g. A12, B-7). */
   location?: string
+  reportingPlant?: string
   summary?: string
   rawConversation?: string
   structuredData?: { summary?: string; notes?: string } | Record<string, unknown>
@@ -1264,6 +1266,14 @@ export function AdminActivityPage() {
                     <p className="text-[12px] text-[var(--color-text-secondary)] md:truncate break-words">
                       <span className="font-semibold text-[var(--color-text)] md:hidden">Customer: </span>
                       {a.customer || '—'}
+                      {a.reportingPlant ? (
+                        <span
+                          className="ml-1 inline-flex items-center rounded border border-[var(--color-primary)]/25 bg-[var(--color-primary)]/5 px-1.5 py-[1px] text-[10px] font-medium text-[var(--color-primary)]"
+                          title="Reporting plant / OEM"
+                        >
+                          {a.reportingPlant}
+                        </span>
+                      ) : null}
                       {a.location ? (
                         <span
                           className="ml-1 inline-flex items-center rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-1 py-[1px] font-mono text-[10px] tracking-wide text-[var(--color-text)]"
@@ -1463,6 +1473,11 @@ export function AdminActivityPage() {
                       <span>{new Date(selectedActivityDetail.createdAt).toLocaleString()}</span>
                       {selectedActivityDetail.customer ? (
                         <span className="text-[var(--color-text)]">· {selectedActivityDetail.customer}</span>
+                      ) : null}
+                      {selectedActivityDetail.reportingPlant ? (
+                        <span className="text-[var(--color-primary)] font-medium">
+                          · {selectedActivityDetail.reportingPlant}
+                        </span>
                       ) : null}
                       {selectedActivityDetail.location ? (
                         <span
