@@ -30,7 +30,11 @@ import { AdminShell } from '@/components/layout/AdminShell'
 import { LazyActivityImage } from '@/components/LazyActivityImage'
 import { useAuth } from '@/context/AuthContext'
 import { useSharedLogsNotify } from '@/context/SharedLogsNotifyContext'
+import { CustomerTypeahead } from '@/components/customers/CustomerTypeahead'
+import { findCustomerByName } from '@/lib/customerName'
+import { formatUsDateTime } from '@/lib/formatDate'
 import { formatPlantLabel } from '@/constants/plants'
+import { resolveSharePreferences } from '@/constants/sharePreferences'
 import {
   areSharePhotosReady,
   canUseNativeShare,
@@ -323,7 +327,6 @@ export function ChatPage() {
   const isEmployee = user?.role === 'employee'
   const [text, setText] = useState('')
   const [customerHint, setCustomerHint] = useState('')
-  const [customerHintTouched, setCustomerHintTouched] = useState(false)
   const [customers, setCustomers] = useState<
     { _id: string; name: string; email?: string; notes?: string; createdAt: string }[]
   >([])
@@ -507,10 +510,6 @@ export function ChatPage() {
     )
   }, [coworkers, shareSearch, shareSelection])
 
-  function normalizeCustomerName(value: string) {
-    return value.trim().toLowerCase().replace(/\s+/g, ' ')
-  }
-
   function parseCommaSeparatedEmails(value?: string): string[] {
     if (typeof value !== 'string' || !value.trim()) return []
     return [...new Set(value.split(',').map((v) => v.trim().toLowerCase()).filter(Boolean))]
@@ -519,8 +518,7 @@ export function ChatPage() {
   function selectedLogCustomerEmails(): string[] {
     const rawCustomer = typeof activityDetail?.customer === 'string' ? activityDetail.customer.trim() : ''
     if (!rawCustomer) return []
-    const normalized = normalizeCustomerName(rawCustomer)
-    const match = customers.find((c) => normalizeCustomerName(c.name) === normalized)
+    const match = findCustomerByName(customers, rawCustomer)
     return parseCommaSeparatedEmails(typeof match?.email === 'string' ? match.email : '')
   }
 
@@ -770,11 +768,9 @@ export function ChatPage() {
     const c = hintCustomer?.trim() || ''
     if (c) {
       setCustomerHint(c)
-      const normalized = normalizeCustomerName(c)
-      const matched = customers.find((cust) => normalizeCustomerName(cust.name) === normalized)
+      const matched = findCustomerByName(customers, c)
       setSelectedCustomerId(matched?._id ?? '')
     }
-    setCustomerHintTouched(false)
     toast.info('Review the extracted log fields, then save to add it to your tracker.')
     await handleExtract(snippet, hintCustomer)
     applyBarcodeFormHints(barcodeHints)
@@ -1218,8 +1214,7 @@ export function ChatPage() {
 
   useEffect(() => {
     if (selectedCustomerId || !customerHint.trim() || customers.length === 0) return
-    const normalized = normalizeCustomerName(customerHint)
-    const matched = customers.find((c) => normalizeCustomerName(c.name) === normalized)
+    const matched = findCustomerByName(customers, customerHint)
     if (matched?._id) {
       setSelectedCustomerId(matched._id)
     }
@@ -1288,7 +1283,6 @@ export function ChatPage() {
     setAttachmentFile(null)
     if (attachmentInputRef.current) attachmentInputRef.current.value = ''
     setSavedResultKey(null)
-    setCustomerHintTouched(false)
   }
 
   async function handleExtract(overrideText?: string, overrideCustomerHint?: string) {
@@ -1303,7 +1297,6 @@ export function ChatPage() {
       const hasTypedCustomer = Boolean(effectiveCustomerHint)
       if (!hasDropdownChoice && !hasTypedCustomer) {
         setError('Please select a customer before logging with AI.')
-        setCustomerHintTouched(true)
         return
       }
     }
@@ -1311,7 +1304,6 @@ export function ChatPage() {
     setSaveMessage(null)
     setValidation(null)
     setSavedResultKey(null)
-    setCustomerHintTouched(false)
     setLoadingExtract(true)
     try {
       const data = await api.ai.extractActivity(body, effectiveCustomerHint || undefined)
@@ -1361,7 +1353,6 @@ export function ChatPage() {
       const hasTypedCustomer = Boolean(customerHint.trim())
       if (!hasDropdownChoice && !hasTypedCustomer) {
         setError('Please select a customer before saving to tracker.')
-        setCustomerHintTouched(true)
         return
       }
     }
@@ -1589,7 +1580,6 @@ export function ChatPage() {
     setSaveMessage(null)
     setValidation(null)
     setSavedResultKey(null)
-    setCustomerHintTouched(false)
     try {
       const recentListCustomer =
         recentActivities.find((a) => a._id === id)?.customer?.trim() || ''
@@ -1664,18 +1654,13 @@ export function ChatPage() {
         recentListCustomer ||
         ''
       if (detailCustomer) {
-        const normalizedDetailCustomer = normalizeCustomerName(detailCustomer)
-        const matchedCustomer = customers.find(
-          (c) => normalizeCustomerName(c.name) === normalizedDetailCustomer
-        )
+        const matchedCustomer = findCustomerByName(customers, detailCustomer)
         setSelectedCustomerId(matchedCustomer?._id ?? '')
-        setCustomerHint(detailCustomer)
+        setCustomerHint(matchedCustomer?.name ?? detailCustomer)
       } else {
         setSelectedCustomerId('')
         setCustomerHint('')
       }
-      setCustomerHintTouched(false)
-
       if (!options?.prepareReExtract) {
         const existingKey = [
           merged.trim(),
@@ -1816,7 +1801,7 @@ export function ChatPage() {
     try {
       const detail = activityDetail
       const imageCount = Array.isArray(detail.images) ? detail.images.length : 0
-      const result = await shareActivityLog(detail)
+      const result = await shareActivityLog(detail, resolveSharePreferences(user?.sharePreferences).activityLog)
       if (result.mode === 'native') {
         if (result.imageCount > 0) {
           toast.success(
@@ -2268,12 +2253,7 @@ export function ChatPage() {
                             </span>
                             <span className="shrink-0 inline-flex items-center gap-1 text-[11px] text-[#888]">
                               <Clock className="w-3.5 h-3.5" />
-                              {new Date(act.createdAt).toLocaleString(undefined, {
-                                month: 'short',
-                                day: 'numeric',
-                                hour: 'numeric',
-                                minute: '2-digit',
-                              })}
+                              {formatUsDateTime(act.createdAt)}
                             </span>
                           </div>
                           {act.customer ? (
@@ -2331,11 +2311,13 @@ export function ChatPage() {
                   <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
                     Customer
                   </label>
-                  <input
+                  <CustomerTypeahead
+                    customers={customers}
                     value={barcodeCustomer}
-                    onChange={(e) => setBarcodeCustomer(e.target.value)}
+                    loading={loadingCustomers}
                     placeholder="Bosch"
-                    className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
+                    onChange={(name) => setBarcodeCustomer(name)}
+                    inputClassName="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
                   />
                   {barcodeModal.fields?.includes('customer') && !barcodeCustomer.trim() ? (
                     <p className="text-[11px] text-amber-700">Required for first-time barcode mapping.</p>
@@ -2639,7 +2621,6 @@ export function ChatPage() {
                     if (attachmentInputRef.current) attachmentInputRef.current.value = ''
                     if (addImageInputRef.current) addImageInputRef.current.value = ''
                     setSavedResultKey(null)
-                    setCustomerHintTouched(false)
                     setRecentModalOpen(false)
                   }}
                   className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] bg-white text-[#444] hover:bg-black/[0.03]"
@@ -2740,7 +2721,7 @@ export function ChatPage() {
                               <> · <span className="font-medium text-[#555]">{act.reportingPlant}</span></>
                             ) : null}
                             {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
-                            {' · '}{new Date(act.createdAt).toLocaleString()}
+                            {' · '}{formatUsDateTime(act.createdAt)}
                           </span>
                         </p>
                         <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
@@ -2816,7 +2797,6 @@ export function ChatPage() {
                     if (attachmentInputRef.current) attachmentInputRef.current.value = ''
                     if (addImageInputRef.current) addImageInputRef.current.value = ''
                     setSavedResultKey(null)
-                    setCustomerHintTouched(false)
                   }}
                   className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[var(--color-border)] bg-white text-[#444] hover:bg-black/[0.03] transition-colors"
                   aria-label="New log"
@@ -2907,7 +2887,7 @@ export function ChatPage() {
                             <> · <span className="font-medium text-[#555]">{act.reportingPlant}</span></>
                           ) : null}
                           {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
-                          {' · '}{new Date(act.createdAt).toLocaleString()}
+                          {' · '}{formatUsDateTime(act.createdAt)}
                         </span>
                       </p>
                       <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
@@ -2995,7 +2975,7 @@ export function ChatPage() {
                           <> · <span className="font-medium text-[#555]">{act.reportingPlant}</span></>
                         ) : null}
                         {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
-                        {' · '}{new Date(act.createdAt).toLocaleString()}
+                        {' · '}{formatUsDateTime(act.createdAt)}
                       </span>
                     </p>
                     <p className="text-sm text-[#222] truncate">{act.summary || 'No summary'}</p>
@@ -3337,45 +3317,19 @@ export function ChatPage() {
                   placeholder="Example: Spoke with Apex Engineering about line-3 downtime; diagnosed sensor issue and planned follow‑up visit tomorrow at 10:00."
                   className="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30"
                 />
-                <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
-                  <select
-                    value={selectedCustomerId}
-                    onChange={(e) => {
-                      const id = e.target.value
-                      setSelectedCustomerId(id)
-                      const customer = customers.find((c) => c._id === id)
-                      // Only auto-fill if the employee hasn't typed a custom value
-                      if (!customerHintTouched || !customerHint.trim()) {
-                        setCustomerHint(customer?.name ?? '')
-                        setCustomerHintTouched(false)
-                      }
-                    }}
-                    className="w-full sm:w-1/2 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
-                  >
-                    <option value="">
-                      {loadingCustomers
-                        ? 'Loading customers…'
-                        : isEmployee
-                          ? 'Select customer *'
-                          : 'Select customer (optional)'}
-                    </option>
-                    {customers.map((c) => (
-                      <option key={c._id} value={c._id}>
-                        {c.name}{c.email ? ` — ${c.email}` : ''}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={customerHint}
-                    onChange={(e) => {
-                      setCustomerHint(e.target.value)
-                      setCustomerHintTouched(true)
-                    }}
-                    placeholder={isEmployee ? 'Type customer name (required if not selected)' : 'Or type a customer / project name'}
-                    className="w-full sm:flex-1 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
-                  />
-                </div>
+                <CustomerTypeahead
+                  customers={customers}
+                  value={customerHint}
+                  loading={loadingCustomers}
+                  placeholder={
+                    isEmployee ? 'Type customer name (required) *' : 'Type customer name (optional)'
+                  }
+                  onChange={(name, customer) => {
+                    setCustomerHint(name)
+                    setSelectedCustomerId(customer?._id ?? '')
+                  }}
+                  inputClassName="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-3 py-1.5 text-xs text-[#222] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                />
                 {/* Image upload section */}
                 <div className="flex flex-col gap-2">
                   <div className="flex flex-wrap items-center gap-2">
@@ -4056,7 +4010,7 @@ export function ChatPage() {
                                           className={`font-normal ${isMine ? 'text-[var(--color-primary)]/75' : 'opacity-80'}`}
                                         >
                                           {' '}
-                                          · {n.createdAt ? new Date(n.createdAt).toLocaleString() : ''}
+                                          · {n.createdAt ? formatUsDateTime(n.createdAt) : ''}
                                         </span>
                                       </p>
                                       <p className="text-[13px] whitespace-pre-wrap leading-relaxed text-[var(--color-text)]">

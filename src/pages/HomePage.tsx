@@ -297,7 +297,7 @@ export function HomePage() {
                 What this portal is used for
               </h2>
               <p className="mt-1.5 text-[13px] text-[var(--color-text-secondary)] max-w-3xl">
-                AI Activity Tracker helps teams capture day-to-day work updates in a consistent format, so admins can review activity and generate weekly reports without chasing messages across tools.
+                AI Activity Tracker helps teams capture day-to-day work updates in a consistent format, so admins can review activity and generate quality reports without chasing messages across tools.
               </p>
 
               <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -333,7 +333,7 @@ export function HomePage() {
                     <p className="font-semibold text-[var(--color-text)]">Weekly reporting</p>
                   </div>
                   <p className="mt-2 text-[13px] text-[var(--color-text-secondary)]">
-                    Admins can generate reports across employees and customers for weekly updates.
+                    Admins can generate reports across employees and customers for quality updates.
                   </p>
                 </div>
               </div>

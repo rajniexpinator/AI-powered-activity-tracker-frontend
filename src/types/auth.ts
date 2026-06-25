@@ -1,3 +1,5 @@
+import type { SharePreferences } from '@/constants/sharePreferences'
+
 export interface User {
   id: string
   email: string
@@ -10,6 +12,7 @@ export interface User {
   }
   assignedPlant?: string
   assignedPlantOther?: string
+  sharePreferences?: SharePreferences
 }
 
 export interface AuthState {

@@ -1,4 +1,9 @@
 import { getToken } from '@/services/api'
+import { formatUsDateTime } from '@/lib/formatDate'
+import {
+  DEFAULT_ACTIVITY_LOG_SHARE,
+  type ActivityLogSharePreferences,
+} from '@/constants/sharePreferences'
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
@@ -24,6 +29,8 @@ export type ShareableActivity = {
 export type BuildShareTextOptions = {
   /** How many photos were attached as files for inline display (e.g. WhatsApp). */
   attachedImageCount?: number
+  /** Per-field share preferences (from user profile). */
+  preferences?: ActivityLogSharePreferences
 }
 
 type ShareImageCacheEntry = {
@@ -51,15 +58,6 @@ function videoAttachmentsFromActivity(activity: ShareableActivity): ShareableAtt
 
 function asText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
-}
-
-function severityLabel(raw: unknown): string {
-  const n = typeof raw === 'number' ? raw : typeof raw === 'string' ? parseInt(raw, 10) : NaN
-  if (n === 0) return '0 — All good'
-  if (n === 1) return '1 — Low'
-  if (n === 2) return '2 — Medium'
-  if (n === 3) return '3 — High'
-  return ''
 }
 
 function imageUrlsFromActivity(activity: ShareableActivity): string[] {
@@ -186,51 +184,38 @@ export async function preloadShareImages(activity: ShareableActivity): Promise<v
   }
 }
 
-function buildLogBody(activity: ShareableActivity): string[] {
+function buildLogBody(activity: ShareableActivity, prefs: ActivityLogSharePreferences): string[] {
   const structured =
     activity.structuredData && typeof activity.structuredData === 'object'
       ? activity.structuredData
       : {}
 
   const customer = asText(activity.customer) || asText(structured.customer) || 'Unknown customer'
-  const location = asText(activity.location) || asText(structured.location)
   const summary = asText(activity.summary) || asText(structured.summary) || 'No summary'
   const partName = asText(structured.part_name) || asText(structured.partName)
   const partNumber = asText(structured.part_number) || asText(structured.partNumber)
-  const supplierCode = asText(structured.supplier_code) || asText(structured.supplierCode)
-  const vehicleLineRaw = structured.vehicle_line ?? structured.vehicleLine
-  const vehicleLine = Array.isArray(vehicleLineRaw)
-    ? vehicleLineRaw.map((v) => String(v).trim()).filter(Boolean)
-    : []
-  const intent = asText(structured.intent)
-  const outcome = asText(structured.outcome)
-  const severity = severityLabel(structured.severity)
   const notes = asText(structured.notes)
   const rawText = asText(activity.rawConversation)
 
   const createdLabel = activity.createdAt
-    ? new Date(activity.createdAt).toLocaleString()
+    ? formatUsDateTime(activity.createdAt)
     : 'Unknown date'
 
-  return [
-    'Apex Quality — AI activity log',
-    '',
-    `Customer: ${customer}`,
-    ...(location ? [`Location: ${location}`] : []),
-    `Created: ${createdLabel}`,
-    `Summary: ${summary}`,
-    ...(partName ? [`Part name: ${partName}`] : []),
-    ...(partNumber ? [`Part number: ${partNumber}`] : []),
-    ...(supplierCode ? [`Supplier code: ${supplierCode}`] : []),
-    ...(vehicleLine.length ? [`Vehicle line: ${vehicleLine.join(', ')}`] : []),
-    ...(severity ? [`Severity: ${severity}`] : []),
-    ...(intent ? [`Intent: ${intent}`] : []),
-    ...(outcome ? [`Outcome: ${outcome}`] : []),
-    '',
-    'Notes:',
-    rawText || '(none)',
-    ...(notes ? ['', 'Additional notes:', notes] : []),
-  ]
+  const lines = ['Apex Quality — AI activity log', '']
+
+  if (prefs.customer) lines.push(`Customer: ${customer}`)
+  if (prefs.createdAt) lines.push(`Created: ${createdLabel}`)
+  if (prefs.summary) lines.push(`Summary: ${summary}`)
+  if (prefs.partName && partName) lines.push(`Part name: ${partName}`)
+  if (prefs.partNumber && partNumber) lines.push(`Part number: ${partNumber}`)
+  if (prefs.summary) {
+    lines.push('', 'Notes:', rawText || '(none)')
+    if (notes) lines.push('', 'Additional notes:', notes)
+  } else if (notes) {
+    lines.push('', 'Additional notes:', notes)
+  }
+
+  return lines
 }
 
 function buildPhotoLinksSection(
@@ -265,13 +250,14 @@ export function buildActivityShareText(
   activity: ShareableActivity,
   options: BuildShareTextOptions = {}
 ): { title: string; text: string } {
+  const prefs = options.preferences ?? DEFAULT_ACTIVITY_LOG_SHARE
   const attachedImageCount = options.attachedImageCount ?? 0
   const imageUrls = imageUrlsFromActivity(activity)
 
   const lines = [
-    ...buildLogBody(activity),
-    ...buildPhotoLinksSection(imageUrls, attachedImageCount),
-    ...buildVideoLinksSection(videoAttachmentsFromActivity(activity)),
+    ...buildLogBody(activity, prefs),
+    ...(prefs.photos ? buildPhotoLinksSection(imageUrls, attachedImageCount) : []),
+    ...(prefs.files ? buildVideoLinksSection(videoAttachmentsFromActivity(activity)) : []),
   ]
 
   const structured =
@@ -401,17 +387,22 @@ export type ShareActivityResult =
   | { mode: 'native'; imageCount: number; usedCachedImages: boolean }
   | { mode: 'clipboard'; imageCount: number }
 
-export async function shareActivityLog(activity: ShareableActivity): Promise<ShareActivityResult> {
+export async function shareActivityLog(
+  activity: ShareableActivity,
+  preferences?: ActivityLogSharePreferences
+): Promise<ShareActivityResult> {
+  const prefs = preferences ?? DEFAULT_ACTIVITY_LOG_SHARE
   const imageUrls = imageUrlsFromActivity(activity)
+  const wantsPhotos = prefs.photos && imageUrls.length > 0
 
   if (!canUseNativeShare()) {
-    const { text } = buildActivityShareText(activity, { attachedImageCount: 0 })
+    const { text } = buildActivityShareText(activity, { attachedImageCount: 0, preferences: prefs })
     await copyTextFallback(text)
     return { mode: 'clipboard', imageCount: imageUrls.length }
   }
 
-  const cachedFiles = getCachedShareFiles(activity)
-  const hasImages = imageUrls.length > 0
+  const cachedFiles = wantsPhotos ? getCachedShareFiles(activity) : []
+  const hasImages = wantsPhotos
 
   if (hasImages && cachedFiles.length === 0) {
     throw new Error(
@@ -427,6 +418,7 @@ export async function shareActivityLog(activity: ShareableActivity): Promise<Sha
 
   const { text } = buildActivityShareText(activity, {
     attachedImageCount: cachedFiles.length,
+    preferences: prefs,
   })
 
   if (cachedFiles.length > 0) {

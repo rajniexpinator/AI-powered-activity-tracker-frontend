@@ -90,7 +90,7 @@ export async function fetchReportPdfBlob(reportId: string): Promise<{ blob: Blob
 
   const filename = parseFilenameFromDisposition(
     res.headers.get('Content-Disposition'),
-    `weekly-report-${reportId.slice(-6)}.pdf`
+    `quality-report-${reportId.slice(-6)}.pdf`
   )
   return { blob, filename }
 }
@@ -129,7 +129,7 @@ export type ShareReportResult = { mode: 'native' } | { mode: 'preview' }
 export async function shareReportPdf(reportId: string, title?: string): Promise<ShareReportResult> {
   const { blob, filename } = await fetchReportPdfBlob(reportId)
   const file = new File([blob], filename, { type: 'application/pdf' })
-  const shareTitle = title?.trim() || 'Weekly quality report'
+  const shareTitle = title?.trim() || 'Quality Report'
 
   if (canShareFiles([file])) {
     try {

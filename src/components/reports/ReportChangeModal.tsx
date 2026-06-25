@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
+import { api } from '@/services/api'
+import { CustomerTypeahead, type CustomerOption } from '@/components/customers/CustomerTypeahead'
 
 export type ReportChangeValues = {
   customer: string
@@ -25,10 +27,40 @@ type Props = {
 
 export function ReportChangeModal({ open, title, initial, saving, onClose, onApply, datesOnly = false }: Props) {
   const [values, setValues] = useState<ReportChangeValues>(initial)
+  const [customers, setCustomers] = useState<CustomerOption[]>([])
+  const [loadingCustomers, setLoadingCustomers] = useState(false)
 
   useEffect(() => {
     if (open) setValues(initial)
   }, [open, initial])
+
+  useEffect(() => {
+    if (!open || datesOnly) return
+    let cancelled = false
+    setLoadingCustomers(true)
+    api.customers
+      .list()
+      .then(({ customers: rows }) => {
+        if (!cancelled) {
+          setCustomers(
+            rows.map((c) => ({
+              _id: c._id,
+              name: c.name,
+              email: typeof c.email === 'string' ? c.email : undefined,
+            }))
+          )
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCustomers([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCustomers(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, datesOnly])
 
   if (!open) return null
 
@@ -63,13 +95,20 @@ export function ReportChangeModal({ open, title, initial, saving, onClose, onApp
             <label className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
               Customer
             </label>
-            <input
-              value={values.customer}
-              onChange={(e) => setValues((v) => ({ ...v, customer: e.target.value }))}
-              placeholder="Leave empty for all customers"
-              className="mt-1.5 w-full h-10 rounded-lg border border-[var(--color-border)] px-3 text-[13px]"
-              disabled={saving}
-            />
+            <div className="mt-1.5">
+              <CustomerTypeahead
+                customers={customers}
+                value={values.customer}
+                loading={loadingCustomers}
+                disabled={saving}
+                placeholder="Type to search customers…"
+                onChange={(name) => setValues((v) => ({ ...v, customer: name }))}
+                inputClassName="w-full h-10 rounded-lg border border-[var(--color-border)] px-3 text-[13px]"
+              />
+              <p className="mt-1 text-[11px] text-[var(--color-text-secondary)]">
+                Leave empty for all customers. Search is not case-sensitive.
+              </p>
+            </div>
           </div>
           )}
 

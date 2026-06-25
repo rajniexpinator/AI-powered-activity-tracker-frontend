@@ -4,6 +4,7 @@ import { FileText, Upload, Download, Trash2, AlertCircle, FolderOpen, X } from '
 import { api, type EmployeeFileItem } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { useAuth } from '@/context/AuthContext'
+import { formatUsDateTime } from '@/lib/formatDate'
 
 function formatBytes(n: number) {
   if (n < 1024) return `${n} B`
@@ -216,7 +217,7 @@ export function EmployeeFilesPage() {
                     {f.description ? <p className="text-xs text-[#666] mt-0.5 line-clamp-2">{f.description}</p> : null}
                     <p className="text-[11px] text-[#999] mt-1">
                       {f.originalName} · {formatBytes(f.size)} ·{' '}
-                      {new Date(f.createdAt).toLocaleString()}
+                      {formatUsDateTime(f.createdAt)}
                       {f.uploadedBy?.email ? ` · ${f.uploadedBy.email}` : ''}
                     </p>
                   </div>

@@ -1,5 +1,6 @@
 import { ImageIcon } from 'lucide-react'
 import { LazyActivityImage } from '@/components/LazyActivityImage'
+import { formatUsDateTime } from '@/lib/formatDate'
 
 export type ReportImageGalleryEntry = {
   activityId?: string
@@ -36,7 +37,7 @@ export function ReportImageGallery({ entries, className = '' }: Props) {
           const urls = (entry.imageUrls || []).filter(Boolean)
           if (urls.length === 0) return null
           const cap = entry.customer?.trim() || 'Activity'
-          const when = entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ''
+          const when = entry.createdAt ? formatUsDateTime(entry.createdAt) : ''
           return (
             <div
               key={entry.activityId ? String(entry.activityId) : `g-${gi}`}

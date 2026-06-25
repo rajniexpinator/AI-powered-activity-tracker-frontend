@@ -7,6 +7,7 @@ import { AddToDashboardModal } from '@/components/reports/AddToDashboardModal'
 import { ReportChangeModal, type ReportChangeValues } from '@/components/reports/ReportChangeModal'
 import { api } from '@/services/api'
 import { downloadReportPdf, shareReportPdf } from '@/lib/shareReport'
+import { buildQualityReportTitle } from '@/lib/reportTitle'
 import {
   FileText,
   Loader2,
@@ -24,6 +25,8 @@ import {
   MoreHorizontal,
 } from 'lucide-react'
 import { toast } from 'react-toastify'
+import { formatUsDateTime } from '@/lib/formatDate'
+import { PLANT_OPTIONS } from '@/constants/plants'
 
 type ReportListItem = {
   _id: string
@@ -38,6 +41,8 @@ type ReportListItem = {
   issueSeverityExact?: number
   issueSeverityMin?: number
   activityCount?: number
+  oem?: string
+  title?: string
   createdAt: string
 }
 
@@ -72,17 +77,6 @@ function changeValuesFromReport(report: {
   }
 }
 
-function formatReportSeverityLabel(r: ReportListItem): string | null {
-  if (typeof r.issueSeverityExact === 'number' && r.issueSeverityExact >= 0 && r.issueSeverityExact <= 3) {
-    const word =
-      r.issueSeverityExact === 3 ? 'High' : r.issueSeverityExact === 2 ? 'Medium' : r.issueSeverityExact === 1 ? 'Low' : 'All good'
-    return `Severity ${r.issueSeverityExact} (${word})`
-  }
-  if (typeof r.issueSeverityMin === 'number' && r.issueSeverityMin >= 0 && r.issueSeverityMin <= 3) {
-    return r.issueSeverityMin === 2 ? 'Severity 2–3' : r.issueSeverityMin === 0 ? 'Severity 0–3' : `Severity ≥ ${r.issueSeverityMin}`
-  }
-  return null
-}
 
 export function ReportsPage() {
   const PAGE_SIZE = 4
@@ -130,6 +124,7 @@ export function ReportsPage() {
   const [changeReportId, setChangeReportId] = useState('')
   const [changeValues, setChangeValues] = useState<ReportChangeValues | null>(null)
   const [regenerating, setRegenerating] = useState(false)
+  const [oemFilter, setOemFilter] = useState('')
 
   useEffect(() => {
     document.title = 'Reports'
@@ -164,7 +159,11 @@ export function ReportsPage() {
     setLoading(true)
     setError('')
     try {
-      const res = await api.reports.list({ page: nextPage, limit: PAGE_SIZE })
+      const res = await api.reports.list({
+        page: nextPage,
+        limit: PAGE_SIZE,
+        oem: oemFilter || undefined,
+      })
       setReports(res.reports)
       setTotal(res.total || 0)
       setTotalPages(res.totalPages || 1)
@@ -178,7 +177,7 @@ export function ReportsPage() {
   useEffect(() => {
     void loadList(page)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page])
+  }, [page, oemFilter])
 
   useEffect(() => {
     void loadMs365()
@@ -233,9 +232,9 @@ export function ReportsPage() {
   }
 
   function reportPreviewTitle(r: ReportListItem | undefined): string {
-    if (!r) return 'Weekly quality report'
-    const customer = r.customer ? r.customer : 'All customers'
-    return `Weekly report · ${customer}`
+    if (!r) return 'Quality Report'
+    if (r.title?.trim()) return r.title.trim()
+    return buildQualityReportTitle({ customer: r.customer, oem: r.oem })
   }
 
   function shouldOpenPreviewModal() {
@@ -460,7 +459,7 @@ export function ReportsPage() {
                   Reports
                 </h1>
                 <p className="mt-1.5 text-[13px] sm:text-[14px] text-[var(--color-text-secondary)] max-w-xl">
-                  Review and reuse AI-generated weekly quality reports across customers and plants.
+                  Review and reuse AI-generated quality reports across customers and plants.
                 </p>
               </div>
             </div>
@@ -495,7 +494,22 @@ export function ReportsPage() {
                   )}
                 </p>
               </div>
-              <div className="flex items-center gap-2 self-end sm:self-auto">
+              <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+                <select
+                  value={oemFilter}
+                  onChange={(e) => {
+                    setOemFilter(e.target.value)
+                    setPage(1)
+                  }}
+                  className="rounded-xl border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] font-medium text-[var(--color-text)]"
+                >
+                  <option value="">All OEM</option>
+                  {PLANT_OPTIONS.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   onClick={() => void handleClearHistory()}
@@ -535,7 +549,6 @@ export function ReportsPage() {
                 </div>
               ) : (
                 reports.map((r) => {
-                  const sevLabel = formatReportSeverityLabel(r)
                   return (
                   <div
                     key={r._id}
@@ -555,12 +568,11 @@ export function ReportsPage() {
                           {r.customer ? r.customer : 'All customers'}
                         </p>
                         <p className="text-[13px] font-semibold text-[var(--color-text)] leading-snug">
-                          Weekly report
+                          {reportPreviewTitle(r)}
                           {r.includeCustomerSummaries ? ' · customer summaries' : ''}
-                          {sevLabel ? ` · ${sevLabel}` : ''}
                         </p>
                         <p className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">
-                          {new Date(r.createdAt).toLocaleString()}
+                          {formatUsDateTime(r.createdAt)}
                         </p>
                         <p className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-medium text-[var(--color-primary)]">
                           <MoreHorizontal className="w-3.5 h-3.5" />
@@ -717,7 +729,7 @@ export function ReportsPage() {
                     <input
                       value={emailSubject}
                       onChange={(e) => setEmailSubject(e.target.value)}
-                      placeholder="Weekly quality report"
+                      placeholder="Quality Report for Customer at OEM"
                       className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[var(--color-text)] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
                     />
                   </div>
@@ -797,7 +809,7 @@ export function ReportsPage() {
                   )}
                   {selected && (
                     <p className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">
-                      {new Date(selected.createdAt).toLocaleString()} · {selected.activityCount ?? 0} logs
+                      {formatUsDateTime(selected.createdAt)} · {selected.activityCount ?? 0} logs
                       {selected.includeCustomerSummaries ? ' · customer summaries' : ''}
                     </p>
                   )}
@@ -831,7 +843,7 @@ export function ReportsPage() {
           title={reportPreviewTitle(actionReport || undefined)}
           subtitle={
             actionReport
-              ? `${new Date(actionReport.createdAt).toLocaleString()} · ${actionReport.activityCount ?? 0} logs`
+              ? `${formatUsDateTime(actionReport.createdAt)} · ${actionReport.activityCount ?? 0} logs`
               : undefined
           }
           onClose={() => setActionReport(null)}
@@ -945,7 +957,7 @@ export function ReportsPage() {
                   </p>
                   {selected && (
                     <p className="mt-0.5 text-[11px] text-[var(--color-text-secondary)]">
-                      {new Date(selected.createdAt).toLocaleString()} · {selected.activityCount ?? 0} logs
+                      {formatUsDateTime(selected.createdAt)} · {selected.activityCount ?? 0} logs
                     </p>
                   )}
                 </div>

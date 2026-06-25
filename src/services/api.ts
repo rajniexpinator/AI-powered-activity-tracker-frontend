@@ -1,4 +1,5 @@
 import type { User, LoginResponse } from '@/types/auth'
+import type { SharePreferences } from '@/constants/sharePreferences'
 
 export type EmployeeFileItem = {
   _id: string
@@ -103,6 +104,7 @@ export const api = {
       emailNotifications?: { enabled?: boolean; severityLevels?: number[] }
       assignedPlant?: string | null
       assignedPlantOther?: string | null
+      sharePreferences?: SharePreferences
     }) =>
       request<{ user: User }>('/api/auth/me', {
         method: 'PATCH',
@@ -125,6 +127,7 @@ export const api = {
         emailNotifications?: { enabled?: boolean; severityLevels?: number[] }
         assignedPlant?: string | null
         assignedPlantOther?: string | null
+        sharePreferences?: SharePreferences
       }
     ) =>
       request<{ user: User }>(`/api/auth/users/${id}`, {
@@ -319,6 +322,7 @@ export const api = {
       severity?: string
       /** Minimum severity 0–3 (e.g. 2 = medium and high) */
       minSeverity?: string
+      oem?: string
     }) => {
       const search = new URLSearchParams()
       if (params.userId) search.set('userId', params.userId)
@@ -329,6 +333,7 @@ export const api = {
       if (params.to) search.set('to', params.to)
       if (params.severity) search.set('severity', params.severity)
       if (params.minSeverity) search.set('minSeverity', params.minSeverity)
+      if (params.oem) search.set('oem', params.oem)
       if (typeof params.limit === 'number') search.set('limit', String(params.limit))
       if (typeof params.page === 'number') search.set('page', String(params.page))
       const qs = search.toString()
@@ -396,6 +401,9 @@ export const api = {
       to?: string
       limit?: number
       includeCustomerSummaries?: boolean
+      reportSections?: Record<string, boolean>
+      includeReportPictures?: boolean
+      oem?: string
       severity?: string | number
       minSeverity?: string | number
     }) =>
@@ -452,10 +460,11 @@ export const api = {
   },
 
   reports: {
-    list: (params?: { page?: number; limit?: number }) => {
+    list: (params?: { page?: number; limit?: number; oem?: string }) => {
       const search = new URLSearchParams()
       if (typeof params?.limit === 'number') search.set('limit', String(params.limit))
       if (typeof params?.page === 'number') search.set('page', String(params.page))
+      if (params?.oem) search.set('oem', params.oem)
       const qs = search.toString()
       const path = qs ? `/api/reports?${qs}` : '/api/reports'
       return request<{

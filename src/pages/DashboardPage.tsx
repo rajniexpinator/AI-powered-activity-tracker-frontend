@@ -4,6 +4,7 @@ import { MessageSquare, Users, BarChart3, Clock, ArrowRight } from 'lucide-react
 import { api } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import { AdminShell } from '@/components/layout/AdminShell'
+import { formatUsDateTime } from '@/lib/formatDate'
 
 type ActivitySummary = { _id: string; customer?: string; summary?: string; createdAt: string }
 
@@ -159,7 +160,7 @@ export function DashboardPage() {
                     activities.map((a) => (
                       <div key={a._id} className="py-2.5">
                         <p className="text-[11px] font-medium text-[#999] mb-0.5">
-                          {a.customer || 'Unknown customer'} · {new Date(a.createdAt).toLocaleString()}
+                          {a.customer || 'Unknown customer'} · {formatUsDateTime(a.createdAt)}
                         </p>
                         <p className="text-sm text-[#222] line-clamp-2">{a.summary || 'No summary'}</p>
                       </div>

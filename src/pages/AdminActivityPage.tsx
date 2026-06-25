@@ -30,6 +30,15 @@ import {
   Image as ImageIcon,
 } from 'lucide-react'
 import { toast } from 'react-toastify'
+import { filterCustomersByQuery } from '@/lib/customerName'
+import { formatUsDateTime } from '@/lib/formatDate'
+import { PLANT_OPTIONS } from '@/constants/plants'
+import {
+  DEFAULT_REPORT_SECTIONS,
+  REPORT_SECTION_KEYS,
+  REPORT_SECTION_LABELS,
+  type ReportSections,
+} from '@/constants/reportSections'
 
 type SeverityFilterValue = 'all' | '0' | '1' | '2' | '3' | 'min2'
 
@@ -161,6 +170,7 @@ export function AdminActivityPage() {
   const [selectedCustomers, setSelectedCustomers] = useState<string[]>([])
   const [dateMenuOpen, setDateMenuOpen] = useState(false)
   const [customerMenuOpen, setCustomerMenuOpen] = useState(false)
+  const [customerFilterSearch, setCustomerFilterSearch] = useState('')
   const dateFilterRef = useRef<HTMLDivElement | null>(null)
   const customerFilterRef = useRef<HTMLDivElement | null>(null)
   const [from, setFrom] = useState<string>('')
@@ -186,6 +196,9 @@ export function AdminActivityPage() {
   >([])
   const [error, setError] = useState<string>('')
   const [includeCustomerSummaries, setIncludeCustomerSummaries] = useState(false)
+  const [reportSections, setReportSections] = useState<ReportSections>({ ...DEFAULT_REPORT_SECTIONS })
+  const [includeReportPictures, setIncludeReportPictures] = useState(true)
+  const [selectedOem, setSelectedOem] = useState('')
   const [severityFilter, setSeverityFilter] = useState<SeverityFilterValue>('all')
   const [filtersOpen, setFiltersOpen] = useState(false)
   const [aiOverlay, setAiOverlay] = useState<{ interpretation: string; activities: AdminActivity[]; answer?: string } | null>(null)
@@ -200,6 +213,11 @@ export function AdminActivityPage() {
   const paginationItems = useMemo(
     () => buildPaginationItems(page, totalPages || 1),
     [page, totalPages]
+  )
+
+  const filteredCustomersForMenu = useMemo(
+    () => filterCustomersByQuery(customers, customerFilterSearch),
+    [customers, customerFilterSearch]
   )
 
   const weeklyReportReady = useMemo(
@@ -244,9 +262,10 @@ export function AdminActivityPage() {
       to: to || undefined,
       limit: pageSize,
       page,
+      oem: selectedOem || undefined,
       ...severityQueryFromFilter(severityFilter),
     }
-  }, [selectedUserId, selectedCustomers, datePeriod, from, to, page, severityFilter])
+  }, [selectedUserId, selectedCustomers, datePeriod, from, to, page, severityFilter, selectedOem])
 
   async function loadActivities(opts?: LoadActivitiesOpts) {
     const effFrom = opts?.from !== undefined ? opts.from : from
@@ -264,6 +283,7 @@ export function AdminActivityPage() {
       to: effTo || undefined,
       limit: pageSize,
       page: effPage,
+      oem: selectedOem || undefined,
       ...severityQueryFromFilter(effSeverity),
     }
     const seq = ++requestSeq.current
@@ -297,7 +317,7 @@ export function AdminActivityPage() {
     setSelectedActivityId(null)
     setSelectedActivityDetail(null)
     setSelectedDetailError('')
-  }, [tab, selectedUserId, selectedCustomers, datePeriod, from, to])
+  }, [tab, selectedUserId, selectedCustomers, datePeriod, from, to, selectedOem])
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -399,7 +419,7 @@ export function AdminActivityPage() {
             : sev === '1'
               ? 'Low (1)'
               : 'All good (0)'
-    toast.success(`${words} · last week (${f} – ${t}). Use “Generate weekly AI report” for the narrative.`)
+    toast.success(`${words} · last week (${f} – ${t}). Use “Generate quality AI report” for the narrative.`)
   }
 
   async function handleResetFilters() {
@@ -531,9 +551,9 @@ export function AdminActivityPage() {
       setReport(nextReport)
       setReportId(reportId)
       setReportImageGallery(Array.isArray(imageGallery) ? imageGallery : [])
-      toast.success('Weekly report generated from your AI question.')
+      toast.success('Quality report generated from your AI question.')
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Failed to generate weekly report'
+      const msg = err instanceof Error ? err.message : 'Failed to generate quality report'
       setError(msg)
       toast.error(msg)
     } finally {
@@ -552,15 +572,17 @@ export function AdminActivityPage() {
       const { report, reportId, imageGallery } = await api.activities.generateWeeklyReport({
         ...appliedFilters,
         includeCustomerSummaries: includeCustomerSummaries && selectedCustomers.length === 0,
+        reportSections,
+        includeReportPictures,
       })
       setReport(report)
       setReportId(reportId)
       setReportImageGallery(Array.isArray(imageGallery) ? imageGallery : [])
       toast.success(
-        'Weekly AI report is ready. Use “Download timesheet Excel” below for the spreadsheet layout — one tab per customer, same date filters.'
+        'Quality report is ready. Use “Download timesheet Excel” below for the spreadsheet layout — one tab per customer, same date filters.'
       )
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate weekly report')
+      setError(err instanceof Error ? err.message : 'Failed to generate quality report')
     } finally {
       setLoadingReport(false)
     }
@@ -698,7 +720,7 @@ export function AdminActivityPage() {
               <p className="mt-2 text-[14px] sm:text-[15px] text-[var(--color-text-secondary)] max-w-2xl leading-relaxed">
                 Use filters for exact lists — including issue severity (0–3) and date range. Shortcuts below can set
                 &quot;last week&quot; plus a severity for a management-style report (for example all high-severity logs).
-                Generate weekly AI report builds the narrative from the same filters; saved copies are under Reports.
+                Generate quality AI report builds the narrative from the same filters; saved copies are under Reports.
               </p>
             </div>
             {user && (
@@ -765,6 +787,16 @@ export function AdminActivityPage() {
             </button>
             {customerMenuOpen && (
               <div className="absolute left-0 z-50 mt-1 min-w-[14rem] max-h-64 overflow-y-auto rounded-xl border border-[var(--color-border)] bg-white py-2 shadow-lg">
+                <div className="px-3 pb-2 border-b border-[var(--color-border)] mb-1">
+                  <input
+                    type="text"
+                    value={customerFilterSearch}
+                    onChange={(e) => setCustomerFilterSearch(e.target.value)}
+                    placeholder="Type to search…"
+                    className="w-full h-8 rounded-lg border border-[var(--color-border)] px-2.5 text-[12px]"
+                    autoComplete="off"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={() => setSelectedCustomers([])}
@@ -774,8 +806,10 @@ export function AdminActivityPage() {
                 </button>
                 {customers.length === 0 ? (
                   <p className="px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">No customers loaded</p>
+                ) : filteredCustomersForMenu.length === 0 ? (
+                  <p className="px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">No matches</p>
                 ) : (
-                  customers.map((c) => (
+                  filteredCustomersForMenu.map((c) => (
                     <label
                       key={c._id}
                       className="flex items-center gap-2 px-3 py-1.5 text-[13px] text-[var(--color-text)] hover:bg-black/[0.04] cursor-pointer"
@@ -792,6 +826,24 @@ export function AdminActivityPage() {
                 )}
               </div>
             )}
+          </div>
+          <div>
+            <select
+              value={selectedOem}
+              onChange={(e) => setSelectedOem(e.target.value)}
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-[13px] font-semibold transition-colors ${
+                selectedOem
+                  ? 'border-[var(--color-primary)] bg-[var(--color-primary)]/10 text-[var(--color-primary)]'
+                  : 'border-[var(--color-border)] text-[var(--color-text)] hover:bg-[var(--color-bg)]'
+              }`}
+            >
+              <option value="">All OEM / plants</option>
+              {PLANT_OPTIONS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
           </div>
         </section>
 
@@ -814,6 +866,38 @@ export function AdminActivityPage() {
               />
             </button>
             {isAdmin && (
+            <div className="flex flex-col gap-3 w-full sm:w-auto sm:items-end">
+              <div className="flex flex-col gap-1.5 w-full sm:max-w-md">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-secondary)]">
+                  Report sections
+                </span>
+                <div className="grid gap-1 sm:grid-cols-2">
+                  {REPORT_SECTION_KEYS.map((key) => (
+                    <label
+                      key={key}
+                      className="inline-flex items-start gap-2 text-[12px] text-[var(--color-text-secondary)] select-none"
+                    >
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 shrink-0"
+                        checked={reportSections[key]}
+                        onChange={(e) =>
+                          setReportSections((prev) => ({ ...prev, [key]: e.target.checked }))
+                        }
+                      />
+                      <span className="leading-snug">{REPORT_SECTION_LABELS[key]}</span>
+                    </label>
+                  ))}
+                </div>
+                <label className="inline-flex items-center gap-2 text-[12px] text-[var(--color-text-secondary)] select-none pt-1">
+                  <input
+                    type="checkbox"
+                    checked={includeReportPictures}
+                    onChange={(e) => setIncludeReportPictures(e.target.checked)}
+                  />
+                  <span>Include pictures in report</span>
+                </label>
+              </div>
             <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
               <label className="inline-flex items-start gap-2 text-[12px] text-[var(--color-text-secondary)] select-none sm:items-center">
                 <input
@@ -858,9 +942,10 @@ export function AdminActivityPage() {
                 className="inline-flex w-full sm:w-auto justify-center items-center gap-2 rounded-xl bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] px-3.5 py-2.5 sm:py-2 text-[12px] sm:text-[13px] font-semibold !text-white disabled:opacity-60 text-center"
               >
                 <FileText className="w-4 h-4 shrink-0" />
-                {loadingReport ? 'Generating report…' : 'Generate weekly AI report'}
+                {loadingReport ? 'Generating report…' : 'Generate quality AI report'}
               </button>
               </div>
+            </div>
             </div>
             )}
           </div>
@@ -965,7 +1050,7 @@ export function AdminActivityPage() {
                   Severity report · last week
                 </p>
                 <p className="text-[11px] text-[var(--color-text-secondary)] mb-2 leading-relaxed">
-                  Sets Mon–Sun of the previous calendar week and refreshes the list. Then run Generate weekly AI report.
+                  Sets Mon–Sun of the previous calendar week and refreshes the list. Then run Generate quality AI report.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <button
@@ -1055,7 +1140,7 @@ export function AdminActivityPage() {
                 <h3 className="text-[13px] font-semibold text-[var(--color-text)]">Ask AI about activity</h3>
                 <p className="mt-1 text-[12px] text-[var(--color-text-secondary)] leading-relaxed">
                   Type a question in plain English. The assistant maps it to customer names, dates, and keywords,
-                  then searches your database. This is different from the weekly report, which writes one long
+                  then searches your database. This is different from the quality report, which writes one long
                   narrative from the filtered table.
                 </p>
                 <div className="mt-3 flex flex-col sm:flex-row gap-2 sm:items-end">
@@ -1093,7 +1178,7 @@ export function AdminActivityPage() {
                     onClick={() => void handleAiWeeklyReport()}
                     disabled={loadingAiWeeklyReport || !aiOverlay}
                     className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl border border-[var(--color-primary)] bg-white px-4 py-2.5 text-[13px] font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-60 disabled:cursor-not-allowed sm:shrink-0"
-                    title="Generate a supplier-style weekly report from the same AI question"
+                    title="Generate a supplier-style quality report from the same AI question"
                   >
                     {loadingAiWeeklyReport ? (
                       <>
@@ -1115,7 +1200,7 @@ export function AdminActivityPage() {
           )}
         </section>
 
-        {/* Activity table + weekly report */}
+        {/* Activity table + quality report */}
         <section className="grid gap-4 lg:grid-cols-[minmax(0,_1.4fr)_minmax(0,_1fr)] min-w-0">
           {/* Activity table */}
           <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] min-w-0">
@@ -1285,7 +1370,7 @@ export function AdminActivityPage() {
                     </p>
                     <p className="text-[11px] sm:text-[12px] text-[var(--color-text-secondary)] break-words">
                       <span className="font-semibold text-[var(--color-text)] md:hidden">Date: </span>
-                      {new Date(a.createdAt).toLocaleString()}
+                      {formatUsDateTime(a.createdAt)}
                     </p>
                     <p
                       className="text-[12px] font-semibold text-[var(--color-text)] md:text-center tabular-nums"
@@ -1470,7 +1555,7 @@ export function AdminActivityPage() {
                         'No summary'}
                     </p>
                     <p className="mt-1 text-[11px] text-[var(--color-text-secondary)] flex flex-wrap items-center gap-x-2 gap-y-1">
-                      <span>{new Date(selectedActivityDetail.createdAt).toLocaleString()}</span>
+                      <span>{formatUsDateTime(selectedActivityDetail.createdAt)}</span>
                       {selectedActivityDetail.customer ? (
                         <span className="text-[var(--color-text)]">· {selectedActivityDetail.customer}</span>
                       ) : null}
@@ -1536,12 +1621,12 @@ export function AdminActivityPage() {
               )}
             </div>
 
-            {/* Weekly AI report + matching timesheet Excel */}
+            {/* Quality report + matching timesheet Excel */}
             <div className="rounded-2xl bg-white border border-[var(--color-border)] shadow-[0_4px_24px_rgba(15,23,42,0.06)] p-4 sm:p-5 flex flex-col min-w-0 overflow-hidden">
               <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-2 min-w-0">
                 <h2 className="text-sm font-semibold text-[var(--color-text)] flex items-center gap-2 min-w-0">
                   <FileText className="w-4 h-4 shrink-0 text-[var(--color-primary)]" />
-                  Weekly quality report
+                  Quality report
                 </h2>
                 <button
                   type="button"
@@ -1550,7 +1635,7 @@ export function AdminActivityPage() {
                   title={
                     weeklyReportReady
                       ? 'Same filters as the AI report you just generated. With From and To set, each customer tab includes every week in that range.'
-                      : 'Generate weekly AI report first (button in the filters bar above). Then download the matching timesheet Excel for the All employee activity data.'
+                      : 'Generate quality AI report first (button in the filters bar above). Then download the matching timesheet Excel for the All employee activity data.'
                   }
                   className="inline-flex w-full sm:w-auto sm:shrink-0 items-center justify-center gap-2 rounded-xl border border-[var(--color-primary)] bg-[var(--color-primary)]/5 px-3 py-2 text-[12px] font-semibold text-[var(--color-primary)] hover:bg-[var(--color-primary)]/10 disabled:opacity-60"
                 >
@@ -1569,12 +1654,12 @@ export function AdminActivityPage() {
               </div>
               {!weeklyReportReady && !loadingReport && (
                 <p className="text-[11px] text-[var(--color-text-secondary)] mb-2 sm:text-right">
-                  Generate the weekly AI report first — then this button unlocks for the same filters as All employee
+                  Generate the quality AI report first — then this button unlocks for the same filters as All employee
                   activity.
                 </p>
               )}
               <p className="text-[12px] text-[var(--color-text-secondary)] mb-3 leading-relaxed">
-                <span className="font-medium text-[var(--color-text)]">AI narrative</span> — click Generate weekly AI
+                <span className="font-medium text-[var(--color-text)]">AI narrative</span> — click Generate quality AI
                 report above (uses current filters).{' '}
                 <span className="font-medium text-[var(--color-text)]">Spreadsheet layout</span> — after the report is
                 generated, download here for an Excel file <span className="font-medium">broken down by customer</span>{' '}
@@ -1596,8 +1681,8 @@ export function AdminActivityPage() {
               )}
               <div className="flex-1 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-3.5 py-3 text-[13px] text-[var(--color-text)] overflow-auto whitespace-pre-wrap">
                 {loadingReport && !report
-                  ? 'Generating weekly report…'
-                  : report || 'Click "Generate weekly AI report" above to create a summary.'}
+                  ? 'Generating report…'
+                  : report || 'Click "Generate quality AI report" above to create a summary.'}
               </div>
               <ReportImageGallery entries={reportImageGallery} className="px-0.5" />
             </div>

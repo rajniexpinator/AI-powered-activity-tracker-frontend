@@ -1,12 +1,19 @@
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { User, Mail, Shield, Pencil, X, AlertCircle, Lock, Bell, Loader2, MapPin } from 'lucide-react'
+import { User, Mail, Shield, Pencil, X, AlertCircle, Lock, Bell, Loader2, MapPin, Settings2 } from 'lucide-react'
 import { toast } from 'react-toastify'
 import { useAuth } from '@/context/AuthContext'
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { PlantSelector } from '@/components/profile/PlantSelector'
+import { ActivityLogShareFields, ReportShareFields } from '@/components/profile/SharePreferencesFields'
 import { PLANT_OPTIONS, formatPlantLabel, type PlantOption } from '@/constants/plants'
+import {
+  DEFAULT_SHARE_PREFERENCES,
+  resolveSharePreferences,
+  type ActivityLogSharePreferences,
+  type ReportSharePreferences,
+} from '@/constants/sharePreferences'
 
 export function ProfilePage() {
   const { user, setUser } = useAuth()
@@ -38,6 +45,20 @@ export function ProfilePage() {
   const [notifLevels, setNotifLevels] = useState<number[]>([])
   const [notifSubmitting, setNotifSubmitting] = useState(false)
   const [notifError, setNotifError] = useState('')
+
+  const [activityLogShare, setActivityLogShare] = useState<ActivityLogSharePreferences>(
+    DEFAULT_SHARE_PREFERENCES.activityLog
+  )
+  const [reportShare, setReportShare] = useState<ReportSharePreferences>(DEFAULT_SHARE_PREFERENCES.report)
+  const [prefsSubmitting, setPrefsSubmitting] = useState(false)
+  const [prefsError, setPrefsError] = useState('')
+  const [prefsSuccess, setPrefsSuccess] = useState('')
+
+  useEffect(() => {
+    const resolved = resolveSharePreferences(user?.sharePreferences)
+    setActivityLogShare(resolved.activityLog)
+    setReportShare(resolved.report)
+  }, [user?.sharePreferences])
 
   useEffect(() => {
     setNotifEnabled(Boolean(user?.emailNotifications?.enabled))
@@ -77,6 +98,30 @@ export function ProfilePage() {
       toast.error(msg)
     } finally {
       setNotifSubmitting(false)
+    }
+  }
+
+  async function handleSaveSharePreferences(e: React.FormEvent) {
+    e.preventDefault()
+    setPrefsError('')
+    setPrefsSuccess('')
+    setPrefsSubmitting(true)
+    try {
+      const { user: updated } = await api.auth.updateMe({
+        sharePreferences: {
+          activityLog: activityLogShare,
+          report: reportShare,
+        },
+      })
+      setUser(updated)
+      setPrefsSuccess('Sharing preferences saved.')
+      toast.success('Sharing preferences saved.')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Failed to save sharing preferences'
+      setPrefsError(msg)
+      toast.error(msg)
+    } finally {
+      setPrefsSubmitting(false)
     }
   }
 
@@ -308,6 +353,59 @@ export function ProfilePage() {
             </>
           )}
         </div>
+      </div>
+
+      <div className="bg-[var(--color-surface)] rounded-[var(--radius-lg)] shadow-[var(--shadow-md)] border border-[var(--color-border)] overflow-hidden">
+        <div className="px-6 py-5 border-b border-[var(--color-border)] bg-black/[0.02]">
+          <div className="flex items-center gap-2">
+            <Settings2 className="w-5 h-5 text-[var(--color-primary)]" />
+            <h2 className="text-lg font-semibold text-[var(--color-text)]">Preferences</h2>
+          </div>
+          <p className="text-[13px] text-[var(--color-text-secondary)] mt-1">
+            Choose what to include when you share AI logs (email, WhatsApp, team share) and quality reports. Saved for your account.
+          </p>
+        </div>
+        <form onSubmit={handleSaveSharePreferences} className="p-6 space-y-6">
+          {prefsError ? (
+            <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] bg-red-50/80 border border-red-100 text-red-700 text-[13px]" role="alert">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              {prefsError}
+            </div>
+          ) : null}
+          {prefsSuccess ? (
+            <div className="flex items-center gap-3 p-3 rounded-[var(--radius)] bg-green-50/80 border border-green-200 text-green-800 text-[13px]">
+              {prefsSuccess}
+            </div>
+          ) : null}
+          <div>
+            <h3 className="text-[13px] font-semibold text-[var(--color-text)] mb-1">AI log sharing</h3>
+            <p className="text-[12px] text-[var(--color-text-secondary)] mb-3">
+              Checked fields are included when you share or email an activity log.
+            </p>
+            <ActivityLogShareFields value={activityLogShare} onChange={setActivityLogShare} idPrefix="profile-log" />
+          </div>
+          <div>
+            <h3 className="text-[13px] font-semibold text-[var(--color-text)] mb-1">Quality report sharing</h3>
+            <p className="text-[12px] text-[var(--color-text-secondary)] mb-3">
+              Applies when you share or email a quality report PDF.
+            </p>
+            <ReportShareFields value={reportShare} onChange={setReportShare} idPrefix="profile-report" />
+          </div>
+          <button
+            type="submit"
+            disabled={prefsSubmitting}
+            className="inline-flex items-center justify-center gap-2 px-5 py-2.5 bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] disabled:opacity-50 rounded-[var(--radius)] text-[15px] font-semibold !text-white transition-colors"
+          >
+            {prefsSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              'Save preferences'
+            )}
+          </button>
+        </form>
       </div>
 
       <div className="bg-[var(--color-surface)] rounded-[var(--radius-lg)] shadow-[var(--shadow-md)] border border-[var(--color-border)] overflow-hidden">
