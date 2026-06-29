@@ -403,6 +403,7 @@ export const api = {
       includeCustomerSummaries?: boolean
       reportSections?: Record<string, boolean>
       includeReportPictures?: boolean
+      hideSeverity?: boolean
       oem?: string
       severity?: string | number
       minSeverity?: string | number
@@ -441,8 +442,14 @@ export const api = {
         body: JSON.stringify(payload),
       }),
 
-    /** Generate a weekly report narrative from an admin question (AI -> filters -> weekly report). */
-    adminAiWeeklyReport: (payload: { question: string; limit?: number }) =>
+    /** Generate a quality report narrative from an admin question (AI -> filters -> report). */
+    adminAiWeeklyReport: (payload: {
+      question: string
+      limit?: number
+      reportSections?: Record<string, boolean>
+      includeReportPictures?: boolean
+      hideSeverity?: boolean
+    }) =>
       request<{
         report: string
         reportId: string
@@ -499,6 +506,9 @@ export const api = {
           dateMode?: 'fixed' | 'today'
           aiQuestion?: string
           includeCustomerSummaries?: boolean
+          reportSections?: Record<string, boolean>
+          includeReportPictures?: boolean
+          hideSeverity?: boolean
           issueSeverityExact?: number
           issueSeverityMin?: number
           model?: string
@@ -527,6 +537,9 @@ export const api = {
         severity?: string | number
         minSeverity?: string | number
         includeCustomerSummaries?: boolean
+        reportSections?: Record<string, boolean>
+        includeReportPictures?: boolean
+        hideSeverity?: boolean
       }
     ) =>
       request<{

@@ -27,6 +27,7 @@ import {
 import { toast } from 'react-toastify'
 import { formatUsDateTime } from '@/lib/formatDate'
 import { PLANT_OPTIONS } from '@/constants/plants'
+import { DEFAULT_REPORT_SECTIONS } from '@/constants/reportSections'
 
 type ReportListItem = {
   _id: string
@@ -62,6 +63,9 @@ function changeValuesFromReport(report: {
   aiQuestion?: string
   issueSeverityExact?: number
   issueSeverityMin?: number
+  reportSections?: Record<string, boolean>
+  includeReportPictures?: boolean
+  hideSeverity?: boolean
 }): ReportChangeValues {
   return {
     customer: report.customer || '',
@@ -74,6 +78,9 @@ function changeValuesFromReport(report: {
     minSeverity:
       typeof report.issueSeverityMin === 'number' ? String(report.issueSeverityMin) : '',
     aiQuestion: report.aiQuestion || '',
+    reportSections: { ...DEFAULT_REPORT_SECTIONS, ...(report.reportSections ?? {}) },
+    includeReportPictures: report.includeReportPictures !== false,
+    hideSeverity: report.hideSeverity !== false,
   }
 }
 
@@ -915,6 +922,9 @@ export function ReportsPage() {
                 aiQuestion: values.aiQuestion.trim() || undefined,
                 severity: values.severity !== '' ? values.severity : undefined,
                 minSeverity: values.minSeverity !== '' ? values.minSeverity : undefined,
+                reportSections: values.reportSections,
+                includeReportPictures: values.includeReportPictures,
+                hideSeverity: values.hideSeverity,
               })
               setSelectedReportId(changeReportId)
               setSelectedContent(res.report)

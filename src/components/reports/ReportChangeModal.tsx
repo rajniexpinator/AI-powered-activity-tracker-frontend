@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react'
 import { Loader2, X } from 'lucide-react'
 import { api } from '@/services/api'
 import { CustomerTypeahead, type CustomerOption } from '@/components/customers/CustomerTypeahead'
+import {
+  REPORT_SECTION_KEYS,
+  REPORT_SECTION_LABELS,
+  type ReportSections,
+} from '@/constants/reportSections'
 
 export type ReportChangeValues = {
   customer: string
@@ -12,6 +17,9 @@ export type ReportChangeValues = {
   severity: string
   minSeverity: string
   aiQuestion: string
+  reportSections: ReportSections
+  includeReportPictures: boolean
+  hideSeverity: boolean
 }
 
 type Props = {
@@ -185,6 +193,53 @@ export function ReportChangeModal({ open, title, initial, saving, onClose, onApp
               </span>
             </span>
           </label>
+
+          {!datesOnly && (
+          <div className="rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] p-3">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--color-text-secondary)]">
+              Report preferences
+            </p>
+            <div className="mt-2 grid gap-1.5">
+              {REPORT_SECTION_KEYS.map((key) => (
+                <label key={key} className="flex items-start gap-2 text-[12px] text-[var(--color-text)] cursor-pointer">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={values.reportSections[key]}
+                    disabled={saving}
+                    onChange={(e) =>
+                      setValues((v) => ({
+                        ...v,
+                        reportSections: { ...v.reportSections, [key]: e.target.checked },
+                      }))
+                    }
+                  />
+                  <span>{REPORT_SECTION_LABELS[key]}</span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-2 grid gap-1.5 border-t border-[var(--color-border)] pt-2">
+              <label className="flex items-center gap-2 text-[12px] text-[var(--color-text)] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={values.includeReportPictures}
+                  disabled={saving}
+                  onChange={(e) => setValues((v) => ({ ...v, includeReportPictures: e.target.checked }))}
+                />
+                <span>Include pictures in report</span>
+              </label>
+              <label className="flex items-center gap-2 text-[12px] text-[var(--color-text)] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={values.hideSeverity}
+                  disabled={saving}
+                  onChange={(e) => setValues((v) => ({ ...v, hideSeverity: e.target.checked }))}
+                />
+                <span>Hide severity on report</span>
+              </label>
+            </div>
+          </div>
+          )}
 
           {!datesOnly && (
           <div className="grid grid-cols-2 gap-3">

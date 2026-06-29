@@ -7,6 +7,7 @@ import { AddToDashboardModal } from '@/components/reports/AddToDashboardModal'
 import { api } from '@/services/api'
 import { getToken } from '@/services/api'
 import { changeValuesToOverridePayload } from '@/lib/reportOverrides'
+import { DEFAULT_REPORT_SECTIONS } from '@/constants/reportSections'
 import { downloadBlob, sharePdfBlob, validatePdfBlob } from '@/lib/shareReport'
 import {
   LayoutDashboard,
@@ -54,6 +55,9 @@ function changeValuesFromItem(item: DashboardItem): ReportChangeValues {
     minSeverity:
       typeof item.issueSeverityMin === 'number' ? String(item.issueSeverityMin) : '',
     aiQuestion: item.aiQuestion || '',
+    reportSections: { ...DEFAULT_REPORT_SECTIONS },
+    includeReportPictures: true,
+    hideSeverity: true,
   }
 }
 

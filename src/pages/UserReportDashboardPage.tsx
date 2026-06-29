@@ -7,6 +7,7 @@ import { AddToDashboardModal } from '@/components/reports/AddToDashboardModal'
 import { api } from '@/services/api'
 import { getToken } from '@/services/api'
 import { dateOnlyOverridePayload } from '@/lib/reportOverrides'
+import { DEFAULT_REPORT_SECTIONS } from '@/constants/reportSections'
 import { downloadBlob, sharePdfBlob, validatePdfBlob } from '@/lib/shareReport'
 import {
   LayoutDashboard,
@@ -51,6 +52,9 @@ function changeValuesFromItem(item: DashboardItem): ReportChangeValues {
     severity: '',
     minSeverity: '',
     aiQuestion: item.aiQuestion || '',
+    reportSections: { ...DEFAULT_REPORT_SECTIONS },
+    includeReportPictures: true,
+    hideSeverity: true,
   }
 }
 

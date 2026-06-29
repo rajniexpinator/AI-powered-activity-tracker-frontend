@@ -198,6 +198,7 @@ export function AdminActivityPage() {
   const [includeCustomerSummaries, setIncludeCustomerSummaries] = useState(false)
   const [reportSections, setReportSections] = useState<ReportSections>({ ...DEFAULT_REPORT_SECTIONS })
   const [includeReportPictures, setIncludeReportPictures] = useState(true)
+  const [hideSeverity, setHideSeverity] = useState(true)
   const [selectedOem, setSelectedOem] = useState('')
   const [severityFilter, setSeverityFilter] = useState<SeverityFilterValue>('all')
   const [filtersOpen, setFiltersOpen] = useState(false)
@@ -547,6 +548,9 @@ export function AdminActivityPage() {
       const { report: nextReport, reportId, imageGallery } = await api.activities.adminAiWeeklyReport({
         question: q,
         limit: 200,
+        reportSections,
+        includeReportPictures,
+        hideSeverity,
       })
       setReport(nextReport)
       setReportId(reportId)
@@ -574,6 +578,7 @@ export function AdminActivityPage() {
         includeCustomerSummaries: includeCustomerSummaries && selectedCustomers.length === 0,
         reportSections,
         includeReportPictures,
+        hideSeverity,
       })
       setReport(report)
       setReportId(reportId)
@@ -896,6 +901,14 @@ export function AdminActivityPage() {
                     onChange={(e) => setIncludeReportPictures(e.target.checked)}
                   />
                   <span>Include pictures in report</span>
+                </label>
+                <label className="inline-flex items-center gap-2 text-[12px] text-[var(--color-text-secondary)] select-none">
+                  <input
+                    type="checkbox"
+                    checked={hideSeverity}
+                    onChange={(e) => setHideSeverity(e.target.checked)}
+                  />
+                  <span>Hide severity on report</span>
                 </label>
               </div>
             <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
