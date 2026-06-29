@@ -872,45 +872,6 @@ export function AdminActivityPage() {
             </button>
             {isAdmin && (
             <div className="flex flex-col gap-3 w-full sm:w-auto sm:items-end">
-              <div className="flex flex-col gap-1.5 w-full sm:max-w-md">
-                <span className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-secondary)]">
-                  Report sections
-                </span>
-                <div className="grid gap-1 sm:grid-cols-2">
-                  {REPORT_SECTION_KEYS.map((key) => (
-                    <label
-                      key={key}
-                      className="inline-flex items-start gap-2 text-[12px] text-[var(--color-text-secondary)] select-none"
-                    >
-                      <input
-                        type="checkbox"
-                        className="mt-0.5 shrink-0"
-                        checked={reportSections[key]}
-                        onChange={(e) =>
-                          setReportSections((prev) => ({ ...prev, [key]: e.target.checked }))
-                        }
-                      />
-                      <span className="leading-snug">{REPORT_SECTION_LABELS[key]}</span>
-                    </label>
-                  ))}
-                </div>
-                <label className="inline-flex items-center gap-2 text-[12px] text-[var(--color-text-secondary)] select-none pt-1">
-                  <input
-                    type="checkbox"
-                    checked={includeReportPictures}
-                    onChange={(e) => setIncludeReportPictures(e.target.checked)}
-                  />
-                  <span>Include pictures in report</span>
-                </label>
-                <label className="inline-flex items-center gap-2 text-[12px] text-[var(--color-text-secondary)] select-none">
-                  <input
-                    type="checkbox"
-                    checked={hideSeverity}
-                    onChange={(e) => setHideSeverity(e.target.checked)}
-                  />
-                  <span>Hide severity on report</span>
-                </label>
-              </div>
             <div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-end sm:gap-3">
               <label className="inline-flex items-start gap-2 text-[12px] text-[var(--color-text-secondary)] select-none sm:items-center">
                 <input
@@ -962,6 +923,51 @@ export function AdminActivityPage() {
             </div>
             )}
           </div>
+
+          {isAdmin && (
+          <div className="mb-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] p-3 sm:p-4">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[var(--color-text-secondary)]">
+              Report preferences
+              <span className="ml-1.5 normal-case font-normal opacity-70">
+                — apply to every report (Generate quality AI report and AI question)
+              </span>
+            </p>
+            <div className="mt-2 grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+              {REPORT_SECTION_KEYS.map((key) => (
+                <label
+                  key={key}
+                  className="inline-flex items-start gap-2 text-[12px] text-[var(--color-text)] select-none cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    className="mt-0.5 shrink-0"
+                    checked={reportSections[key]}
+                    onChange={(e) => setReportSections((prev) => ({ ...prev, [key]: e.target.checked }))}
+                  />
+                  <span className="leading-snug">{REPORT_SECTION_LABELS[key]}</span>
+                </label>
+              ))}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-x-5 gap-y-1.5 border-t border-[var(--color-border)] pt-2">
+              <label className="inline-flex items-center gap-2 text-[12px] text-[var(--color-text)] select-none cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={includeReportPictures}
+                  onChange={(e) => setIncludeReportPictures(e.target.checked)}
+                />
+                <span>Include pictures in report</span>
+              </label>
+              <label className="inline-flex items-center gap-2 text-[12px] text-[var(--color-text)] select-none cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={hideSeverity}
+                  onChange={(e) => setHideSeverity(e.target.checked)}
+                />
+                <span>Hide severity on report</span>
+              </label>
+            </div>
+          </div>
+          )}
           {filtersOpen && (
             <form
               onSubmit={handleApplyFilters}
@@ -1206,7 +1212,10 @@ export function AdminActivityPage() {
                     )}
                   </button>
                 </div>
-             
+
+                <p className="mt-2 text-[11px] text-[var(--color-text-secondary)]">
+                  The Report preferences above (sections, pictures, hide severity) also apply to this AI report.
+                </p>
               </div>
             </div>
           </div>
