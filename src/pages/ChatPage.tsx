@@ -3101,11 +3101,11 @@ export function ChatPage() {
                         <label className="block text-[11px] font-semibold text-[#555] mb-1">
                           Summary
                         </label>
-                        <input
-                          type="text"
+                        <textarea
+                          rows={3}
                           value={editSummary}
                           onChange={(e) => setEditSummary(e.target.value)}
-                          className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                          className="w-full resize-none overflow-y-auto max-h-32 rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
                           placeholder="One-sentence summary"
                         />
                       </div>
@@ -3311,11 +3311,11 @@ export function ChatPage() {
                 className="flex flex-col gap-2 min-w-0 border-0 p-0 m-0 disabled:opacity-[0.85]"
               >
                 <textarea
-                  rows={3}
+                  rows={5}
                   value={text}
                   onChange={(e) => setText(e.target.value)}
                   placeholder="Example: Spoke with Apex Engineering about line-3 downtime; diagnosed sensor issue and planned follow‑up visit tomorrow at 10:00."
-                  className="w-full resize-none rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30"
+                  className="w-full resize-none overflow-y-auto max-h-40 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[#222] placeholder:text-[#999] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-primary)]/30"
                 />
                 <CustomerTypeahead
                   customers={customers}
