@@ -4,6 +4,7 @@ import { User as UserIcon, Plus, AlertCircle, Trash2, Pencil, X, Search, Sliders
 import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { useAuth } from '@/context/AuthContext'
+import { isAdminRole, isEmployeeRole } from '@/lib/roles'
 
 const PAGE_SIZE = 5
 
@@ -23,8 +24,8 @@ function parseEmailChips(value: string): string[] {
 
 export function CustomersPage() {
   const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
-  const isEmployee = user?.role === 'employee'
+  const isAdmin = isAdminRole(user?.role)
+  const isEmployee = isEmployeeRole(user?.role)
   const [customers, setCustomers] = useState<Customer[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')

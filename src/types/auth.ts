@@ -4,7 +4,7 @@ export interface User {
   id: string
   email: string
   name?: string
-  role: 'admin' | 'employee'
+  role: 'super_admin' | 'admin' | 'employee'
   isActive?: boolean
   emailNotifications?: {
     enabled?: boolean

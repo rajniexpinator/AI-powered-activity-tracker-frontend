@@ -4,6 +4,7 @@ import { FileText, Upload, Download, Trash2, AlertCircle, FolderOpen, X } from '
 import { api, type EmployeeFileItem } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { useAuth } from '@/context/AuthContext'
+import { isAdminRole } from '@/lib/roles'
 import { formatUsDateTime } from '@/lib/formatDate'
 
 function formatBytes(n: number) {
@@ -14,7 +15,7 @@ function formatBytes(n: number) {
 
 export function EmployeeFilesPage() {
   const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
+  const isAdmin = isAdminRole(user?.role)
   const [files, setFiles] = useState<EmployeeFileItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')

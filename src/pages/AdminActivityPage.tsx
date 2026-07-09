@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, getToken } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
+import { isAdminRole } from '@/lib/roles'
 import type { User } from '@/types/auth'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { ReportImageGallery } from '@/components/ReportImageGallery'
@@ -160,7 +161,7 @@ function buildPaginationItems(current: number, total: number): Array<number | 'e
 
 export function AdminActivityPage() {
   const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
+  const isAdmin = isAdminRole(user?.role)
   const [activities, setActivities] = useState<AdminActivity[]>([])
   const [users, setUsers] = useState<User[]>([])
   const [customers, setCustomers] = useState<{ _id: string; name: string }[]>([])

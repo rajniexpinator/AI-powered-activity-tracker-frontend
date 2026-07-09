@@ -29,6 +29,7 @@ import { api } from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { LazyActivityImage } from '@/components/LazyActivityImage'
 import { useAuth } from '@/context/AuthContext'
+import { formatRoleLabel, isAdminRole } from '@/lib/roles'
 import { useSharedLogsNotify } from '@/context/SharedLogsNotifyContext'
 import { CustomerTypeahead } from '@/components/customers/CustomerTypeahead'
 import { findCustomerByName } from '@/lib/customerName'
@@ -396,10 +397,10 @@ export function ChatPage() {
   const [emailManagerCcRecipients, setEmailManagerCcRecipients] = useState<string[]>([])
   const [includeManagerCcRecipients, setIncludeManagerCcRecipients] = useState(true)
   const canArchiveSelected =
-    Boolean(selectedActivityId && activityDetail && user && (user.role === 'admin' || activityOwnerId(activityDetail) === user.id))
+    Boolean(selectedActivityId && activityDetail && user && (isAdminRole(user.role) || activityOwnerId(activityDetail) === user.id))
 
   const canManageSharing = Boolean(
-    activityDetail && user && (user.role === 'admin' || activityOwnerId(activityDetail) === user.id)
+    activityDetail && user && (isAdminRole(user.role) || activityOwnerId(activityDetail) === user.id)
   )
 
   const canAddCollabNote = Boolean(activityDetail && user)
@@ -464,7 +465,7 @@ export function ChatPage() {
     setLoadingCoworkers(true)
     setCoworkersError(null)
     try {
-      if (user.role === 'admin') {
+      if (isAdminRole(user.role)) {
         const { users } = await api.auth.getUsers()
         const mapped = users
           .filter((u) => u.id !== user.id && u.isActive !== false)
@@ -1708,7 +1709,7 @@ export function ChatPage() {
       setError('Select a log from the list before archiving.')
       return
     }
-    const confirmed = window.confirm('Are you sure you want to delete this recent log?')
+    const confirmed = window.confirm('Are you sure you want to archive this log?')
     if (!confirmed) return
 
     setArchiving(true)
@@ -3900,8 +3901,8 @@ export function ChatPage() {
                                     {displayedCoworkers.map((c) => (
                                       <option key={c.id} value={c.id}>
                                         {c.name?.trim()
-                                          ? `${c.name.trim()}  ·  ${c.email}  ·  ${c.role === 'admin' ? 'Admin' : 'Employee'}`
-                                          : `${c.email}  ·  ${c.role === 'admin' ? 'Admin' : 'Employee'}`}
+                                          ? `${c.name.trim()}  ·  ${c.email}  ·  ${formatRoleLabel(c.role as 'super_admin' | 'admin' | 'employee')}`
+                                          : `${c.email}  ·  ${formatRoleLabel(c.role as 'super_admin' | 'admin' | 'employee')}`}
                                       </option>
                                     ))}
                                   </select>

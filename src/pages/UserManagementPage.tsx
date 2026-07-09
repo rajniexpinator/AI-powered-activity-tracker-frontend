@@ -30,11 +30,17 @@ import { useAuth } from '@/context/AuthContext'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { PlantSelector } from '@/components/profile/PlantSelector'
 import { PLANT_OPTIONS, formatPlantLabel, type PlantOption } from '@/constants/plants'
+import {
+  assignableRolesFor,
+  canAdminManageUser,
+  formatRoleLabel,
+  type UserRole,
+} from '@/lib/roles'
 
-const ROLES: User['role'][] = ['admin', 'employee']
 const PAGE_SIZE = 5
 
-const ROLE_STYLES: Record<User['role'], string> = {
+const ROLE_STYLES: Record<UserRole, string> = {
+  super_admin: 'bg-[#1e3a5f] !text-white',
   admin: 'bg-[var(--color-primary)] !text-white',
   employee: 'bg-[var(--color-bg)] text-[var(--color-text-secondary)]',
 }
@@ -74,6 +80,12 @@ export function UserManagementPage() {
   const [openActionsForUserId, setOpenActionsForUserId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [search, setSearch] = useState('')
+
+  const assignableRoles = useMemo(() => assignableRolesFor(currentUser), [currentUser])
+
+  function isRoleLocked(u: User) {
+    return u.id === currentUser?.id || !canAdminManageUser(currentUser, u)
+  }
 
   const loadUsers = useCallback(async () => {
     setLoading(true)
@@ -886,12 +898,12 @@ export function UserManagementPage() {
 
                           <div className="flex items-center justify-between gap-2 pt-1 border-t border-[var(--color-border)]/80">
                             <div className="min-w-0">
-                              {u.id === currentUser?.id ? (
+                              {isRoleLocked(u) ? (
                                 <span
                                   className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold ${ROLE_STYLES[u.role]}`}
                                 >
                                   <Shield className="w-3 h-3" />
-                                  {u.role}
+                                  {formatRoleLabel(u.role)}
                                 </span>
                               ) : (
                                 <select
@@ -899,9 +911,9 @@ export function UserManagementPage() {
                                   onChange={(e) => handleUpdateRole(u.id, e.target.value as User['role'])}
                                   className="text-[12px] border border-[var(--color-border)] rounded-xl px-3 py-1.5 bg-white font-medium"
                                 >
-                                  {ROLES.map((r) => (
+                                  {assignableRoles.map((r) => (
                                     <option key={r} value={r}>
-                                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                                      {formatRoleLabel(r)}
                                     </option>
                                   ))}
                                 </select>
@@ -909,6 +921,8 @@ export function UserManagementPage() {
                             </div>
 
                             <div className="relative" data-user-actions-menu-root="true">
+                              {canAdminManageUser(currentUser, u) ? (
+                                <>
                               <button
                                 type="button"
                                 onClick={() => toggleActionsMenu(u.id)}
@@ -971,6 +985,13 @@ export function UserManagementPage() {
                                     {u.isActive !== false ? 'Deactivate' : 'Activate'}
                                   </button>
                                 </div>
+                              )}
+                                </>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-[var(--color-text-secondary)] border border-[var(--color-border)]">
+                                  <Shield className="w-3 h-3" />
+                                  Protected
+                                </span>
                               )}
                             </div>
                           </div>
@@ -1050,12 +1071,12 @@ export function UserManagementPage() {
                       </div>
                     </td>
                     <td className="px-5 sm:px-6 md:px-8 py-4">
-                      {u.id === currentUser?.id ? (
+                      {isRoleLocked(u) ? (
                         <span
                           className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[13px] font-medium ${ROLE_STYLES[u.role]}`}
                         >
                           <Shield className="w-3.5 h-3.5" />
-                          {u.role}
+                          {formatRoleLabel(u.role)}
                         </span>
                       ) : (
                         <select
@@ -1063,9 +1084,9 @@ export function UserManagementPage() {
                           onChange={(e) => handleUpdateRole(u.id, e.target.value as User['role'])}
                           className="text-[13px] border border-[var(--color-border)] rounded-lg px-3 py-2 bg-white focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)]"
                         >
-                          {ROLES.map((r) => (
+                          {assignableRoles.map((r) => (
                             <option key={r} value={r}>
-                              {r.charAt(0).toUpperCase() + r.slice(1)}
+                              {formatRoleLabel(r)}
                             </option>
                           ))}
                         </select>
@@ -1097,6 +1118,8 @@ export function UserManagementPage() {
                     </td>
                     <td className="px-5 sm:px-6 md:px-8 py-4 text-right">
                       <div className="relative inline-flex" data-user-actions-menu-root="true">
+                        {canAdminManageUser(currentUser, u) ? (
+                          <>
                         <button
                           type="button"
                           onClick={() => toggleActionsMenu(u.id)}
@@ -1160,6 +1183,13 @@ export function UserManagementPage() {
                               {u.isActive !== false ? 'Deactivate' : 'Activate'}
                             </button>
                           </div>
+                        )}
+                          </>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium text-[var(--color-text-secondary)] border border-[var(--color-border)]">
+                            <Shield className="w-3 h-3" />
+                            Protected
+                          </span>
                         )}
                       </div>
                     </td>
@@ -1313,9 +1343,9 @@ export function UserManagementPage() {
                   onChange={(e) => setNewRole(e.target.value as User['role'])}
                   className="w-full px-4 py-2.5 sm:py-3 bg-[var(--color-bg)] border border-[var(--color-border)] rounded-xl text-[13px] sm:text-[15px] focus:ring-2 focus:ring-[var(--color-primary)]/30 focus:border-[var(--color-primary)]"
                 >
-                  {ROLES.map((r) => (
+                  {assignableRoles.map((r) => (
                     <option key={r} value={r}>
-                      {r.charAt(0).toUpperCase() + r.slice(1)}
+                      {formatRoleLabel(r)}
                     </option>
                   ))}
                 </select>

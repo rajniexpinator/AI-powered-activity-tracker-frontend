@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { Activity, ArrowRight, BarChart3, Building2, FileText, History, Lock, Mail, MessageSquare, Shield, User, Users } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { isAdminRole } from '@/lib/roles'
 
 const SECONDARY_COLOR = '#E83946'
 
@@ -111,7 +112,7 @@ function FeatureCard({
 
 export function HomePage() {
   const { user } = useAuth()
-  const isAdmin = user?.role === 'admin'
+  const isAdmin = isAdminRole(user?.role)
 
   return (
     <div className="w-full min-h-screen bg-[#f5f6fc] overflow-x-hidden">

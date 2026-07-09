@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { MessageSquare, Users, BarChart3, Clock, ArrowRight } from 'lucide-react'
 import { api } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
+import { isAdminRole } from '@/lib/roles'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { formatUsDateTime } from '@/lib/formatDate'
 
@@ -38,7 +39,7 @@ export function DashboardPage() {
     void load()
   }, [])
 
-  const isAdmin = user?.role === 'admin'
+  const isAdmin = isAdminRole(user?.role)
 
   return (
     <AdminShell>

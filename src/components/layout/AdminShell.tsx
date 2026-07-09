@@ -17,6 +17,7 @@ import {
   LayoutGrid,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
+import { isAdminRole } from '@/lib/roles'
 
 interface AdminShellProps {
   children: ReactNode
@@ -24,7 +25,7 @@ interface AdminShellProps {
 
 export function AdminShell({ children }: AdminShellProps) {
   const { user, logout } = useAuth()
-  const isAdmin = user?.role === 'admin'
+  const isAdmin = isAdminRole(user?.role)
   const canViewActivity = Boolean(user)
   const location = useLocation()
   const navigate = useNavigate()
@@ -57,7 +58,7 @@ export function AdminShell({ children }: AdminShellProps) {
             </div>
             <div className='text'>
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
-                {isAdmin ? 'Admin' : 'Employee'}
+                {isAdmin ? (user?.role === 'super_admin' ? 'Super Admin' : 'Admin') : 'Employee'}
               </p>
               <p className="text-[13px] font-semibold text-[var(--color-text)]">
                 Operations
@@ -290,7 +291,7 @@ export function AdminShell({ children }: AdminShellProps) {
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
-                    {isAdmin ? 'Admin' : 'Employee'}
+                    {isAdmin ? (user?.role === 'super_admin' ? 'Super Admin' : 'Admin') : 'Employee'}
                   </p>
                   <p className="mt-0.5 text-[13px] font-semibold text-[var(--color-text)]">
                     Operations

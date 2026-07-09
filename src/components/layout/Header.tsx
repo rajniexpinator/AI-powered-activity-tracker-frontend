@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { LayoutDashboard, Users, LogOut, User, ChevronDown, Pencil, Menu, X } from 'lucide-react'
 import logoSrc from '../../../public/logo.png'
 import { useAuth } from '@/context/AuthContext'
+import { isAdminRole } from '@/lib/roles'
 
 export function Header() {
   const { user, logout } = useAuth()
@@ -58,7 +59,7 @@ export function Header() {
           <LayoutDashboard className="w-5 h-5 text-[#666]" />
           Dashboard
         </Link>
-        {user.role === 'admin' && (
+        {isAdminRole(user.role) && (
           <Link to="/users" onClick={closeMobileMenu} className="flex items-center gap-3 px-4 py-3 rounded-lg text-[#333] hover:bg-black/[0.04] no-underline text-[15px]">
             <Users className="w-5 h-5 text-[#666]" />
             Users
@@ -113,7 +114,7 @@ export function Header() {
                 <LayoutDashboard className="w-4 h-4 opacity-70" />
                 Dashboard
               </Link>
-              {user.role === 'admin' && (
+              {isAdminRole(user.role) && (
                 <Link to="/users" className="flex items-center gap-2 px-3.5 py-2 text-[14px] font-medium rounded-lg transition-all no-underline bg-[var(--color-primary)] hover:bg-[var(--color-primary-hover)] hover:ring-2 hover:ring-[var(--color-primary)]/50 hover:ring-offset-2 !text-white">
                   <Users className="w-4 h-4" />
                   Users
