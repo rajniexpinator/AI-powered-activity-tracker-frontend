@@ -29,17 +29,21 @@ export type ShareableActivity = {
 export type BuildShareTextOptions = {
   /** How many photos were attached as files for inline display (e.g. WhatsApp). */
   attachedImageCount?: number
+  /** How many document/file attachments were included as share files. */
+  attachedFileCount?: number
   /** Per-field share preferences (from user profile). */
   preferences?: ActivityLogSharePreferences
 }
 
-type ShareImageCacheEntry = {
+type ShareMediaCacheEntry = {
   urlsKey: string
-  files: File[]
-  failed?: boolean
+  imageFiles: File[]
+  attachmentFiles: File[]
+  failedImages?: boolean
+  failedAttachments?: boolean
 }
 
-const shareImageCache = new Map<string, ShareImageCacheEntry>()
+const shareMediaCache = new Map<string, ShareMediaCacheEntry>()
 const preloadInFlight = new Map<string, Promise<void>>()
 
 function isVideoAttachment(a: ShareableAttachment): boolean {
@@ -56,6 +60,14 @@ function videoAttachmentsFromActivity(activity: ShareableActivity): ShareableAtt
   )
 }
 
+/** Non-video documents/files (PDF, Office, ZIP, etc.) — candidates for native share File[]. */
+function documentAttachmentsFromActivity(activity: ShareableActivity): ShareableAttachment[] {
+  if (!Array.isArray(activity.attachments)) return []
+  return activity.attachments.filter(
+    (a) => a && typeof a.url === 'string' && a.url.trim() && !isVideoAttachment(a)
+  )
+}
+
 function asText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
 }
@@ -68,6 +80,14 @@ function imageUrlsFromActivity(activity: ShareableActivity): string[] {
 
 function imageUrlsKey(urls: string[]): string {
   return urls.join('\n')
+}
+
+function attachmentUrlsKey(attachments: ShareableAttachment[]): string {
+  return attachments.map((a) => a.url.trim()).filter(Boolean).join('\n')
+}
+
+function mediaCacheKey(activity: ShareableActivity): string {
+  return `${imageUrlsKey(imageUrlsFromActivity(activity))}\n---\n${attachmentUrlsKey(documentAttachmentsFromActivity(activity))}`
 }
 
 function activityCacheId(activity: ShareableActivity): string | undefined {
@@ -112,6 +132,11 @@ function filenameFromUrl(rawUrl: string, fallback: string): string {
   }
 }
 
+function sanitizeFileName(name: string, fallback: string): string {
+  const cleaned = name.replace(/[^\w.\-() ]+/g, '_').trim().slice(0, 120)
+  return cleaned || fallback
+}
+
 /** Join blocks with a blank line between each (WhatsApp-friendly link spacing). */
 function joinWithBlankLines(blocks: string[]): string {
   return blocks.map((b) => b.trim()).filter(Boolean).join('\n\n')
@@ -123,29 +148,49 @@ export function canUseNativeShare(): boolean {
 
 export function clearShareImageCache(activityId?: string): void {
   if (activityId) {
-    shareImageCache.delete(activityId)
+    shareMediaCache.delete(activityId)
     preloadInFlight.delete(activityId)
     return
   }
-  shareImageCache.clear()
+  shareMediaCache.clear()
   preloadInFlight.clear()
 }
 
-function getCachedShareFiles(activity: ShareableActivity): File[] {
+function getCachedShareMedia(activity: ShareableActivity): ShareMediaCacheEntry | null {
   const id = activityCacheId(activity)
-  if (!id) return []
-  const urls = imageUrlsFromActivity(activity)
-  const cached = shareImageCache.get(id)
-  if (!cached || cached.urlsKey !== imageUrlsKey(urls) || cached.failed) return []
-  return cached.files
+  if (!id) return null
+  const cached = shareMediaCache.get(id)
+  if (!cached || cached.urlsKey !== mediaCacheKey(activity)) return null
+  return cached
 }
 
-/** True when every photo is downloaded and ready to attach (required for WhatsApp inline images). */
+function getCachedShareImageFiles(activity: ShareableActivity): File[] {
+  const cached = getCachedShareMedia(activity)
+  if (!cached || cached.failedImages) return []
+  return cached.imageFiles
+}
+
+function getCachedShareAttachmentFiles(activity: ShareableActivity): File[] {
+  const cached = getCachedShareMedia(activity)
+  if (!cached || cached.failedAttachments) return []
+  return cached.attachmentFiles
+}
+
+/** True when every photo is downloaded and document preload has finished. */
 export function areSharePhotosReady(activity: ShareableActivity): boolean {
-  const urls = imageUrlsFromActivity(activity)
-  if (urls.length === 0) return true
-  const files = getCachedShareFiles(activity)
-  return files.length === urls.length
+  const imageUrls = imageUrlsFromActivity(activity)
+  const docs = documentAttachmentsFromActivity(activity)
+  if (imageUrls.length === 0 && docs.length === 0) return true
+
+  const id = activityCacheId(activity)
+  if (!id) return true
+  if (preloadInFlight.has(id)) return false
+
+  const cached = getCachedShareMedia(activity)
+  if (!cached) return false
+  if (imageUrls.length > 0 && cached.imageFiles.length !== imageUrls.length) return false
+  // Document files may partially fail (e.g. over share size limit); ready once preload finished.
+  return true
 }
 
 export function isSharePhotosLoading(activity: ShareableActivity): boolean {
@@ -154,14 +199,13 @@ export function isSharePhotosLoading(activity: ShareableActivity): boolean {
   return preloadInFlight.has(id)
 }
 
-/** Preload photos while viewing a log so Share can open immediately (iOS user-gesture rule). */
+/** Preload photos and document files while viewing a log so Share can open immediately. */
 export async function preloadShareImages(activity: ShareableActivity): Promise<void> {
   const id = activityCacheId(activity)
   if (!id) return
 
-  const imageUrls = imageUrlsFromActivity(activity)
-  const key = imageUrlsKey(imageUrls)
-  const existing = shareImageCache.get(id)
+  const key = mediaCacheKey(activity)
+  const existing = shareMediaCache.get(id)
   if (existing?.urlsKey === key) return
 
   const pending = preloadInFlight.get(id)
@@ -170,10 +214,23 @@ export async function preloadShareImages(activity: ShareableActivity): Promise<v
     return
   }
 
+  const imageUrls = imageUrlsFromActivity(activity)
+  const docs = documentAttachmentsFromActivity(activity)
+
   const task = (async () => {
-    const files = await loadShareImageFiles(imageUrls, id)
-    const failed = imageUrls.length > 0 && files.length === 0
-    shareImageCache.set(id, { urlsKey: key, files, failed })
+    const [imageFiles, attachmentFiles] = await Promise.all([
+      loadShareImageFiles(imageUrls, id),
+      loadShareAttachmentFiles(docs, id),
+    ])
+    const failedImages = imageUrls.length > 0 && imageFiles.length === 0
+    const failedAttachments = docs.length > 0 && attachmentFiles.length === 0
+    shareMediaCache.set(id, {
+      urlsKey: key,
+      imageFiles,
+      attachmentFiles,
+      failedImages,
+      failedAttachments,
+    })
   })()
 
   preloadInFlight.set(id, task)
@@ -246,17 +303,41 @@ function buildVideoLinksSection(videos: ShareableAttachment[]): string[] {
   return ['', '—', 'Videos (tap a link to open):', joinWithBlankLines(blocks)]
 }
 
+function buildFileLinksSection(
+  files: ShareableAttachment[],
+  attachedFileCount: number
+): string[] {
+  if (files.length === 0) return []
+
+  const blocks = files.map((f) => {
+    const link = resolveAbsoluteUrl(f.url)
+    if (!link) return ''
+    const label = asText(f.name)
+    return label ? `${label}\n${link}` : link
+  })
+
+  const header =
+    attachedFileCount > 0
+      ? 'Files are attached above in this message. Tap a link below if a file is missing:'
+      : 'Files (tap a link to open):'
+
+  return ['', '—', header, joinWithBlankLines(blocks)]
+}
+
 export function buildActivityShareText(
   activity: ShareableActivity,
   options: BuildShareTextOptions = {}
 ): { title: string; text: string } {
   const prefs = options.preferences ?? DEFAULT_ACTIVITY_LOG_SHARE
   const attachedImageCount = options.attachedImageCount ?? 0
+  const attachedFileCount = options.attachedFileCount ?? 0
   const imageUrls = imageUrlsFromActivity(activity)
+  const docs = documentAttachmentsFromActivity(activity)
 
   const lines = [
     ...buildLogBody(activity, prefs),
     ...(prefs.photos ? buildPhotoLinksSection(imageUrls, attachedImageCount) : []),
+    ...(prefs.files ? buildFileLinksSection(docs, attachedFileCount) : []),
     ...(prefs.files ? buildVideoLinksSection(videoAttachmentsFromActivity(activity)) : []),
   ]
 
@@ -275,11 +356,10 @@ export function buildActivityShareText(
   }
 }
 
-async function fetchImageAsFile(
+async function fetchBlobViaShareProxy(
   url: string,
-  index: number,
   activityId?: string
-): Promise<File | null> {
+): Promise<{ blob: Blob; absolute: string } | null> {
   const absolute = resolveAbsoluteUrl(url)
   if (!absolute) return null
 
@@ -300,21 +380,65 @@ async function fetchImageAsFile(
 
     const blob = await response.blob()
     if (!blob.size) return null
-
-    const mime =
-      blob.type && blob.type.startsWith('image/') ? blob.type : 'image/jpeg'
-    const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg'
-    const name = filenameFromUrl(absolute, `activity-photo-${index + 1}.${ext}`)
-
-    return new File([blob], name, { type: mime })
+    return { blob, absolute }
   } catch {
     return null
   }
 }
 
+async function fetchImageAsFile(
+  url: string,
+  index: number,
+  activityId?: string
+): Promise<File | null> {
+  const result = await fetchBlobViaShareProxy(url, activityId)
+  if (!result) return null
+
+  const { blob, absolute } = result
+  const mime =
+    blob.type && blob.type.startsWith('image/') ? blob.type : 'image/jpeg'
+  const ext = mime.split('/')[1]?.replace('jpeg', 'jpg') || 'jpg'
+  const name = filenameFromUrl(absolute, `activity-photo-${index + 1}.${ext}`)
+
+  return new File([blob], name, { type: mime })
+}
+
+async function fetchAttachmentAsFile(
+  attachment: ShareableAttachment,
+  index: number,
+  activityId?: string
+): Promise<File | null> {
+  const result = await fetchBlobViaShareProxy(attachment.url, activityId)
+  if (!result) return null
+
+  const { blob, absolute } = result
+  const preferredMime = asText(attachment.mime)
+  const mime =
+    preferredMime ||
+    (blob.type && blob.type !== 'application/octet-stream' ? blob.type : '') ||
+    'application/octet-stream'
+  const fallback = `activity-file-${index + 1}`
+  const name = sanitizeFileName(
+    asText(attachment.name) || filenameFromUrl(absolute, fallback),
+    fallback
+  )
+
+  return new File([blob], name, { type: mime })
+}
+
 async function loadShareImageFiles(imageUrls: string[], activityId?: string): Promise<File[]> {
   const results = await Promise.all(
     imageUrls.map((url, index) => fetchImageAsFile(url, index, activityId))
+  )
+  return results.filter((f): f is File => f !== null)
+}
+
+async function loadShareAttachmentFiles(
+  attachments: ShareableAttachment[],
+  activityId?: string
+): Promise<File[]> {
+  const results = await Promise.all(
+    attachments.map((a, index) => fetchAttachmentAsFile(a, index, activityId))
   )
   return results.filter((f): f is File => f !== null)
 }
@@ -345,12 +469,12 @@ async function copyTextFallback(text: string): Promise<void> {
 }
 
 /**
- * Share with photo files. Does not fall back to text-only (WhatsApp would show links only).
+ * Share with photo/document files. Does not fall back to text-only (WhatsApp would show links only).
  * iOS Safari often reports canShare=false for files even when share() works — we still try.
  */
 async function invokeNativeShareWithFiles(text: string, files: File[]): Promise<void> {
   const attempts: ShareData[] = [{ files, text }, { files }]
-  let lastError: unknown = new Error('Could not share photos')
+  let lastError: unknown = new Error('Could not share attachments')
 
   for (const data of attempts) {
     try {
@@ -362,7 +486,7 @@ async function invokeNativeShareWithFiles(text: string, files: File[]): Promise<
     }
   }
 
-  throw lastError instanceof Error ? lastError : new Error('Could not share photos')
+  throw lastError instanceof Error ? lastError : new Error('Could not share attachments')
 }
 
 async function invokeNativeShareTextOnly(text: string): Promise<void> {
@@ -384,8 +508,8 @@ async function invokeNativeShareTextOnly(text: string): Promise<void> {
 }
 
 export type ShareActivityResult =
-  | { mode: 'native'; imageCount: number; usedCachedImages: boolean }
-  | { mode: 'clipboard'; imageCount: number }
+  | { mode: 'native'; imageCount: number; fileCount: number; usedCachedImages: boolean }
+  | { mode: 'clipboard'; imageCount: number; fileCount: number }
 
 export async function shareActivityLog(
   activity: ShareableActivity,
@@ -393,45 +517,68 @@ export async function shareActivityLog(
 ): Promise<ShareActivityResult> {
   const prefs = preferences ?? DEFAULT_ACTIVITY_LOG_SHARE
   const imageUrls = imageUrlsFromActivity(activity)
+  const docs = documentAttachmentsFromActivity(activity)
   const wantsPhotos = prefs.photos && imageUrls.length > 0
+  const wantsFiles = prefs.files && docs.length > 0
 
   if (!canUseNativeShare()) {
-    const { text } = buildActivityShareText(activity, { attachedImageCount: 0, preferences: prefs })
+    const { text } = buildActivityShareText(activity, {
+      attachedImageCount: 0,
+      attachedFileCount: 0,
+      preferences: prefs,
+    })
     await copyTextFallback(text)
-    return { mode: 'clipboard', imageCount: imageUrls.length }
+    return { mode: 'clipboard', imageCount: imageUrls.length, fileCount: docs.length }
   }
 
-  const cachedFiles = wantsPhotos ? getCachedShareFiles(activity) : []
-  const hasImages = wantsPhotos
+  const cachedImageFiles = wantsPhotos ? getCachedShareImageFiles(activity) : []
+  const cachedAttachmentFiles = wantsFiles ? getCachedShareAttachmentFiles(activity) : []
 
-  if (hasImages && cachedFiles.length === 0) {
+  if (wantsPhotos && cachedImageFiles.length === 0) {
     throw new Error(
       'Photos are not ready yet. Wait a few seconds after opening the log, then tap Share again.'
     )
   }
 
-  if (hasImages && cachedFiles.length < imageUrls.length) {
+  if (wantsPhotos && cachedImageFiles.length < imageUrls.length) {
     throw new Error(
-      `Only ${cachedFiles.length} of ${imageUrls.length} photos loaded. Check your connection and try again.`
+      `Only ${cachedImageFiles.length} of ${imageUrls.length} photos loaded. Check your connection and try again.`
     )
   }
 
+  if (wantsFiles && docs.length > 0 && cachedAttachmentFiles.length === 0) {
+    // Preload may still be running, or all files exceeded the share size limit.
+    if (isSharePhotosLoading(activity) || !getCachedShareMedia(activity)) {
+      throw new Error(
+        'Files are not ready yet. Wait a few seconds after opening the log, then tap Share again.'
+      )
+    }
+    // Preload finished but nothing downloaded (e.g. all over 12 MB) — continue with links only.
+  }
+
+  const shareFiles = [...cachedImageFiles, ...cachedAttachmentFiles]
   const { text } = buildActivityShareText(activity, {
-    attachedImageCount: cachedFiles.length,
+    attachedImageCount: cachedImageFiles.length,
+    attachedFileCount: cachedAttachmentFiles.length,
     preferences: prefs,
   })
 
-  if (cachedFiles.length > 0) {
-    await invokeNativeShareWithFiles(text, cachedFiles)
-    return { mode: 'native', imageCount: cachedFiles.length, usedCachedImages: true }
+  if (shareFiles.length > 0) {
+    await invokeNativeShareWithFiles(text, shareFiles)
+    return {
+      mode: 'native',
+      imageCount: cachedImageFiles.length,
+      fileCount: cachedAttachmentFiles.length,
+      usedCachedImages: true,
+    }
   }
 
   try {
     await invokeNativeShareTextOnly(text)
-    return { mode: 'native', imageCount: 0, usedCachedImages: false }
+    return { mode: 'native', imageCount: 0, fileCount: 0, usedCachedImages: false }
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') throw err
     await copyTextFallback(text)
-    return { mode: 'clipboard', imageCount: 0 }
+    return { mode: 'clipboard', imageCount: 0, fileCount: 0 }
   }
 }

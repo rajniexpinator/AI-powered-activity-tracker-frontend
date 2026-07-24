@@ -304,12 +304,31 @@ function buildBarcodeLogSnippet(
   notes?: string
 ) {
   const lines = [`Scanned barcode: ${barcode}`]
-  if (customer?.trim()) lines.push(`Customer: ${customer.trim()}`)
+  // "Supplier" matches the form label; backend also accepts legacy "Customer:".
+  if (customer?.trim()) lines.push(`Supplier: ${customer.trim()}`)
   const partLabel = partName?.trim() || ''
-  if (partLabel) lines.push(`Part: ${partLabel}`)
+  if (partLabel) lines.push(`Part name: ${partLabel}`)
   if (partNumber?.trim()) lines.push(`Part number: ${partNumber.trim()}`)
   if (notes?.trim()) lines.push(`Notes: ${notes.trim()}`)
   return lines.join('\n')
+}
+
+type BarcodeFieldHints = {
+  customer?: string
+  partName?: string
+  partNumber?: string
+  /** Full scan snippet — kept in Notes while fields are also filled. */
+  notes?: string
+}
+
+function mergeNotesWithScanBlock(existingNotes: string, scanBlock?: string) {
+  const scan = scanBlock?.trim() || ''
+  const existing = existingNotes.trim()
+  if (!scan) return existing
+  if (!existing) return scan
+  if (existing.includes(scan)) return existing
+  if (scan.includes(existing)) return scan
+  return `${scan}\n\n${existing}`
 }
 
 function needsBarcodeMappingStep(p: PendingBarcodeClarification): boolean {
@@ -391,13 +410,25 @@ export function ChatPage() {
   const [sharingLog, setSharingLog] = useState(false)
   const [sharePhotosReady, setSharePhotosReady] = useState(true)
   const [emailConfirmOpen, setEmailConfirmOpen] = useState(false)
+  const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
+  const [archiveCloseRecentModal, setArchiveCloseRecentModal] = useState(false)
   const [emailRecipientsLoading, setEmailRecipientsLoading] = useState(false)
   const [emailCustomerRecipients, setEmailCustomerRecipients] = useState<string[]>([])
   const [selectedCustomerEmailRecipients, setSelectedCustomerEmailRecipients] = useState<string[]>([])
   const [emailManagerCcRecipients, setEmailManagerCcRecipients] = useState<string[]>([])
   const [includeManagerCcRecipients, setIncludeManagerCcRecipients] = useState(true)
-  const canArchiveSelected =
-    Boolean(selectedActivityId && activityDetail && user && (isAdminRole(user.role) || activityOwnerId(activityDetail) === user.id))
+  const selectedRecentMeta = selectedActivityId
+    ? recentActivities.find((a) => a._id === selectedActivityId)
+    : null
+  const canArchiveSelected = Boolean(
+    selectedActivityId &&
+      user &&
+      (isAdminRole(user.role) ||
+        selectedRecentMeta?.isOwner === true ||
+        (activityDetail &&
+          String(activityDetail._id) === String(selectedActivityId) &&
+          activityOwnerId(activityDetail) === user.id))
+  )
 
   const canManageSharing = Boolean(
     activityDetail && user && (isAdminRole(user.role) || activityOwnerId(activityDetail) === user.id)
@@ -751,36 +782,49 @@ export function ChatPage() {
     closeBarcodeIntegration()
   }
 
-  function applyBarcodeFormHints(hints?: { partNumber?: string; partName?: string }) {
-    if (hints?.partNumber?.trim()) setEditPartNumber(hints.partNumber.trim())
-    if (hints?.partName?.trim()) {
-      setEditPartName((prev) => prev.trim() || hints.partName!.trim())
+  function applyBarcodeFormHints(hints?: BarcodeFieldHints) {
+    if (!hints) return
+    if (hints.partNumber?.trim()) setEditPartNumber(hints.partNumber.trim())
+    if (hints.partName?.trim()) setEditPartName(hints.partName.trim())
+    if (hints.customer?.trim()) {
+      const c = hints.customer.trim()
+      const matched = findCustomerByName(customers, c)
+      setCustomerHint(matched?.name ?? c)
+      setSelectedCustomerId(matched?._id ?? '')
+    }
+    if (hints.notes?.trim()) {
+      setEditNotes((prev) => mergeNotesWithScanBlock(prev, hints.notes))
     }
   }
 
   async function flushBarcodeToNewLog(
     snippet: string,
     hintCustomer?: string,
-    barcodeHints?: { partNumber?: string; partName?: string }
+    barcodeHints?: BarcodeFieldHints
   ) {
     closeBarcodeIntegration()
     resetToNewLog()
     setText(snippet)
-    const c = hintCustomer?.trim() || ''
+    const c = hintCustomer?.trim() || barcodeHints?.customer?.trim() || ''
     if (c) {
       setCustomerHint(c)
       const matched = findCustomerByName(customers, c)
       setSelectedCustomerId(matched?._id ?? '')
     }
     toast.info('Review the extracted log fields, then save to add it to your tracker.')
-    await handleExtract(snippet, hintCustomer)
-    applyBarcodeFormHints(barcodeHints)
+    const hints: BarcodeFieldHints = {
+      customer: c || undefined,
+      partNumber: barcodeHints?.partNumber,
+      partName: barcodeHints?.partName,
+      notes: snippet,
+    }
+    await handleExtract(snippet, c || undefined, hints)
   }
 
   async function flushBarcodeToExistingLog(
     activityId: string,
     snippet: string,
-    barcodeHints?: { partNumber?: string; partName?: string }
+    barcodeHints?: BarcodeFieldHints
   ) {
     closeBarcodeIntegration()
     const { merged, detailCustomer } = await handleSelectRecent(activityId, {
@@ -792,8 +836,13 @@ export function ChatPage() {
       return
     }
     toast.info('Barcode text added — review extracted fields, then save to update this log.')
-    await handleExtract(merged, detailCustomer)
-    applyBarcodeFormHints(barcodeHints)
+    const hints: BarcodeFieldHints = {
+      customer: barcodeHints?.customer || detailCustomer || undefined,
+      partNumber: barcodeHints?.partNumber,
+      partName: barcodeHints?.partName,
+      notes: snippet,
+    }
+    await handleExtract(merged, detailCustomer, hints)
   }
 
   async function onBarcodeIntegrationCreateNew() {
@@ -812,8 +861,10 @@ export function ChatPage() {
       undefined
     )
     await flushBarcodeToNewLog(snippet, m?.customer, {
+      customer: m?.customer,
       partNumber: m?.partNumber,
       partName: m?.partName || m?.productName,
+      notes: snippet,
     })
   }
 
@@ -838,8 +889,10 @@ export function ChatPage() {
       undefined
     )
     await flushBarcodeToExistingLog(activityId, snippet, {
+      customer: m?.customer,
       partNumber: m?.partNumber,
       partName: m?.partName || m?.productName,
+      notes: snippet,
     })
   }
 
@@ -1227,7 +1280,10 @@ export function ChatPage() {
       return
     }
     const imageCount = activityDetail.images?.length ?? 0
-    if (imageCount === 0) {
+    const fileCount = Array.isArray(activityDetail.attachments)
+      ? activityDetail.attachments.filter((a) => a?.url && !isVideoAttachment(a)).length
+      : 0
+    if (imageCount === 0 && fileCount === 0) {
       setSharePhotosReady(true)
       return
     }
@@ -1239,13 +1295,16 @@ export function ChatPage() {
     return () => {
       cancelled = true
     }
-  }, [activityDetail?._id, activityDetail?.images])
+  }, [activityDetail?._id, activityDetail?.images, activityDetail?.attachments])
 
   function isShareBlockedForPhotos(): boolean {
     if (!activityDetail || !selectedActivityId) return false
     if (String(activityDetail._id) !== String(selectedActivityId)) return false
     const imageCount = activityDetail.images?.length ?? 0
-    if (imageCount === 0) return false
+    const fileCount = Array.isArray(activityDetail.attachments)
+      ? activityDetail.attachments.filter((a) => a?.url && !isVideoAttachment(a)).length
+      : 0
+    if (imageCount === 0 && fileCount === 0) return false
     return !sharePhotosReady || isSharePhotosLoading(activityDetail)
   }
 
@@ -1286,7 +1345,11 @@ export function ChatPage() {
     setSavedResultKey(null)
   }
 
-  async function handleExtract(overrideText?: string, overrideCustomerHint?: string) {
+  async function handleExtract(
+    overrideText?: string,
+    overrideCustomerHint?: string,
+    fieldOverrides?: BarcodeFieldHints
+  ) {
     const body = (overrideText !== undefined ? overrideText : text).trim()
     if (!body) {
       setError('Please describe the activity before logging with AI.')
@@ -1297,7 +1360,7 @@ export function ChatPage() {
       const hasDropdownChoice = Boolean(selectedCustomerId)
       const hasTypedCustomer = Boolean(effectiveCustomerHint)
       if (!hasDropdownChoice && !hasTypedCustomer) {
-        setError('Please select a customer before logging with AI.')
+        setError('Please select a supplier before logging with AI.')
         return
       }
     }
@@ -1308,10 +1371,25 @@ export function ChatPage() {
     setLoadingExtract(true)
     try {
       const data = await api.ai.extractActivity(body, effectiveCustomerHint || undefined)
-      setResult(data)
-      const structured = (data.structured || {}) as StructuredActivity
+      const structured = { ...((data.structured || {}) as StructuredActivity) }
+
+      // Prefer explicit barcode/mapping overrides over AI guesses.
+      if (fieldOverrides?.customer?.trim()) structured.customer = fieldOverrides.customer.trim()
+      if (fieldOverrides?.partName?.trim()) structured.part_name = fieldOverrides.partName.trim()
+      if (fieldOverrides?.partNumber?.trim()) {
+        structured.part_number = fieldOverrides.partNumber.trim()
+        delete structured.partNumber
+      }
+      if (fieldOverrides?.notes?.trim()) {
+        structured.notes = mergeNotesWithScanBlock(
+          typeof structured.notes === 'string' ? structured.notes : '',
+          fieldOverrides.notes
+        )
+      }
+
+      setResult({ ...data, structured })
       setEditSummary(structured.summary ?? '')
-      setEditPartName(structured.part_name ?? '')
+      setEditPartName(structured.part_name ?? structured.partName ?? '')
       setEditPartNumber(readPartNumberFromStructured(structured))
       setEditSupplierCode(readSupplierCodeFromStructured(structured))
       setEditVehicleLine(readVehicleLineFromStructured(structured))
@@ -1321,6 +1399,17 @@ export function ChatPage() {
       setEditOutcome(structured.outcome ?? '')
       setEditNextActions(structured.next_actions?.join('\n') ?? '')
       setEditNotes(structured.notes ?? '')
+      const extractedCustomer =
+        (typeof structured.customer === 'string' && structured.customer.trim()) ||
+        effectiveCustomerHint ||
+        ''
+      if (extractedCustomer) {
+        const matched = findCustomerByName(customers, extractedCustomer)
+        setCustomerHint(matched?.name ?? extractedCustomer)
+        setSelectedCustomerId(matched?._id ?? '')
+      }
+      // Re-apply mapping hints last so React state matches overrides even if AI left fields empty.
+      applyBarcodeFormHints(fieldOverrides)
     } catch (err) {
       const message = (err as Error).message || 'Failed to extract activity'
       setError(message)
@@ -1353,7 +1442,7 @@ export function ChatPage() {
       const hasDropdownChoice = Boolean(selectedCustomerId)
       const hasTypedCustomer = Boolean(customerHint.trim())
       if (!hasDropdownChoice && !hasTypedCustomer) {
-        setError('Please select a customer before saving to tracker.')
+        setError('Please select a supplier before saving to tracker.')
         return
       }
     }
@@ -1479,6 +1568,11 @@ export function ChatPage() {
       setSaveMessage(selectedActivityId ? 'Activity updated.' : 'Activity saved to tracker.')
       toast.success(selectedActivityId ? 'Updated successfully.' : 'Saved to tracker.')
       setSavedResultKey(currentKey)
+      if (resolvedCustomer) {
+        const matchedAfterSave = findCustomerByName(customers, resolvedCustomer)
+        setCustomerHint(matchedAfterSave?.name ?? resolvedCustomer)
+        setSelectedCustomerId(matchedAfterSave?._id ?? selectedCustomerId)
+      }
 
       const newId = String((activity as { _id?: string })._id || '')
       if (selectedActivityId && newId) {
@@ -1704,13 +1798,29 @@ export function ChatPage() {
     }
   }
 
+  function openArchiveConfirmPrompt(opts?: { closeRecentModal?: boolean }) {
+    if (!selectedActivityId) {
+      toast.error('Select a log from the list before archiving.')
+      return
+    }
+    if (loadingSelected) {
+      toast.info('Wait for the log to finish loading, then tap Archive again.')
+      return
+    }
+    if (!canArchiveSelected) {
+      toast.error('Only the log owner or an admin can archive this log.')
+      return
+    }
+    setError(null)
+    setArchiveCloseRecentModal(Boolean(opts?.closeRecentModal))
+    setArchiveConfirmOpen(true)
+  }
+
   async function handleArchiveSelected(opts?: { closeRecentModal?: boolean }) {
     if (!selectedActivityId) {
       setError('Select a log from the list before archiving.')
       return
     }
-    const confirmed = window.confirm('Are you sure you want to archive this log?')
-    if (!confirmed) return
 
     setArchiving(true)
     setError(null)
@@ -1745,7 +1855,9 @@ export function ChatPage() {
       if (imageInputRef.current) imageInputRef.current.value = ''
       if (addImageInputRef.current) addImageInputRef.current.value = ''
       setSavedResultKey(null)
-      if (opts?.closeRecentModal) setRecentModalOpen(false)
+      setArchiveConfirmOpen(false)
+      if (opts?.closeRecentModal || archiveCloseRecentModal) setRecentModalOpen(false)
+      setArchiveCloseRecentModal(false)
     } catch (err) {
       const message = (err as Error).message || 'Failed to archive activity'
       setError(message)
@@ -1802,11 +1914,21 @@ export function ChatPage() {
     try {
       const detail = activityDetail
       const imageCount = Array.isArray(detail.images) ? detail.images.length : 0
+      const fileCount = Array.isArray(detail.attachments)
+        ? detail.attachments.filter((a) => a?.url && !isVideoAttachment(a)).length
+        : 0
       const result = await shareActivityLog(detail, resolveSharePreferences(user?.sharePreferences).activityLog)
       if (result.mode === 'native') {
+        const parts: string[] = []
         if (result.imageCount > 0) {
+          parts.push(`${result.imageCount} photo${result.imageCount === 1 ? '' : 's'}`)
+        }
+        if (result.fileCount > 0) {
+          parts.push(`${result.fileCount} file${result.fileCount === 1 ? '' : 's'}`)
+        }
+        if (parts.length > 0) {
           toast.success(
-            `Share opened with ${result.imageCount} photo${result.imageCount === 1 ? '' : 's'} attached. Full-resolution links are in the message caption.`
+            `Share opened with ${parts.join(' and ')} attached. Full-size links are in the message caption.`
           )
         } else {
           toast.success('Share sheet opened.')
@@ -1814,8 +1936,8 @@ export function ChatPage() {
         return
       }
       toast.info(
-        imageCount > 0
-          ? 'Share not available here. Log copied with photo and video links (blank line between each link).'
+        imageCount > 0 || fileCount > 0
+          ? 'Share not available here. Log copied with photo and file links (blank line between each link).'
           : 'Native share is not available here. Log text copied to clipboard.'
       )
     } catch (err) {
@@ -2021,9 +2143,9 @@ export function ChatPage() {
                 !selectedActivityId
                   ? 'Select a recent log first, then click Share'
                   : isShareBlockedForPhotos()
-                    ? 'Loading photos — wait a few seconds'
+                    ? 'Loading photos and files — wait a few seconds'
                     : canUseNativeShare()
-                      ? 'Share log with photos attached (links for full size below)'
+                      ? 'Share log with photos and files attached (links for full size below)'
                       : 'Share this log (copies text and links when native share is unavailable)'
               }
             >
@@ -2033,8 +2155,30 @@ export function ChatPage() {
                 <Share2 className="w-4 h-4 shrink-0" />
               )}
               <span className="leading-none">
-                {isShareBlockedForPhotos() ? 'Loading photos…' : 'Share'}
+                {isShareBlockedForPhotos() ? 'Loading…' : 'Share'}
               </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => openArchiveConfirmPrompt()}
+              disabled={archiving}
+              className={`flex w-full md:w-auto h-10 items-center justify-center gap-2 rounded-lg border px-2.5 md:px-3.5 text-[12px] md:text-[13px] font-medium shadow-sm transition-colors touch-manipulation ${
+                !selectedActivityId || archiving
+                  ? 'border-[var(--color-border)] bg-[#f3f3f3] text-[#999] cursor-not-allowed shadow-none'
+                  : canArchiveSelected
+                    ? 'border-red-300/70 bg-red-50 text-red-900 hover:bg-red-100 active:bg-red-200'
+                    : 'border-[var(--color-border)] bg-[#f3f3f3] text-[#777] hover:bg-[#ececec] active:bg-[#e4e4e4]'
+              }`}
+              title={
+                !selectedActivityId
+                  ? 'Select a recent log first, then click Archive'
+                  : !canArchiveSelected
+                    ? 'Only the log owner or an admin can archive team logs'
+                    : 'Archive selected AI log'
+              }
+            >
+              {archiving ? <Loader2 className="w-4 h-4 shrink-0 animate-spin" /> : <Archive className="w-4 h-4 shrink-0" />}
+              <span className="leading-none">Archive</span>
             </button>
               </div>
             </div>
@@ -2310,7 +2454,7 @@ export function ChatPage() {
 
                 <div className="grid gap-2">
                   <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
-                    Customer
+                    Supplier name
                   </label>
                   <CustomerTypeahead
                     customers={customers}
@@ -2360,7 +2504,7 @@ export function ChatPage() {
                     value={barcodeNotes}
                     onChange={(e) => setBarcodeNotes(e.target.value)}
                     rows={3}
-                    placeholder="Any notes regarding this part?"
+                    placeholder="Serial number or any notes regarding this part?"
                     className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 resize-y"
                   />
                 </div>
@@ -2381,7 +2525,7 @@ export function ChatPage() {
                       const needsCustomer = barcodeModal.fields?.includes('customer')
                       const needsPartName = barcodeModal.fields?.includes('partName')
                       if (needsCustomer && !barcodeCustomer.trim()) {
-                        toast.error('Please provide customer for this barcode.')
+                        toast.error('Please provide supplier name for this barcode.')
                         return
                       }
                       if (needsPartName && !barcodePartName.trim()) {
@@ -2411,16 +2555,20 @@ export function ChatPage() {
                         if (intent?.kind === 'newLog') {
                           closeBarcodeModal()
                           await flushBarcodeToNewLog(snippet, payload.customer, {
+                            customer: payload.customer,
                             partNumber: payload.partNumber,
                             partName: payload.partName,
+                            notes: snippet,
                           })
                           return
                         }
                         if (intent?.kind === 'existingLog') {
                           closeBarcodeModal()
                           await flushBarcodeToExistingLog(intent.activityId, snippet, {
+                            customer: payload.customer,
                             partNumber: payload.partNumber,
                             partName: payload.partName,
+                            notes: snippet,
                           })
                           return
                         }
@@ -2450,6 +2598,41 @@ export function ChatPage() {
                     Save mapping
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {archiveConfirmOpen && (
+          <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+            <div className="w-full max-w-sm rounded-2xl bg-white border border-[var(--color-border)] shadow-xl overflow-hidden">
+              <div className="px-4 sm:px-5 py-4 border-b border-[var(--color-border)]">
+                <p className="text-sm font-medium text-[#111]">Archive this AI log?</p>
+                <p className="mt-1.5 text-[12px] text-[#666] leading-relaxed">
+                  The log will move to the Archived tab on the Activity screen. You can restore it later if needed.
+                </p>
+              </div>
+              <div className="px-4 sm:px-5 py-3 flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setArchiveConfirmOpen(false)
+                    setArchiveCloseRecentModal(false)
+                  }}
+                  disabled={archiving}
+                  className="inline-flex h-9 items-center justify-center rounded-lg border border-[var(--color-border)] px-3 text-[12px] font-semibold text-[#444] hover:bg-black/[0.03] disabled:opacity-60"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleArchiveSelected({ closeRecentModal: archiveCloseRecentModal })}
+                  disabled={archiving}
+                  className="inline-flex h-9 items-center justify-center gap-1.5 rounded-lg border border-red-700 bg-red-600 px-3 text-[12px] font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                >
+                  {archiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
+                  Archive
+                </button>
               </div>
             </div>
           </div>
@@ -2521,8 +2704,8 @@ export function ChatPage() {
                   Attachments from this log (images/files) are included automatically when you use Send.
                 </p>
                 <p className="text-[11px] text-[#777]">
-                  Use Share to open your phone&apos;s share menu (Mail, Messages, WhatsApp, etc.) with log text and
-                  photos.
+                  Use Share to open your phone&apos;s share menu (Mail, Messages, WhatsApp, etc.) with log text,
+                  photos, and files.
                 </p>
               </div>
               <div className="px-4 sm:px-5 py-3 border-t border-[var(--color-border)] flex flex-wrap items-center justify-end gap-2">
@@ -2590,7 +2773,7 @@ export function ChatPage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-2 min-w-0 px-4 pr-5 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)] sm:justify-between">
+              <div className="relative z-10 shrink-0 flex flex-wrap items-center justify-center gap-2.5 min-w-0 px-4 py-3 border-b border-[var(--color-border)] bg-[var(--color-bg)] sm:justify-between">
                 <button
                   type="button"
                   onClick={() => {
@@ -2624,7 +2807,7 @@ export function ChatPage() {
                     setSavedResultKey(null)
                     setRecentModalOpen(false)
                   }}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] bg-white text-[#444] hover:bg-black/[0.03]"
+                  className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[var(--color-border)] bg-white text-[#444] hover:bg-black/[0.03] touch-manipulation"
                   aria-label="New log"
                   title="New log"
                 >
@@ -2643,7 +2826,7 @@ export function ChatPage() {
                         ? 'Sending…'
                         : 'Send selected recent log by email'
                   }
-                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors ${
+                  className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors touch-manipulation ${
                     !selectedActivityId || sendingEmail || archiving
                       ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
                       : 'border-emerald-200 text-emerald-700 hover:bg-emerald-50 active:bg-emerald-100'
@@ -2654,39 +2837,59 @@ export function ChatPage() {
                 <button
                   type="button"
                   onClick={() => void handleShareLog()}
-                  disabled={!selectedActivityId || sharingLog || archiving}
-                  aria-label={sharingLog ? 'Preparing share…' : 'Share log'}
+                  disabled={!selectedActivityId || sharingLog || archiving || isShareBlockedForPhotos()}
+                  aria-label={
+                    sharingLog || isShareBlockedForPhotos() ? 'Preparing share…' : 'Share log'
+                  }
                   title={
                     !selectedActivityId
                       ? 'Select a recent log first, then click to share'
-                      : sharingLog
-                        ? 'Preparing…'
-                        : canUseNativeShare()
-                          ? 'Share via your phone apps (Mail, Messages, etc.)'
-                          : 'Share log (copies text when native share is unavailable)'
+                      : isShareBlockedForPhotos()
+                        ? 'Loading photos and files — wait a few seconds'
+                        : sharingLog
+                          ? 'Preparing…'
+                          : canUseNativeShare()
+                            ? 'Share via your phone apps (Mail, Messages, etc.) with photos and files'
+                            : 'Share log (copies text when native share is unavailable)'
                   }
-                  className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors ${
-                    !selectedActivityId || sharingLog || archiving
+                  className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border bg-white transition-colors touch-manipulation ${
+                    !selectedActivityId || sharingLog || archiving || isShareBlockedForPhotos()
                       ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
                       : 'border-sky-200 text-sky-700 hover:bg-sky-50 active:bg-sky-100'
                   }`}
                 >
-                  {sharingLog ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                  {sharingLog || isShareBlockedForPhotos() ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Share2 className="w-4 h-4" />
+                  )}
                 </button>
 
                 <button
                   type="button"
-                  onClick={() => void handleArchiveSelected({ closeRecentModal: true })}
-                  disabled={!selectedActivityId || archiving || !canArchiveSelected}
+                  onClick={() => openArchiveConfirmPrompt({ closeRecentModal: true })}
+                  disabled={archiving}
                   aria-label={archiving ? 'Archiving…' : 'Archive'}
-                  title={!selectedActivityId ? 'Select a log first to enable Archive' : 'Archive selected log'}
-                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-red-700 bg-red-600 text-white shadow-sm hover:bg-red-700 disabled:bg-red-100 disabled:text-red-600 disabled:border-red-300 disabled:shadow-none"
+                  title={
+                    !selectedActivityId
+                      ? 'Select a log first to enable Archive'
+                      : !canArchiveSelected
+                        ? 'Only the log owner or an admin can archive team logs'
+                        : 'Archive selected log'
+                  }
+                  className={`inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border shadow-sm transition-colors touch-manipulation ${
+                    archiving
+                      ? 'border-[var(--color-border)] bg-[#f3f3f3] text-[#999] cursor-not-allowed'
+                      : canArchiveSelected && selectedActivityId
+                        ? 'border-red-700 bg-red-600 text-white hover:bg-red-700 active:bg-red-800'
+                        : 'border-[var(--color-border)] bg-white text-[#777] hover:bg-black/[0.03] active:bg-black/[0.06]'
+                  }`}
                 >
                   {archiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
                 </button>
               </div>
 
-              <div className="flex-1 overflow-auto divide-y divide-[var(--color-border)]">
+              <div className="relative z-0 flex-1 min-h-0 overflow-auto divide-y divide-[var(--color-border)]">
                 {loadingRecent ? (
                   <div className="px-4 py-3 text-left text-xs text-[#777]">Loading recent logs…</div>
                 ) : filteredActivities.length > 0 ? (
@@ -2698,7 +2901,6 @@ export function ChatPage() {
                         type="button"
                         onClick={() => {
                           void handleSelectRecent(act._id)
-                          setRecentModalOpen(false)
                         }}
                         className={`relative w-full text-left px-4 py-3 transition-colors ${
                           isSelected ? 'bg-[var(--color-primary)]/6' : 'hover:bg-black/[0.025]'
@@ -2828,32 +3030,52 @@ export function ChatPage() {
                 <button
                   type="button"
                   onClick={() => void handleShareLog()}
-                  disabled={!selectedActivityId || sharingLog || archiving}
-                  aria-label={sharingLog ? 'Preparing share…' : 'Share log'}
+                  disabled={!selectedActivityId || sharingLog || archiving || isShareBlockedForPhotos()}
+                  aria-label={
+                    sharingLog || isShareBlockedForPhotos() ? 'Preparing share…' : 'Share log'
+                  }
                   title={
                     !selectedActivityId
                       ? 'Select a recent log first, then click to share'
-                      : sharingLog
-                        ? 'Preparing…'
-                        : canUseNativeShare()
-                          ? 'Share via your phone apps (Mail, Messages, etc.)'
-                          : 'Share log (copies text when native share is unavailable)'
+                      : isShareBlockedForPhotos()
+                        ? 'Loading photos and files — wait a few seconds'
+                        : sharingLog
+                          ? 'Preparing…'
+                          : canUseNativeShare()
+                            ? 'Share via your phone apps (Mail, Messages, etc.) with photos and files'
+                            : 'Share log (copies text when native share is unavailable)'
                   }
                   className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border bg-white transition-colors ${
-                    !selectedActivityId || sharingLog || archiving
+                    !selectedActivityId || sharingLog || archiving || isShareBlockedForPhotos()
                       ? 'border-[var(--color-border)] text-[#777] disabled:opacity-60 disabled:cursor-not-allowed'
                       : 'border-sky-200 text-sky-700 hover:bg-sky-50 active:bg-sky-100'
                   }`}
                 >
-                  {sharingLog ? <Loader2 className="w-4 h-4 animate-spin" /> : <Share2 className="w-4 h-4" />}
+                  {sharingLog || isShareBlockedForPhotos() ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Share2 className="w-4 h-4" />
+                  )}
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleArchiveSelected()}
-                  disabled={!selectedActivityId || archiving || !canArchiveSelected}
+                  onClick={() => openArchiveConfirmPrompt()}
+                  disabled={archiving}
                   aria-label={archiving ? 'Archiving…' : 'Archive'}
-                  title={!selectedActivityId ? 'Select a log first to enable Archive' : 'Archive selected log'}
-                  className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-red-700 bg-red-600 text-white shadow-sm hover:bg-red-700 disabled:bg-red-100 disabled:text-red-600 disabled:border-red-300 disabled:shadow-none transition-colors"
+                  title={
+                    !selectedActivityId
+                      ? 'Select a log first to enable Archive'
+                      : !canArchiveSelected
+                        ? 'Only the log owner or an admin can archive team logs'
+                        : 'Archive selected log'
+                  }
+                  className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full border shadow-sm transition-colors touch-manipulation ${
+                    archiving
+                      ? 'border-[var(--color-border)] bg-[#f3f3f3] text-[#999] cursor-not-allowed'
+                      : canArchiveSelected && selectedActivityId
+                        ? 'border-red-700 bg-red-600 text-white hover:bg-red-700'
+                        : 'border-[var(--color-border)] bg-white text-[#777] hover:bg-black/[0.03]'
+                  }`}
                 >
                   {archiving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Archive className="w-4 h-4" />}
                 </button>
@@ -3134,8 +3356,28 @@ export function ChatPage() {
                           placeholder="e.g. BCZM-1023"
                         />
                         <p className="text-[10px] text-[#999] mt-0.5">
-                          Filled automatically when you scan a mapped barcode; you can type or edit anytime.
+                          Filled from barcode scans and AI extraction; you can type or edit anytime.
                         </p>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#555] mb-1">
+                          Supplier name{isEmployee ? ' *' : ''}
+                        </label>
+                        <CustomerTypeahead
+                          customers={customers}
+                          value={customerHint}
+                          loading={loadingCustomers}
+                          placeholder={
+                            isEmployee
+                              ? 'Type or pick supplier name (required)'
+                              : 'Type or pick supplier name'
+                          }
+                          onChange={(name, customer) => {
+                            setCustomerHint(name)
+                            setSelectedCustomerId(customer?._id ?? '')
+                          }}
+                          inputClassName="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                        />
                       </div>
                       <div>
                         <label className="block text-[11px] font-semibold text-[#555] mb-1">
@@ -3323,7 +3565,9 @@ export function ChatPage() {
                   value={customerHint}
                   loading={loadingCustomers}
                   placeholder={
-                    isEmployee ? 'Type customer name (required) *' : 'Type customer name (optional)'
+                    isEmployee
+                      ? 'Type or pick supplier name (required) *'
+                      : 'Type or pick supplier name (optional)'
                   }
                   onChange={(name, customer) => {
                     setCustomerHint(name)
