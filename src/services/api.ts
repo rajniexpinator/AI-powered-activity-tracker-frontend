@@ -1,6 +1,62 @@
 import type { User, LoginResponse } from '@/types/auth'
 import type { SharePreferences } from '@/constants/sharePreferences'
 
+export type BarcodePatternField =
+  | 'partNumber'
+  | 'partName'
+  | 'customer'
+  | 'supplier'
+  | 'serialNumber'
+  | 'notes'
+
+export type BarcodePatternSegment = {
+  start: number
+  end: number
+  field: BarcodePatternField
+}
+
+export type BarcodePatternDto = {
+  _id: string
+  name?: string
+  sampleBarcode: string
+  structureKey: string
+  segments: BarcodePatternSegment[]
+  isActive?: boolean
+  createdAt?: string
+  updatedAt?: string
+  extracted?: Record<string, string>
+}
+
+export type BarcodeBulkScanItem = {
+  _id: string
+  barcode: string
+  scannedAt?: string
+  scannedBy?: unknown
+  partName?: string
+  partNumber?: string
+  customer?: string
+  supplier?: string
+  serialNumber?: string
+  notes?: string
+  patternId?: string | null
+  mappingId?: string | null
+}
+
+export type BarcodeBulkLotSummary = {
+  _id: string
+  name: string
+  description?: string
+  status: 'open' | 'closed'
+  createdBy?: unknown
+  itemCount: number
+  createdAt?: string
+  updatedAt?: string
+}
+
+export type BarcodeBulkLotDetail = BarcodeBulkLotSummary & {
+  items: BarcodeBulkScanItem[]
+}
+
 export type EmployeeFileItem = {
   _id: string
   title: string
@@ -170,8 +226,8 @@ export const api = {
       structured: unknown
       images?: string[]
       attachments?: { url: string; name: string; mime?: string; size?: number }[]
-      /** Up to 5 chars (uppercase letters/digits/dash). Optional — managers use it to find the spot. */
-      location?: string
+      /** Part / unit serial number (up to 128 chars). */
+      serialNumber?: string
     }) =>
       request<{ activity: unknown }>('/api/activities', {
         method: 'POST',
@@ -184,8 +240,8 @@ export const api = {
         structured?: unknown
         images?: string[]
         attachments?: { url: string; name: string; mime?: string; size?: number }[]
-        /** Pass '' to clear the existing location. */
-        location?: string
+        /** Pass '' to clear the existing serial number. */
+        serialNumber?: string
       }
     ) =>
       request<{ activity: unknown }>(`/api/activities/${id}`, {
@@ -208,7 +264,7 @@ export const api = {
         activities: {
           _id: string
           customer?: string
-          location?: string
+          serialNumber?: string
           summary?: string
           createdAt: string
           isOwner?: boolean
@@ -238,7 +294,7 @@ export const api = {
             userId?: { _id?: string; name?: string; email?: string }
           }[]
           customer?: string
-          location?: string
+          serialNumber?: string
           summary?: string
           rawConversation?: string
           structuredData?: unknown
@@ -267,7 +323,7 @@ export const api = {
         activity: {
           _id: string
           customer?: string
-          location?: string
+          serialNumber?: string
           summary?: string
           rawConversation?: string
           structuredData?: unknown
@@ -342,7 +398,7 @@ export const api = {
         activities: {
           _id: string
           customer?: string
-          location?: string
+          serialNumber?: string
           summary?: string
           createdAt: string
           userId?: { _id: string; name?: string; email?: string; role?: string }
@@ -379,7 +435,7 @@ export const api = {
         activities: {
           _id: string
           customer?: string
-          location?: string
+          serialNumber?: string
           summary?: string
           createdAt: string
           archivedAt?: string
@@ -757,10 +813,14 @@ export const api = {
           partNumber?: string
           productName?: string
           customer?: string
+          serialNumber?: string
           scanCount?: number
           updatedAt?: string
           createdAt?: string
         } | null
+        structureKey?: string
+        pattern?: { _id: string; name?: string; sampleBarcode?: string; structureKey?: string } | null
+        extracted?: Record<string, string> | null
       }>('/api/barcodes/clarify', {
         method: 'POST',
         body: JSON.stringify({ barcode }),
@@ -774,6 +834,7 @@ export const api = {
           partNumber?: string
           productName?: string
           customer?: string
+          serialNumber?: string
           scanCount?: number
           updatedAt?: string
           createdAt?: string
@@ -788,15 +849,25 @@ export const api = {
           partNumber?: string
           productName?: string
           customer?: string
+          serialNumber?: string
           scanCount?: number
           updatedAt?: string
           createdAt?: string
         }
+        pattern?: { _id: string; name?: string; structureKey?: string } | null
+        extracted?: Record<string, string> | null
       }>('/api/barcodes/scan', { method: 'POST', body: JSON.stringify({ barcode }) }),
 
     upsert: (
       barcode: string,
-      payload: { customer?: string; partName?: string; partNumber?: string; productName?: string; metadata?: unknown }
+      payload: {
+        customer?: string
+        partName?: string
+        partNumber?: string
+        productName?: string
+        serialNumber?: string
+        metadata?: unknown
+      }
     ) =>
       request<{
         mapping: {
@@ -805,6 +876,7 @@ export const api = {
           partNumber?: string
           productName?: string
           customer?: string
+          serialNumber?: string
           scanCount?: number
           updatedAt?: string
           createdAt?: string
@@ -828,6 +900,7 @@ export const api = {
           partNumber?: string
           productName?: string
           customer?: string
+          serialNumber?: string
           scanCount: number
           metadata?: unknown
           lastScannedBy: { _id: string; name?: string; email?: string } | null
@@ -839,6 +912,144 @@ export const api = {
         limit: number
         totalPages: number
       }>(`/api/barcodes/admin${qs ? `?${qs}` : ''}`, { method: 'GET' })
+    },
+  },
+
+  barcodePatterns: {
+    list: (params?: { q?: string; limit?: number; page?: number; activeOnly?: boolean }) => {
+      const search = new URLSearchParams()
+      if (params?.q?.trim()) search.set('q', params.q.trim())
+      if (typeof params?.limit === 'number') search.set('limit', String(params.limit))
+      if (typeof params?.page === 'number') search.set('page', String(params.page))
+      if (params?.activeOnly === false) search.set('activeOnly', 'false')
+      const qs = search.toString()
+      return request<{
+        patterns: BarcodePatternDto[]
+        total: number
+        page: number
+        limit: number
+        totalPages: number
+      }>(`/api/barcode-patterns${qs ? `?${qs}` : ''}`, { method: 'GET' })
+    },
+    getOne: (id: string) =>
+      request<{ pattern: BarcodePatternDto }>(`/api/barcode-patterns/${id}`, { method: 'GET' }),
+    create: (payload: {
+      sampleBarcode: string
+      segments: BarcodePatternSegment[]
+      name?: string
+    }) =>
+      request<{ pattern: BarcodePatternDto; extracted: Record<string, string> }>('/api/barcode-patterns', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    update: (
+      id: string,
+      payload: {
+        sampleBarcode?: string
+        segments?: BarcodePatternSegment[]
+        name?: string
+        isActive?: boolean
+      }
+    ) =>
+      request<{ pattern: BarcodePatternDto; extracted?: Record<string, string> }>(
+        `/api/barcode-patterns/${id}`,
+        { method: 'PUT', body: JSON.stringify(payload) }
+      ),
+    remove: (id: string, opts?: { hard?: boolean }) => {
+      const qs = opts?.hard ? '?hard=true' : ''
+      return request<{ deleted: boolean; hard: boolean; pattern?: BarcodePatternDto; _id?: string }>(
+        `/api/barcode-patterns/${id}${qs}`,
+        { method: 'DELETE' }
+      )
+    },
+    apply: (barcode: string) =>
+      request<{
+        barcode: string
+        structureKey: string
+        matched: boolean
+        pattern: BarcodePatternDto | null
+        extracted: Record<string, string> | null
+        reason?: string
+      }>('/api/barcode-patterns/apply', {
+        method: 'POST',
+        body: JSON.stringify({ barcode }),
+      }),
+  },
+
+  barcodeBulk: {
+    list: (params?: { q?: string; status?: 'open' | 'closed' | 'all'; limit?: number; page?: number }) => {
+      const search = new URLSearchParams()
+      if (params?.q?.trim()) search.set('q', params.q.trim())
+      if (params?.status && params.status !== 'all') search.set('status', params.status)
+      if (typeof params?.limit === 'number') search.set('limit', String(params.limit))
+      if (typeof params?.page === 'number') search.set('page', String(params.page))
+      const qs = search.toString()
+      return request<{
+        lots: BarcodeBulkLotSummary[]
+        total: number
+        page: number
+        limit: number
+        totalPages: number
+      }>(`/api/barcode-bulk${qs ? `?${qs}` : ''}`, { method: 'GET' })
+    },
+    create: (payload: { name: string; description?: string }) =>
+      request<{ lot: BarcodeBulkLotDetail }>('/api/barcode-bulk', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    getOne: (id: string) =>
+      request<{ lot: BarcodeBulkLotDetail }>(`/api/barcode-bulk/${id}`, { method: 'GET' }),
+    update: (id: string, payload: { name?: string; description?: string; status?: 'open' | 'closed' }) =>
+      request<{ lot: BarcodeBulkLotDetail }>(`/api/barcode-bulk/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
+    addScans: (
+      id: string,
+      payload: {
+        barcode?: string
+        barcodes?: string[]
+        partName?: string
+        partNumber?: string
+        customer?: string
+        supplier?: string
+        serialNumber?: string
+        notes?: string
+      }
+    ) =>
+      request<{
+        lot: BarcodeBulkLotSummary
+        added: BarcodeBulkScanItem[]
+      }>(`/api/barcode-bulk/${id}/scans`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    removeScan: (id: string, itemId: string) =>
+      request<{ lot: BarcodeBulkLotSummary; deleted: boolean }>(
+        `/api/barcode-bulk/${id}/scans/${itemId}`,
+        { method: 'DELETE' }
+      ),
+    exportCsv: async (id: string) => {
+      const url = `${BASE}/api/barcode-bulk/${id}/export.csv`
+      const headers: HeadersInit = {}
+      const token = getToken()
+      if (token) headers['Authorization'] = `Bearer ${token}`
+      const res = await fetch(url, { method: 'GET', headers })
+      if (!res.ok) {
+        let message = `Export failed (${res.status})`
+        try {
+          const data = (await res.json()) as { error?: string }
+          if (data?.error) message = data.error
+        } catch {
+          /* ignore */
+        }
+        throw new Error(message)
+      }
+      const blob = await res.blob()
+      const disposition = res.headers.get('Content-Disposition') || ''
+      const match = disposition.match(/filename="?([^"]+)"?/i)
+      const filename = match?.[1] || 'bulk-lot-export.csv'
+      return { blob, filename }
     },
   },
 

@@ -96,8 +96,8 @@ function formatActivitySeverityLabel(structuredData: Record<string, unknown> | u
 type AdminActivity = {
   _id: string
   customer?: string
-  /** Up to 5-character physical-location tag at the plant (e.g. A12, B-7). */
-  location?: string
+  /** Part / unit serial number. */
+  serialNumber?: string
   reportingPlant?: string
   summary?: string
   createdAt: string
@@ -116,8 +116,8 @@ type ActivityAttachment = {
 type ActivityDetail = {
   _id: string
   customer?: string
-  /** Up to 5-character physical-location tag at the plant (e.g. A12, B-7). */
-  location?: string
+  /** Part / unit serial number. */
+  serialNumber?: string
   reportingPlant?: string
   summary?: string
   rawConversation?: string
@@ -1382,12 +1382,12 @@ export function AdminActivityPage() {
                           {a.reportingPlant}
                         </span>
                       ) : null}
-                      {a.location ? (
+                      {a.serialNumber ? (
                         <span
                           className="ml-1 inline-flex items-center rounded border border-[var(--color-border)] bg-[var(--color-bg)] px-1 py-[1px] font-mono text-[10px] tracking-wide text-[var(--color-text)]"
-                          title="Physical location at the plant"
+                          title="Serial number"
                         >
-                          {a.location}
+                          {a.serialNumber}
                         </span>
                       ) : null}
                     </p>
@@ -1587,12 +1587,12 @@ export function AdminActivityPage() {
                           · {selectedActivityDetail.reportingPlant}
                         </span>
                       ) : null}
-                      {selectedActivityDetail.location ? (
+                      {selectedActivityDetail.serialNumber ? (
                         <span
                           className="inline-flex items-center gap-1 rounded border border-[var(--color-border)] bg-white px-1.5 py-[1px] font-mono text-[10px] tracking-wide text-[var(--color-text)]"
-                          title="Physical location at the plant — where to walk to"
+                          title="Serial number"
                         >
-                          Location: {selectedActivityDetail.location}
+                          Serial: {selectedActivityDetail.serialNumber}
                         </span>
                       ) : null}
                     </p>

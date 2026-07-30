@@ -24,6 +24,10 @@ export function Layout() {
     location.pathname.startsWith('/my-reports/') ||
     location.pathname === '/barcode-reports' ||
     location.pathname.startsWith('/barcode-reports/') ||
+    location.pathname === '/barcode-mapping' ||
+    location.pathname.startsWith('/barcode-mapping/') ||
+    location.pathname === '/barcode-bulk' ||
+    location.pathname.startsWith('/barcode-bulk/') ||
     location.pathname === '/profile' ||
     location.pathname.startsWith('/profile/')
 

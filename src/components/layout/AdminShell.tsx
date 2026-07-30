@@ -164,6 +164,28 @@ export function AdminShell({ children }: AdminShellProps) {
                 Barcode reports
               </Link>
             )}
+            <Link
+              to="/barcode-mapping"
+              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                isActive('/barcode-mapping')
+                  ? 'bg-[#3F4B9D] text-white'
+                  : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+              }`}
+            >
+              <ScanLine className="w-4 h-4 opacity-80" />
+              Barcode mapping
+            </Link>
+            <Link
+              to="/barcode-bulk"
+              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                isActive('/barcode-bulk')
+                  ? 'bg-[#3F4B9D] text-white'
+                  : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+              }`}
+            >
+              <FolderOpen className="w-4 h-4 opacity-80" />
+              Barcode Bulk
+            </Link>
             {isAdmin && (
               <div className="flex flex-col gap-0.5 mt-2">
                 <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--color-text-secondary)]">
@@ -414,6 +436,30 @@ export function AdminShell({ children }: AdminShellProps) {
                   Barcode reports
                 </Link>
               )}
+              <Link
+                to="/barcode-mapping"
+                onClick={() => setMobileOpen(false)}
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                  isActive('/barcode-mapping')
+                    ? 'bg-[#3F4B9D] text-white'
+                    : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                }`}
+              >
+                <ScanLine className="w-4 h-4 opacity-80" />
+                Barcode mapping
+              </Link>
+              <Link
+                to="/barcode-bulk"
+                onClick={() => setMobileOpen(false)}
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                  isActive('/barcode-bulk')
+                    ? 'bg-[#3F4B9D] text-white'
+                    : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                }`}
+              >
+                <FolderOpen className="w-4 h-4 opacity-80" />
+                Barcode Bulk
+              </Link>
               {isAdmin && (
                 <>
                   <Link

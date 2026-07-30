@@ -35,6 +35,12 @@ const UserReportDashboardPage = lazy(() =>
 const BarcodeReportsPage = lazy(() =>
   import('@/pages/BarcodeReportsPage').then((m) => ({ default: m.BarcodeReportsPage }))
 )
+const BarcodeMappingPage = lazy(() =>
+  import('@/pages/BarcodeMappingPage').then((m) => ({ default: m.BarcodeMappingPage }))
+)
+const BarcodeBulkPage = lazy(() =>
+  import('@/pages/BarcodeBulkPage').then((m) => ({ default: m.BarcodeBulkPage }))
+)
 
 function App() {
   return (
@@ -138,6 +144,22 @@ function App() {
                     <AdminRoute roles={['admin']}>
                       <BarcodeReportsPage />
                     </AdminRoute>
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="barcode-mapping"
+                element={
+                  <ProtectedRoute>
+                    <BarcodeMappingPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="barcode-bulk"
+                element={
+                  <ProtectedRoute>
+                    <BarcodeBulkPage />
                   </ProtectedRoute>
                 }
               />

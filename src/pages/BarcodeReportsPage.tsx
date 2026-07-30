@@ -21,6 +21,7 @@ type MappingRow = {
   partNumber?: string
   productName?: string
   customer?: string
+  serialNumber?: string
   scanCount: number
   metadata?: unknown
   lastScannedBy: { _id: string; name?: string; email?: string } | null
@@ -350,6 +351,7 @@ export function BarcodeReportsPage() {
                         <th className="px-4 py-3.5">Customer</th>
                         <th className="px-4 py-3.5">Part name</th>
                         <th className="px-4 py-3.5">Part #</th>
+                        <th className="px-4 py-3.5">Serial</th>
                         <th className="px-4 py-3.5 text-right">Scans</th>
                         <th className="px-4 py-3.5">Last by</th>
                         <th className="px-4 py-3.5 whitespace-nowrap">Created</th>
@@ -390,6 +392,9 @@ export function BarcodeReportsPage() {
                             </td>
                             <td className="px-4 py-3 align-top font-mono text-[11px] text-slate-700">
                               {row.partNumber?.trim() || <CellEmpty />}
+                            </td>
+                            <td className="px-4 py-3 align-top font-mono text-[11px] text-slate-700">
+                              {row.serialNumber?.trim() || <CellEmpty />}
                             </td>
                             <td className="px-4 py-3 align-top text-right">
                               <span className="inline-flex min-w-[2rem] justify-center rounded-full bg-[var(--color-primary)]/12 px-2.5 py-0.5 text-xs font-bold tabular-nums text-[var(--color-primary)] ring-1 ring-[var(--color-primary)]/15">

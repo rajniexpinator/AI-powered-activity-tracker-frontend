@@ -18,6 +18,7 @@ export type ShareableActivity = {
   _id?: string
   customer?: string
   location?: string
+  serialNumber?: string
   summary?: string
   rawConversation?: string
   createdAt?: string
@@ -553,7 +554,7 @@ export async function shareActivityLog(
         'Files are not ready yet. Wait a few seconds after opening the log, then tap Share again.'
       )
     }
-    // Preload finished but nothing downloaded (e.g. all over 12 MB) — continue with links only.
+    // Preload finished but nothing downloaded (e.g. all over 50 MB) — continue with links only.
   }
 
   const shareFiles = [...cachedImageFiles, ...cachedAttachmentFiles]

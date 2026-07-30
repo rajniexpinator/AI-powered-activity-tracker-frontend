@@ -73,8 +73,9 @@ type StructuredActivity = {
   supplierCode?: string
   vehicle_line?: string[]
   vehicleLine?: string[]
-  /** Up to 5-character physical-location tag at the plant (e.g. A12, B-7). */
-  location?: string
+  /** Part / unit serial number. */
+  serial_number?: string
+  serialNumber?: string
   intent?: string
   severity?: number
   outcome?: string
@@ -100,8 +101,8 @@ type ActivityDetail = {
     userId?: { _id?: string; name?: string; email?: string }
   }[]
   customer?: string
-  /** Up to 5-character physical-location tag (top-level). */
-  location?: string
+  /** Part / unit serial number (top-level). */
+  serialNumber?: string
   /** Reporting plant/OEM stamped at log creation. */
   reportingPlant?: string
   summary?: string
@@ -220,12 +221,18 @@ const MAX_ATTACHMENTS_PER_ENTRY = 10
 const MAX_ATTACHMENT_FILE_BYTES = 50 * 1024 * 1024 // 50 MB — keep in sync with Backend attachment middleware
 const MAX_ATTACHMENT_FILE_ERROR = 'Maximum attachment size is 50 MB.'
 const DEFAULT_ISSUE_SEVERITY = 0 as const
-const MAX_LOCATION_LENGTH = 5
+const MAX_SERIAL_NUMBER_LENGTH = 128
 const MAX_SUPPLIER_CODE_LENGTH = 5
 
-/** Up-to-5-char physical location tag. Letters, digits, and dash only; uppercased. */
-function normalizeLocationInput(raw: string): string {
-  return raw.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, MAX_LOCATION_LENGTH)
+/** Serial number — longer than the old 5-char location tag. */
+function normalizeSerialNumberInput(raw: string): string {
+  return raw.trim().slice(0, MAX_SERIAL_NUMBER_LENGTH)
+}
+
+function readSerialNumberFromStructured(structured: StructuredActivity | Record<string, unknown>): string {
+  const s = structured as Record<string, unknown>
+  const v = s.serial_number ?? s.serialNumber ?? s.location
+  return typeof v === 'string' ? normalizeSerialNumberInput(v) : ''
 }
 
 /** Up-to-5-char supplier code. Letters and digits only; uppercased. */
@@ -283,6 +290,7 @@ type BarcodeClarifyMapping = {
   partNumber?: string
   productName?: string
   customer?: string
+  serialNumber?: string
   scanCount?: number
   updatedAt?: string
   createdAt?: string
@@ -301,7 +309,8 @@ function buildBarcodeLogSnippet(
   customer?: string,
   partName?: string,
   partNumber?: string,
-  notes?: string
+  notes?: string,
+  serialNumber?: string
 ) {
   const lines = [`Scanned barcode: ${barcode}`]
   // "Supplier" matches the form label; backend also accepts legacy "Customer:".
@@ -309,6 +318,7 @@ function buildBarcodeLogSnippet(
   const partLabel = partName?.trim() || ''
   if (partLabel) lines.push(`Part name: ${partLabel}`)
   if (partNumber?.trim()) lines.push(`Part number: ${partNumber.trim()}`)
+  if (serialNumber?.trim()) lines.push(`Serial number: ${serialNumber.trim()}`)
   if (notes?.trim()) lines.push(`Notes: ${notes.trim()}`)
   return lines.join('\n')
 }
@@ -362,7 +372,7 @@ export function ChatPage() {
     {
       _id: string
       customer?: string
-      location?: string
+      serialNumber?: string
       reportingPlant?: string
       summary?: string
       createdAt: string
@@ -376,7 +386,7 @@ export function ChatPage() {
   const [editPartNumber, setEditPartNumber] = useState('')
   const [editSupplierCode, setEditSupplierCode] = useState('')
   const [editVehicleLine, setEditVehicleLine] = useState<VehicleLineOption[]>([])
-  const [editLocation, setEditLocation] = useState('')
+  const [editSerialNumber, setEditSerialNumber] = useState('')
   const [editIntent, setEditIntent] = useState('')
   const [editSeverity, setEditSeverity] = useState<0 | 1 | 2 | 3>(DEFAULT_ISSUE_SEVERITY)
   const [editOutcome, setEditOutcome] = useState('')
@@ -460,6 +470,7 @@ export function ChatPage() {
     customer?: string
     partName?: string
     partNumber?: string
+    serialNumber?: string
     scanCount?: number
     prompt?: string
     fields?: string[]
@@ -467,6 +478,7 @@ export function ChatPage() {
   const [barcodeCustomer, setBarcodeCustomer] = useState('')
   const [barcodePartName, setBarcodePartName] = useState('')
   const [barcodePartNumber, setBarcodePartNumber] = useState('')
+  const [barcodeSerialNumber, setBarcodeSerialNumber] = useState('')
   const [barcodeNotes, setBarcodeNotes] = useState('')
   const [savingBarcode, setSavingBarcode] = useState(false)
   const [barcodeIntegrationOpen, setBarcodeIntegrationOpen] = useState(false)
@@ -668,6 +680,7 @@ export function ChatPage() {
     setBarcodeCustomer(payload.customer ?? '')
     setBarcodePartName(payload.partName ?? '')
     setBarcodePartNumber(payload.partNumber ?? '')
+    setBarcodeSerialNumber(payload.serialNumber ?? '')
     setBarcodeNotes('')
   }
 
@@ -677,6 +690,7 @@ export function ChatPage() {
     setBarcodeCustomer('')
     setBarcodePartName('')
     setBarcodePartNumber('')
+    setBarcodeSerialNumber('')
     setBarcodeNotes('')
   }
 
@@ -775,6 +789,7 @@ export function ChatPage() {
       customer: p.mapping?.customer,
       partName: p.mapping?.partName || p.mapping?.productName,
       partNumber: p.mapping?.partNumber,
+      serialNumber: p.mapping?.serialNumber,
       scanCount: p.mapping?.scanCount,
       prompt: p.prompt,
       fields: p.fields,
@@ -858,7 +873,8 @@ export function ChatPage() {
       m?.customer,
       m?.partName || m?.productName,
       m?.partNumber,
-      undefined
+      undefined,
+      m?.serialNumber
     )
     await flushBarcodeToNewLog(snippet, m?.customer, {
       customer: m?.customer,
@@ -886,7 +902,8 @@ export function ChatPage() {
       m?.customer,
       m?.partName || m?.productName,
       m?.partNumber,
-      undefined
+      undefined,
+      m?.serialNumber
     )
     await flushBarcodeToExistingLog(activityId, snippet, {
       customer: m?.customer,
@@ -1328,7 +1345,7 @@ export function ChatPage() {
     setEditPartNumber('')
     setEditSupplierCode('')
     setEditVehicleLine([])
-    setEditLocation('')
+    setEditSerialNumber('')
     setEditIntent('')
     setEditSeverity(DEFAULT_ISSUE_SEVERITY)
     setEditOutcome('')
@@ -1393,7 +1410,7 @@ export function ChatPage() {
       setEditPartNumber(readPartNumberFromStructured(structured))
       setEditSupplierCode(readSupplierCodeFromStructured(structured))
       setEditVehicleLine(readVehicleLineFromStructured(structured))
-      setEditLocation(normalizeLocationInput(structured.location ?? ''))
+      setEditSerialNumber(readSerialNumberFromStructured(structured))
       setEditIntent(structured.intent ?? '')
       setEditSeverity(parseIssueSeverity(structured.severity))
       setEditOutcome(structured.outcome ?? '')
@@ -1477,8 +1494,8 @@ export function ChatPage() {
       )
       const resolvedVehicleLine =
         editVehicleLine.length > 0 ? editVehicleLine : readVehicleLineFromStructured(base)
-      const resolvedLocation = normalizeLocationInput(
-        editLocation || (typeof base.location === 'string' ? base.location : '') || ''
+      const resolvedSerialNumber = normalizeSerialNumberInput(
+        editSerialNumber || readSerialNumberFromStructured(base) || ''
       )
       const resolvedIntent = editIntent || base.intent || ''
       const resolvedSeverity = editSeverity
@@ -1507,7 +1524,7 @@ export function ChatPage() {
         String(resolvedPartNumber).trim(),
         String(resolvedSupplierCode).trim(),
         resolvedVehicleLine.slice().sort().join(','),
-        String(resolvedLocation).trim(),
+        String(resolvedSerialNumber).trim(),
         String(resolvedIntent).trim(),
         String(resolvedSeverity),
         String(resolvedOutcome).trim(),
@@ -1532,7 +1549,7 @@ export function ChatPage() {
         part_number: resolvedPartNumber || undefined,
         supplier_code: resolvedSupplierCode || undefined,
         vehicle_line: resolvedVehicleLine.length ? resolvedVehicleLine : undefined,
-        location: resolvedLocation || base.location,
+        serial_number: resolvedSerialNumber || readSerialNumberFromStructured(base) || undefined,
         intent: resolvedIntent || base.intent,
         severity: resolvedSeverity,
         outcome: resolvedOutcome || base.outcome,
@@ -1548,14 +1565,14 @@ export function ChatPage() {
             structured: editedStructured,
             images: urlsForSave,
             attachments,
-            location: resolvedLocation,
+            serialNumber: resolvedSerialNumber,
           })
         : await api.activities.create({
             rawText: resolvedRawText,
             structured: editedStructured,
             images: urlsForSave.length ? urlsForSave : undefined,
             attachments: attachments.length ? attachments : undefined,
-            location: resolvedLocation || undefined,
+            serialNumber: resolvedSerialNumber || undefined,
           })
 
       const saved = activity as {
@@ -1604,7 +1621,7 @@ export function ChatPage() {
         const nextItem = {
           _id: (activity as any)._id,
           customer: (activity as any).customer,
-          location: (activity as any).location,
+          serialNumber: (activity as any).serialNumber,
           reportingPlant: (activity as any).reportingPlant,
           summary: (activity as any).summary,
           createdAt: (activity as any).createdAt,
@@ -1701,7 +1718,7 @@ export function ChatPage() {
         setEditPartNumber('')
         setEditSupplierCode('')
         setEditVehicleLine([])
-        setEditLocation('')
+        setEditSerialNumber('')
         setEditIntent('')
         setEditSeverity(DEFAULT_ISSUE_SEVERITY)
         setEditOutcome('')
@@ -1718,13 +1735,7 @@ export function ChatPage() {
         setEditPartNumber(readPartNumberFromStructured(structured))
         setEditSupplierCode(readSupplierCodeFromStructured(structured))
         setEditVehicleLine(readVehicleLineFromStructured(structured))
-        setEditLocation(
-          normalizeLocationInput(
-            (typeof detail.location === 'string' && detail.location) ||
-              (typeof structured.location === 'string' && structured.location) ||
-              ''
-          )
-        )
+        setEditSerialNumber(normalizeSerialNumberInput(detail.serialNumber || readSerialNumberFromStructured(structured) || ''))
         setEditIntent(structured.intent ?? '')
         setEditSeverity(parseIssueSeverity(structured.severity))
         setEditOutcome(structured.outcome ?? '')
@@ -1765,10 +1776,8 @@ export function ChatPage() {
           String(readSupplierCodeFromStructured(structured)).trim(),
           readVehicleLineFromStructured(structured).slice().sort().join(','),
           String(
-            normalizeLocationInput(
-              (typeof detail.location === 'string' && detail.location) ||
-                (typeof structured.location === 'string' && structured.location) ||
-                ''
+            normalizeSerialNumberInput(
+              detail.serialNumber || readSerialNumberFromStructured(structured) || ''
             )
           ).trim(),
           String(structured.intent ?? '').trim(),
@@ -1840,7 +1849,7 @@ export function ChatPage() {
       setEditPartNumber('')
       setEditSupplierCode('')
       setEditVehicleLine([])
-      setEditLocation('')
+      setEditSerialNumber('')
       setEditIntent('')
       setEditSeverity(DEFAULT_ISSUE_SEVERITY)
       setEditOutcome('')
@@ -2498,13 +2507,25 @@ export function ChatPage() {
 
                 <div className="grid gap-2">
                   <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
+                    Serial number
+                  </label>
+                  <input
+                    value={barcodeSerialNumber}
+                    onChange={(e) => setBarcodeSerialNumber(e.target.value)}
+                    placeholder="Serial / unit number"
+                    className="w-full h-10 rounded-lg border border-[var(--color-border)] bg-white px-3 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30"
+                  />
+                </div>
+
+                <div className="grid gap-2">
+                  <label className="text-[11px] font-semibold tracking-[0.14em] uppercase text-[#777]">
                     Notes (optional)
                   </label>
                   <textarea
                     value={barcodeNotes}
                     onChange={(e) => setBarcodeNotes(e.target.value)}
                     rows={3}
-                    placeholder="Serial number or any notes regarding this part?"
+                    placeholder="Any notes regarding this part?"
                     className="w-full rounded-lg border border-[var(--color-border)] bg-white px-3 py-2 text-[13px] text-[#111] outline-none focus:ring-2 focus:ring-[var(--color-primary)]/30 resize-y"
                   />
                 </div>
@@ -2538,6 +2559,7 @@ export function ChatPage() {
                           customer: barcodeCustomer.trim() || undefined,
                           partName: barcodePartName.trim() || undefined,
                           partNumber: barcodePartNumber.trim() || undefined,
+                          serialNumber: barcodeSerialNumber.trim() || undefined,
                           metadata: barcodeNotes.trim() ? { notes: barcodeNotes.trim() } : undefined,
                         }
                         await api.barcodes.upsert(barcodeModal.barcode, payload)
@@ -2549,7 +2571,8 @@ export function ChatPage() {
                           payload.customer,
                           payload.partName,
                           payload.partNumber,
-                          barcodeNotes.trim() || undefined
+                          barcodeNotes.trim() || undefined,
+                          payload.serialNumber
                         )
 
                         if (intent?.kind === 'newLog') {
@@ -2791,7 +2814,7 @@ export function ChatPage() {
                     setEditPartNumber('')
                     setEditSupplierCode('')
                     setEditVehicleLine([])
-                    setEditLocation('')
+                    setEditSerialNumber('')
                     setEditIntent('')
                     setEditSeverity(DEFAULT_ISSUE_SEVERITY)
                     setEditOutcome('')
@@ -2923,7 +2946,7 @@ export function ChatPage() {
                             {act.reportingPlant ? (
                               <> · <span className="font-medium text-[#555]">{act.reportingPlant}</span></>
                             ) : null}
-                            {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
+                            {act.serialNumber ? <> · <span className="font-mono text-[#444]">{act.serialNumber}</span></> : null}
                             {' · '}{formatUsDateTime(act.createdAt)}
                           </span>
                         </p>
@@ -2986,7 +3009,7 @@ export function ChatPage() {
                     setEditPartNumber('')
                     setEditSupplierCode('')
                     setEditVehicleLine([])
-                    setEditLocation('')
+                    setEditSerialNumber('')
                     setEditIntent('')
                     setEditSeverity(DEFAULT_ISSUE_SEVERITY)
                     setEditOutcome('')
@@ -3109,7 +3132,7 @@ export function ChatPage() {
                           {act.reportingPlant ? (
                             <> · <span className="font-medium text-[#555]">{act.reportingPlant}</span></>
                           ) : null}
-                          {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
+                          {act.serialNumber ? <> · <span className="font-mono text-[#444]">{act.serialNumber}</span></> : null}
                           {' · '}{formatUsDateTime(act.createdAt)}
                         </span>
                       </p>
@@ -3197,7 +3220,7 @@ export function ChatPage() {
                         {act.reportingPlant ? (
                           <> · <span className="font-medium text-[#555]">{act.reportingPlant}</span></>
                         ) : null}
-                        {act.location ? <> · <span className="font-mono text-[#444]">{act.location}</span></> : null}
+                        {act.serialNumber ? <> · <span className="font-mono text-[#444]">{act.serialNumber}</span></> : null}
                         {' · '}{formatUsDateTime(act.createdAt)}
                       </span>
                     </p>
@@ -3424,18 +3447,17 @@ export function ChatPage() {
                       </div>
                       <div>
                         <label className="block text-[11px] font-semibold text-[#555] mb-1">
-                          Location <span className="font-normal text-[#999]">(up to 5 chars — where to find it)</span>
+                          Serial number
                         </label>
                         <input
                           type="text"
-                          value={editLocation}
-                          onChange={(e) => setEditLocation(normalizeLocationInput(e.target.value))}
-                          maxLength={MAX_LOCATION_LENGTH}
+                          value={editSerialNumber}
+                          onChange={(e) => setEditSerialNumber(normalizeSerialNumberInput(e.target.value))}
+                          maxLength={MAX_SERIAL_NUMBER_LENGTH}
                           inputMode="text"
-                          autoCapitalize="characters"
                           spellCheck={false}
-                          className="w-full uppercase tracking-wider rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
-                          placeholder="A12, B-7, ZN102"
+                          className="w-full rounded-[var(--radius)] border border-[var(--color-border)] bg-white px-2.5 py-1.5 text-[12px] text-[#222] placeholder:text-[#aaa] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--color-primary)]/40"
+                          placeholder="Serial / unit number"
                         />
                       </div>
                       <div>
