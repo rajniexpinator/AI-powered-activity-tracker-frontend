@@ -331,6 +331,11 @@ export function ReportsPage() {
   }
 
   async function handleClearHistory() {
+    const ok = window.confirm(
+      'Are you sure you want to clear your report history? This will permanently delete all your reports and cannot be undone.',
+    )
+    if (!ok) return
+
     setError('')
     try {
       await api.reports.clearMine()

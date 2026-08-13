@@ -27,6 +27,8 @@ export type BarcodePatternDto = {
   extracted?: Record<string, string>
 }
 
+export type BarcodeSerialStatus = 'good' | 'bad' | 'not_found'
+
 export type BarcodeBulkScanItem = {
   _id: string
   barcode: string
@@ -37,6 +39,7 @@ export type BarcodeBulkScanItem = {
   customer?: string
   supplier?: string
   serialNumber?: string
+  serialStatus?: BarcodeSerialStatus | null
   notes?: string
   patternId?: string | null
   mappingId?: string | null
@@ -49,12 +52,25 @@ export type BarcodeBulkLotSummary = {
   status: 'open' | 'closed'
   createdBy?: unknown
   itemCount: number
+  goodSerialCount?: number
+  badSerialCount?: number
+  hasSerialLists?: boolean
   createdAt?: string
   updatedAt?: string
 }
 
 export type BarcodeBulkLotDetail = BarcodeBulkLotSummary & {
   items: BarcodeBulkScanItem[]
+  goodSerials?: string[]
+  badSerials?: string[]
+}
+
+export type BarcodeSerialListUploadResult = {
+  lot: BarcodeBulkLotSummary
+  list: 'good' | 'bad'
+  mode: 'replace' | 'append'
+  added: number
+  total: number
 }
 
 export type EmployeeFileItem = {
@@ -997,13 +1013,48 @@ export const api = {
         method: 'POST',
         body: JSON.stringify(payload),
       }),
-    getOne: (id: string) =>
-      request<{ lot: BarcodeBulkLotDetail }>(`/api/barcode-bulk/${id}`, { method: 'GET' }),
+    getOne: (id: string, opts?: { includeSerialLists?: boolean }) => {
+      const qs = opts?.includeSerialLists ? '?includeSerialLists=1' : ''
+      return request<{ lot: BarcodeBulkLotDetail }>(`/api/barcode-bulk/${id}${qs}`, { method: 'GET' })
+    },
     update: (id: string, payload: { name?: string; description?: string; status?: 'open' | 'closed' }) =>
       request<{ lot: BarcodeBulkLotDetail }>(`/api/barcode-bulk/${id}`, {
         method: 'PATCH',
         body: JSON.stringify(payload),
       }),
+    uploadGoodSerials: (
+      id: string,
+      payload: { serials?: string[]; text?: string; csv?: string; mode?: 'replace' | 'append' }
+    ) =>
+      request<BarcodeSerialListUploadResult>(`/api/barcode-bulk/${id}/serial-lists/good`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    uploadBadSerials: (
+      id: string,
+      payload: { serials?: string[]; text?: string; csv?: string; mode?: 'replace' | 'append' }
+    ) =>
+      request<BarcodeSerialListUploadResult>(`/api/barcode-bulk/${id}/serial-lists/bad`, {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    clearGoodSerials: (id: string) =>
+      request<{ lot: BarcodeBulkLotSummary; list: 'good'; cleared: boolean; total: number }>(
+        `/api/barcode-bulk/${id}/serial-lists/good`,
+        { method: 'DELETE' }
+      ),
+    clearBadSerials: (id: string) =>
+      request<{ lot: BarcodeBulkLotSummary; list: 'bad'; cleared: boolean; total: number }>(
+        `/api/barcode-bulk/${id}/serial-lists/bad`,
+        { method: 'DELETE' }
+      ),
+    clearAllSerialLists: (id: string) =>
+      request<{
+        lot: BarcodeBulkLotSummary
+        cleared: boolean
+        goodSerialCount: number
+        badSerialCount: number
+      }>(`/api/barcode-bulk/${id}/serial-lists`, { method: 'DELETE' }),
     addScans: (
       id: string,
       payload: {

@@ -1,6 +1,11 @@
-import { useCallback, useEffect, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { toast } from 'react-toastify'
-import { api, type BarcodeBulkLotDetail, type BarcodeBulkLotSummary } from '@/services/api'
+import {
+  api,
+  type BarcodeBulkLotDetail,
+  type BarcodeBulkLotSummary,
+  type BarcodeSerialStatus,
+} from '@/services/api'
 import { AdminShell } from '@/components/layout/AdminShell'
 import { useBarcodeScanner } from '@/hooks/useBarcodeScanner'
 import {
@@ -13,7 +18,13 @@ import {
   X,
   AlertCircle,
   FolderOpen,
+  Upload,
+  CheckCircle2,
+  XCircle,
+  HelpCircle,
 } from 'lucide-react'
+
+type SerialListKind = 'good' | 'bad'
 
 function ScannerOverlay(props: {
   open: boolean
@@ -22,6 +33,7 @@ function ScannerOverlay(props: {
   manualBarcode: string
   setManualBarcode: (v: string) => void
   submitting: boolean
+  lastStatus: BarcodeSerialStatus | null
   onClose: () => void
   onSubmitManual: () => void
 }) {
@@ -43,6 +55,11 @@ function ScannerOverlay(props: {
         <div className="bg-black aspect-[4/3]">
           <video ref={props.videoRef as RefObject<HTMLVideoElement>} className="w-full h-full object-cover" playsInline muted />
         </div>
+        {props.lastStatus ? (
+          <div className="px-4 pt-3">
+            <SerialStatusBanner status={props.lastStatus} />
+          </div>
+        ) : null}
         {props.error ? (
           <p className="px-4 pt-3 text-[12px] text-red-600 flex items-start gap-1.5">
             <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -78,6 +95,181 @@ function ScannerOverlay(props: {
   )
 }
 
+function SerialListUploadModal(props: {
+  kind: SerialListKind
+  open: boolean
+  uploading: boolean
+  onClose: () => void
+  onSubmit: (payload: { text: string; mode: 'replace' | 'append' }) => void
+}) {
+  const [text, setText] = useState('')
+  const [mode, setMode] = useState<'replace' | 'append'>('replace')
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (props.open) {
+      setText('')
+      setMode('replace')
+    }
+  }, [props.open])
+
+  if (!props.open) return null
+
+  const label = props.kind === 'good' ? 'Good' : 'Bad'
+  const accent =
+    props.kind === 'good'
+      ? 'bg-emerald-600 hover:bg-emerald-700'
+      : 'bg-red-600 hover:bg-red-700'
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      <div className="w-full max-w-lg rounded-2xl bg-white p-5 shadow-xl">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-[16px] font-semibold text-[#222]">Upload {label} serials</h2>
+            <p className="mt-1 text-[12px] text-[#666]">
+              Paste a column of serials, or choose a CSV/TXT file. One serial per line (commas also work).
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="p-1.5 rounded-lg text-[#666] hover:bg-[var(--color-bg)]"
+            aria-label="Close"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={8}
+          placeholder={'SN001\nSN002\nSN003'}
+          className="mt-4 w-full rounded-xl border border-[var(--color-border)] px-3 py-2 text-[13px] font-mono"
+        />
+
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".csv,.txt,text/csv,text/plain"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0]
+              if (!file) return
+              const reader = new FileReader()
+              reader.onload = () => {
+                const content = typeof reader.result === 'string' ? reader.result : ''
+                setText(content)
+                toast.success(`Loaded ${file.name}`)
+              }
+              reader.onerror = () => toast.error('Could not read that file')
+              reader.readAsText(file)
+              e.target.value = ''
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => fileRef.current?.click()}
+            className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--color-border)] bg-white px-3 py-2 text-[12px] font-medium"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Choose file
+          </button>
+          <label className="inline-flex items-center gap-2 text-[12px] text-[#555]">
+            <input
+              type="radio"
+              name="serial-mode"
+              checked={mode === 'replace'}
+              onChange={() => setMode('replace')}
+            />
+            Replace list
+          </label>
+          <label className="inline-flex items-center gap-2 text-[12px] text-[#555]">
+            <input
+              type="radio"
+              name="serial-mode"
+              checked={mode === 'append'}
+              onChange={() => setMode('append')}
+            />
+            Append
+          </label>
+        </div>
+
+        <div className="mt-4 flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={props.onClose}
+            className="rounded-xl px-4 py-2 text-[13px] text-[#555]"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            disabled={props.uploading || !text.trim()}
+            onClick={() => props.onSubmit({ text, mode })}
+            className={`rounded-xl px-4 py-2 text-[13px] font-medium text-white disabled:opacity-50 ${accent}`}
+          >
+            {props.uploading ? 'Uploading…' : `Load ${label} list`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SerialStatusBanner({ status }: { status: BarcodeSerialStatus }) {
+  if (status === 'good') {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[13px] font-semibold text-emerald-800">
+        <CheckCircle2 className="w-4 h-4 shrink-0" />
+        Good
+      </div>
+    )
+  }
+  if (status === 'bad') {
+    return (
+      <div className="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-semibold text-red-800">
+        <XCircle className="w-4 h-4 shrink-0" />
+        Bad
+      </div>
+    )
+  }
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-[13px] font-semibold text-amber-900">
+      <HelpCircle className="w-4 h-4 shrink-0" />
+      Not found
+    </div>
+  )
+}
+
+function SerialStatusBadge({ status }: { status?: BarcodeSerialStatus | null }) {
+  if (!status) return <span className="text-[#bbb]">—</span>
+  if (status === 'good') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+        <CheckCircle2 className="w-3 h-3" />
+        Good
+      </span>
+    )
+  }
+  if (status === 'bad') {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700">
+        <XCircle className="w-3 h-3" />
+        Bad
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+      <HelpCircle className="w-3 h-3" />
+      Not found
+    </span>
+  )
+}
+
 function formatWhen(iso?: string) {
   if (!iso) return '—'
   try {
@@ -93,6 +285,23 @@ function formatWhen(iso?: string) {
   }
 }
 
+function toastForSerialStatus(status?: BarcodeSerialStatus | null, serial?: string) {
+  const sn = serial?.trim() ? ` (${serial.trim()})` : ''
+  if (status === 'good') {
+    toast.success(`Good${sn}`)
+    return
+  }
+  if (status === 'bad') {
+    toast.error(`Bad${sn}`)
+    return
+  }
+  if (status === 'not_found') {
+    toast.warning(`Not found${sn}`)
+    return
+  }
+  toast.success(serial ? `Added SN ${serial}` : 'Scan added to sheet')
+}
+
 export function BarcodeBulkPage() {
   const [lots, setLots] = useState<BarcodeBulkLotSummary[]>([])
   const [loadingList, setLoadingList] = useState(false)
@@ -104,6 +313,9 @@ export function BarcodeBulkPage() {
   const [showCreate, setShowCreate] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [adding, setAdding] = useState(false)
+  const [uploadKind, setUploadKind] = useState<SerialListKind | null>(null)
+  const [uploadingList, setUploadingList] = useState(false)
+  const [lastScanStatus, setLastScanStatus] = useState<BarcodeSerialStatus | null>(null)
 
   const loadLots = useCallback(async (search?: string) => {
     setLoadingList(true)
@@ -123,6 +335,7 @@ export function BarcodeBulkPage() {
 
   const openLot = useCallback(async (id: string) => {
     setLoadingLot(true)
+    setLastScanStatus(null)
     try {
       const { lot } = await api.barcodeBulk.getOne(id)
       setActiveLot(lot)
@@ -131,6 +344,18 @@ export function BarcodeBulkPage() {
     } finally {
       setLoadingLot(false)
     }
+  }, [])
+
+  const mergeLotSummary = useCallback((summary: BarcodeBulkLotSummary) => {
+    setActiveLot((prev) =>
+      prev
+        ? {
+            ...prev,
+            ...summary,
+            items: prev.items,
+          }
+        : prev
+    )
   }, [])
 
   const onDetected = useCallback(
@@ -142,22 +367,21 @@ export function BarcodeBulkPage() {
       }
       setAdding(true)
       try {
-        const { added } = await api.barcodeBulk.addScans(activeLot._id, { barcode: code })
+        const { added, lot: summary } = await api.barcodeBulk.addScans(activeLot._id, { barcode: code })
         const { lot } = await api.barcodeBulk.getOne(activeLot._id)
         setActiveLot(lot)
+        mergeLotSummary(summary)
         const row = added[0]
-        toast.success(
-          row?.partNumber || row?.serialNumber
-            ? `Added ${row.partNumber || ''} ${row.serialNumber ? `SN ${row.serialNumber}` : ''}`.trim()
-            : 'Scan added to sheet'
-        )
+        const status = row?.serialStatus ?? null
+        setLastScanStatus(status)
+        toastForSerialStatus(status, row?.serialNumber || row?.barcode)
       } catch (err) {
         toast.error(err instanceof Error ? err.message : 'Failed to add scan')
       } finally {
         setAdding(false)
       }
     },
-    [activeLot]
+    [activeLot, mergeLotSummary]
   )
 
   const scanner = useBarcodeScanner({ onDetected })
@@ -227,6 +451,72 @@ export function BarcodeBulkPage() {
     }
   }
 
+  async function submitSerialList(payload: { text: string; mode: 'replace' | 'append' }) {
+    if (!activeLot || !uploadKind) return
+    const text = payload.text.trim()
+    if (!text) {
+      toast.error('Paste serials or choose a file first.')
+      return
+    }
+    setUploadingList(true)
+    try {
+      const result =
+        uploadKind === 'good'
+          ? await api.barcodeBulk.uploadGoodSerials(activeLot._id, { text, mode: payload.mode })
+          : await api.barcodeBulk.uploadBadSerials(activeLot._id, { text, mode: payload.mode })
+      mergeLotSummary(result.lot)
+      setActiveLot((prev) =>
+        prev
+          ? {
+              ...prev,
+              goodSerialCount: result.lot.goodSerialCount ?? prev.goodSerialCount,
+              badSerialCount: result.lot.badSerialCount ?? prev.badSerialCount,
+              hasSerialLists: result.lot.hasSerialLists ?? prev.hasSerialLists,
+            }
+          : prev
+      )
+      const label = uploadKind === 'good' ? 'Good' : 'Bad'
+      toast.success(`${label} list loaded — ${result.total} serial${result.total === 1 ? '' : 's'}`)
+      setUploadKind(null)
+      await loadLots()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to upload serial list')
+    } finally {
+      setUploadingList(false)
+    }
+  }
+
+  async function clearSerialList(kind: SerialListKind) {
+    if (!activeLot) return
+    const label = kind === 'good' ? 'Good' : 'Bad'
+    if (!window.confirm(`Clear the ${label} serial list for this sheet?`)) return
+    try {
+      const result =
+        kind === 'good'
+          ? await api.barcodeBulk.clearGoodSerials(activeLot._id)
+          : await api.barcodeBulk.clearBadSerials(activeLot._id)
+      mergeLotSummary(result.lot)
+      setActiveLot((prev) =>
+        prev
+          ? {
+              ...prev,
+              goodSerialCount: result.lot.goodSerialCount ?? (kind === 'good' ? 0 : prev.goodSerialCount),
+              badSerialCount: result.lot.badSerialCount ?? (kind === 'bad' ? 0 : prev.badSerialCount),
+              hasSerialLists: result.lot.hasSerialLists,
+            }
+          : prev
+      )
+      toast.success(`${label} list cleared`)
+      await loadLots()
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to clear list')
+    }
+  }
+
+  const goodCount = activeLot?.goodSerialCount ?? 0
+  const badCount = activeLot?.badSerialCount ?? 0
+  const hasLists = Boolean(activeLot?.hasSerialLists) || goodCount > 0 || badCount > 0
+
   return (
     <AdminShell>
       <main className="mx-auto w-full max-w-[1200px] px-4 py-6 sm:px-6">
@@ -239,8 +529,8 @@ export function BarcodeBulkPage() {
                 </p>
                 <h1 className="mt-1 text-[22px] font-semibold text-[#1a1a1a]">Barcode Bulk</h1>
                 <p className="mt-1 text-[13px] text-[#666] max-w-2xl">
-                  Scan hundreds of parts into a named sheet — separate from AI logs. Come back later to the same
-                  sheet, then export a spreadsheet.
+                  Scan hundreds of parts into a named sheet — separate from AI logs. Load Good / Bad serial lists to
+                  verify each scan, then export a spreadsheet.
                 </p>
               </div>
               <button
@@ -293,6 +583,7 @@ export function BarcodeBulkPage() {
                       <th className="px-4 py-2.5 font-semibold">Sheet name</th>
                       <th className="px-4 py-2.5 font-semibold">Status</th>
                       <th className="px-4 py-2.5 font-semibold">Scans</th>
+                      <th className="px-4 py-2.5 font-semibold">Good / Bad</th>
                       <th className="px-4 py-2.5 font-semibold">Updated</th>
                       <th className="px-4 py-2.5 font-semibold" />
                     </tr>
@@ -313,6 +604,9 @@ export function BarcodeBulkPage() {
                           </span>
                         </td>
                         <td className="px-4 py-3">{lot.itemCount}</td>
+                        <td className="px-4 py-3 text-[#666]">
+                          {lot.goodSerialCount ?? 0} / {lot.badSerialCount ?? 0}
+                        </td>
                         <td className="px-4 py-3 text-[#666]">{formatWhen(lot.updatedAt)}</td>
                         <td className="px-4 py-3 text-right">
                           <button
@@ -337,6 +631,7 @@ export function BarcodeBulkPage() {
                 type="button"
                 onClick={() => {
                   setActiveLot(null)
+                  setLastScanStatus(null)
                   void loadLots(q)
                 }}
                 className="inline-flex items-center gap-1.5 text-[13px] text-[#555] hover:text-[#111]"
@@ -392,6 +687,75 @@ export function BarcodeBulkPage() {
                   </div>
                 </div>
 
+                <div className="mb-5 rounded-2xl border border-[var(--color-border)] bg-white p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="text-[13px] font-semibold text-[#222]">Serial verification</p>
+                      <p className="mt-0.5 text-[12px] text-[#666]">
+                        Upload Good and Bad lists, then each scan is marked Good, Bad, or Not found.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-[12px]">
+                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
+                        Good: {goodCount}
+                      </span>
+                      <span className="rounded-full bg-red-50 px-2.5 py-1 font-medium text-red-700">
+                        Bad: {badCount}
+                      </span>
+                    </div>
+                  </div>
+
+                  {!hasLists ? (
+                    <p className="mt-3 text-[12px] text-amber-800 bg-amber-50 border border-amber-100 rounded-xl px-3 py-2">
+                      No lists loaded yet. Upload Good and/or Bad serials to start verifying scans.
+                    </p>
+                  ) : null}
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setUploadKind('good')}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-[12px] font-medium text-emerald-800"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      Upload Good serials
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setUploadKind('bad')}
+                      className="inline-flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[12px] font-medium text-red-800"
+                    >
+                      <Upload className="w-3.5 h-3.5" />
+                      Upload Bad serials
+                    </button>
+                    {goodCount > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => void clearSerialList('good')}
+                        className="rounded-xl border border-[var(--color-border)] px-3 py-2 text-[12px] text-[#666]"
+                      >
+                        Clear Good
+                      </button>
+                    ) : null}
+                    {badCount > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => void clearSerialList('bad')}
+                        className="rounded-xl border border-[var(--color-border)] px-3 py-2 text-[12px] text-[#666]"
+                      >
+                        Clear Bad
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {lastScanStatus && hasLists ? (
+                    <div className="mt-3">
+                      <p className="mb-1 text-[11px] uppercase tracking-wide text-[#888]">Last scan</p>
+                      <SerialStatusBanner status={lastScanStatus} />
+                    </div>
+                  ) : null}
+                </div>
+
                 {activeLot.items.length === 0 ? (
                   <div className="rounded-2xl border border-dashed border-[var(--color-border)] bg-white p-8 text-center text-[13px] text-[#666]">
                     No scans yet. Click Scan to add parts to this sheet.
@@ -408,6 +772,7 @@ export function BarcodeBulkPage() {
                           <th className="px-3 py-2.5 font-semibold">Customer</th>
                           <th className="px-3 py-2.5 font-semibold">Serial</th>
                           <th className="px-3 py-2.5 font-semibold">Notes</th>
+                          <th className="px-3 py-2.5 font-semibold">Status</th>
                           <th className="px-3 py-2.5 font-semibold" />
                         </tr>
                       </thead>
@@ -424,6 +789,9 @@ export function BarcodeBulkPage() {
                             <td className="px-3 py-2 font-mono">{item.serialNumber || '—'}</td>
                             <td className="px-3 py-2 max-w-[140px] truncate" title={item.notes}>
                               {item.notes || '—'}
+                            </td>
+                            <td className="px-3 py-2">
+                              <SerialStatusBadge status={item.serialStatus} />
                             </td>
                             <td className="px-3 py-2 text-right">
                               <button
@@ -487,6 +855,16 @@ export function BarcodeBulkPage() {
         </div>
       )}
 
+      <SerialListUploadModal
+        kind={uploadKind || 'good'}
+        open={uploadKind != null}
+        uploading={uploadingList}
+        onClose={() => {
+          if (!uploadingList) setUploadKind(null)
+        }}
+        onSubmit={(payload) => void submitSerialList(payload)}
+      />
+
       <ScannerOverlay
         open={scanner.scannerOpen}
         videoRef={scanner.videoRef}
@@ -494,6 +872,7 @@ export function BarcodeBulkPage() {
         manualBarcode={scanner.manualBarcode}
         setManualBarcode={scanner.setManualBarcode}
         submitting={scanner.manualBarcodeSubmitting || adding}
+        lastStatus={hasLists ? lastScanStatus : null}
         onClose={scanner.stopScanner}
         onSubmitManual={() => void scanner.submitManual()}
       />
