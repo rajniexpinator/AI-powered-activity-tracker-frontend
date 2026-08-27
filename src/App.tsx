@@ -25,6 +25,7 @@ const EmployeeFilesPage = lazy(() =>
 const AdminActivityPage = lazy(() =>
   import('@/pages/AdminActivityPage').then((m) => ({ default: m.AdminActivityPage }))
 )
+const AdminAiPage = lazy(() => import('@/pages/AdminAiPage').then((m) => ({ default: m.AdminAiPage })))
 const ReportsPage = lazy(() => import('@/pages/ReportsPage').then((m) => ({ default: m.ReportsPage })))
 const ReportDashboardPage = lazy(() =>
   import('@/pages/ReportDashboardPage').then((m) => ({ default: m.ReportDashboardPage }))
@@ -106,6 +107,16 @@ function App() {
                 element={
                   <ProtectedRoute>
                     <AdminActivityPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="admin-ai"
+                element={
+                  <ProtectedRoute>
+                    <AdminRoute roles={['admin']}>
+                      <AdminAiPage />
+                    </AdminRoute>
                   </ProtectedRoute>
                 }
               />

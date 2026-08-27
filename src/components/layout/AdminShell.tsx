@@ -15,6 +15,7 @@ import {
   ScanLine,
   FolderOpen,
   LayoutGrid,
+  Sparkles,
 } from 'lucide-react'
 import { useAuth } from '@/context/AuthContext'
 import { isAdminRole } from '@/lib/roles'
@@ -110,6 +111,19 @@ export function AdminShell({ children }: AdminShellProps) {
               >
                 <BarChart3 className="w-4 h-4 opacity-80" />
                 Activity
+              </Link>
+            )}
+            {isAdmin && (
+              <Link
+                to="/admin-ai"
+                className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                  isActive('/admin-ai')
+                    ? 'bg-[#3F4B9D] text-white'
+                    : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                }`}
+              >
+                <Sparkles className="w-4 h-4 opacity-80" />
+                Admin AI
               </Link>
             )}
             {isAdmin && (
@@ -378,6 +392,20 @@ export function AdminShell({ children }: AdminShellProps) {
                 >
                   <BarChart3 className="w-4 h-4 opacity-80" />
                   Activity
+                </Link>
+              )}
+              {isAdmin && (
+                <Link
+                  to="/admin-ai"
+                  onClick={() => setMobileOpen(false)}
+                  className={`flex items-center gap-2 px-3 py-2.5 rounded-xl no-underline transition-colors ${
+                    isActive('/admin-ai')
+                      ? 'bg-[#3F4B9D] text-white'
+                      : 'text-[#555] hover:text-[#111] hover:bg-[var(--color-bg)]'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4 opacity-80" />
+                  Admin AI
                 </Link>
               )}
               {isAdmin && (

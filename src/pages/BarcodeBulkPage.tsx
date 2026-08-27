@@ -219,6 +219,60 @@ function SerialListUploadModal(props: {
   )
 }
 
+function countItemsByStatus(items: { serialStatus?: BarcodeSerialStatus | null }[] | undefined) {
+  let good = 0
+  let bad = 0
+  let notFound = 0
+  for (const item of items || []) {
+    if (item.serialStatus === 'good') good += 1
+    else if (item.serialStatus === 'bad') bad += 1
+    else if (item.serialStatus === 'not_found') notFound += 1
+  }
+  return { good, bad, notFound }
+}
+
+function formatCount(n: number) {
+  return n.toLocaleString()
+}
+
+function SerialListStatBox(props: {
+  kind: 'good' | 'bad'
+  loaded: number
+  scanned: number
+}) {
+  const isGood = props.kind === 'good'
+  return (
+    <div
+      className={`min-w-[148px] rounded-xl border px-3 py-2 ${
+        isGood ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'
+      }`}
+    >
+      <p
+        className={`text-[11px] font-semibold uppercase tracking-wide ${
+          isGood ? 'text-emerald-800' : 'text-red-800'
+        }`}
+      >
+        {isGood ? 'Good' : 'Bad'}
+      </p>
+      <div className="mt-1 flex items-end gap-3">
+        <div>
+          <p className={`text-[18px] font-semibold leading-none ${isGood ? 'text-emerald-900' : 'text-red-900'}`}>
+            {formatCount(props.loaded)}
+          </p>
+          <p className={`mt-0.5 text-[11px] ${isGood ? 'text-emerald-700' : 'text-red-700'}`}>loaded</p>
+        </div>
+        <div className={`h-8 w-px ${isGood ? 'bg-emerald-200' : 'bg-red-200'}`} />
+        <div>
+          <p className={`text-[18px] font-semibold leading-none ${isGood ? 'text-emerald-900' : 'text-red-900'}`}>
+            {formatCount(props.scanned)}
+          </p>
+          <p className={`mt-0.5 text-[11px] ${isGood ? 'text-emerald-700' : 'text-red-700'}`}>scanned</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SerialStatusBanner({ status }: { status: BarcodeSerialStatus }) {
   if (status === 'good') {
     return (
@@ -515,6 +569,10 @@ export function BarcodeBulkPage() {
 
   const goodCount = activeLot?.goodSerialCount ?? 0
   const badCount = activeLot?.badSerialCount ?? 0
+  const fromItems = countItemsByStatus(activeLot?.items)
+  const goodScanned = activeLot?.goodScannedCount ?? fromItems.good
+  const badScanned = activeLot?.badScannedCount ?? fromItems.bad
+  const notFoundScanned = activeLot?.notFoundScannedCount ?? fromItems.notFound
   const hasLists = Boolean(activeLot?.hasSerialLists) || goodCount > 0 || badCount > 0
 
   return (
@@ -583,7 +641,7 @@ export function BarcodeBulkPage() {
                       <th className="px-4 py-2.5 font-semibold">Sheet name</th>
                       <th className="px-4 py-2.5 font-semibold">Status</th>
                       <th className="px-4 py-2.5 font-semibold">Scans</th>
-                      <th className="px-4 py-2.5 font-semibold">Good / Bad</th>
+                      <th className="px-4 py-2.5 font-semibold">Loaded / scanned</th>
                       <th className="px-4 py-2.5 font-semibold">Updated</th>
                       <th className="px-4 py-2.5 font-semibold" />
                     </tr>
@@ -605,7 +663,16 @@ export function BarcodeBulkPage() {
                         </td>
                         <td className="px-4 py-3">{lot.itemCount}</td>
                         <td className="px-4 py-3 text-[#666]">
-                          {lot.goodSerialCount ?? 0} / {lot.badSerialCount ?? 0}
+                          <div className="flex flex-col gap-0.5 text-[12px] leading-tight">
+                            <span>
+                              Good {formatCount(lot.goodSerialCount ?? 0)} loaded ·{' '}
+                              {formatCount(lot.goodScannedCount ?? 0)} scanned
+                            </span>
+                            <span>
+                              Bad {formatCount(lot.badSerialCount ?? 0)} loaded ·{' '}
+                              {formatCount(lot.badScannedCount ?? 0)} scanned
+                            </span>
+                          </div>
                         </td>
                         <td className="px-4 py-3 text-[#666]">{formatWhen(lot.updatedAt)}</td>
                         <td className="px-4 py-3 text-right">
@@ -692,16 +759,23 @@ export function BarcodeBulkPage() {
                     <div>
                       <p className="text-[13px] font-semibold text-[#222]">Serial verification</p>
                       <p className="mt-0.5 text-[12px] text-[#666]">
-                        Upload Good and Bad lists, then each scan is marked Good, Bad, or Not found.
+                        Loaded stays at the list size. Scanned goes up as Good, Bad, or Not found hits come in.
                       </p>
                     </div>
-                    <div className="flex flex-wrap gap-2 text-[12px]">
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 font-medium text-emerald-700">
-                        Good: {goodCount}
-                      </span>
-                      <span className="rounded-full bg-red-50 px-2.5 py-1 font-medium text-red-700">
-                        Bad: {badCount}
-                      </span>
+                    <div className="flex flex-wrap items-stretch gap-2">
+                      <SerialListStatBox kind="good" loaded={goodCount} scanned={goodScanned} />
+                      <SerialListStatBox kind="bad" loaded={badCount} scanned={badScanned} />
+                      {hasLists ? (
+                        <div className="min-w-[108px] rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-900">
+                            Not found
+                          </p>
+                          <p className="mt-1 text-[18px] font-semibold leading-none text-amber-950">
+                            {formatCount(notFoundScanned)}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-amber-800">scanned</p>
+                        </div>
+                      ) : null}
                     </div>
                   </div>
 

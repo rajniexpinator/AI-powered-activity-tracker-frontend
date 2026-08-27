@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { MessageSquare, Users, BarChart3, Clock, ArrowRight } from 'lucide-react'
+import { MessageSquare, Users, BarChart3, Clock, ArrowRight, Sparkles } from 'lucide-react'
 import { api } from '@/services/api'
 import { useAuth } from '@/context/AuthContext'
 import { isAdminRole } from '@/lib/roles'
@@ -126,6 +126,21 @@ export function DashboardPage() {
                           Manage employees
                         </p>
                         <p className="mt-0.5 text-[11px] text-[#777]">Invite team members and update roles.</p>
+                      </div>
+                      <ArrowRight className="w-4 h-4 text-[var(--color-primary)]" />
+                    </Link>
+                  )}
+                  {isAdmin && (
+                    <Link
+                      to="/admin-ai"
+                      className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg)] px-4 py-3 no-underline hover:bg-white hover:border-[var(--color-primary)]/30 transition-colors"
+                    >
+                      <div>
+                        <p className="text-[13px] font-semibold text-[#111] flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-[var(--color-primary)]" />
+                          Admin AI
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-[#777]">Ask questions about live logs, no daily CSV.</p>
                       </div>
                       <ArrowRight className="w-4 h-4 text-[var(--color-primary)]" />
                     </Link>

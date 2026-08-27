@@ -16,6 +16,8 @@ export function Layout() {
     location.pathname.startsWith('/employee-files/') ||
     location.pathname === '/activity' ||
     location.pathname.startsWith('/activity/') ||
+    location.pathname === '/admin-ai' ||
+    location.pathname.startsWith('/admin-ai/') ||
     location.pathname === '/reports' ||
     location.pathname.startsWith('/reports/') ||
     location.pathname === '/report-dashboard' ||

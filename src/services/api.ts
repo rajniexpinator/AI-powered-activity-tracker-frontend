@@ -54,6 +54,9 @@ export type BarcodeBulkLotSummary = {
   itemCount: number
   goodSerialCount?: number
   badSerialCount?: number
+  goodScannedCount?: number
+  badScannedCount?: number
+  notFoundScannedCount?: number
   hasSerialLists?: boolean
   createdAt?: string
   updatedAt?: string
@@ -510,6 +513,40 @@ export const api = {
           userId?: { _id: string; name?: string; email?: string; role?: string }
         }[]
       }>('/api/activities/admin/ai-query', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+
+    /** Admin-only live-data assistant (follow-ups, stats, photo links). */
+    adminAiExplore: (payload: {
+      question: string
+      history?: Array<{ role: 'user' | 'assistant'; content: string }>
+      limit?: number
+    }) =>
+      request<{
+        interpretation: string
+        answer: string
+        suggestedQuestions?: string[]
+        stats?: {
+          matched: number
+          withPhotos: number
+          byCustomer?: { name: string; count: number }[]
+          byPlant?: { name: string; count: number }[]
+          byEmployee?: { name: string; count: number }[]
+          bySeverity?: Record<string, number>
+        }
+        activities: {
+          _id: string
+          customer?: string
+          summary?: string
+          createdAt: string
+          serialNumber?: string
+          reportingPlant?: string
+          photoCount?: number
+          photoUrls?: string[]
+          userId?: { _id: string; name?: string; email?: string; role?: string }
+        }[]
+      }>('/api/activities/admin/ai-explore', {
         method: 'POST',
         body: JSON.stringify(payload),
       }),

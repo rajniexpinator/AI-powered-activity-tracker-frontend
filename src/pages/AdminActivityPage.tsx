@@ -1160,8 +1160,12 @@ export function AdminActivityPage() {
                 <h3 className="text-[13px] font-semibold text-[var(--color-text)]">Ask AI about activity</h3>
                 <p className="mt-1 text-[12px] text-[var(--color-text-secondary)] leading-relaxed">
                   Type a question in plain English. The assistant maps it to customer names, dates, and keywords,
-                  then searches your database. This is different from the quality report, which writes one long
-                  narrative from the filtered table.
+                  then searches your database. For a stronger Admin-only chat over live data, use{' '}
+                  <Link to="/admin-ai" className="font-semibold text-[var(--color-primary)] hover:underline">
+                    Admin AI
+                  </Link>
+                  . This search box is different from the quality report, which writes one long narrative from the
+                  filtered table.
                 </p>
                 <div className="mt-3 flex flex-col sm:flex-row gap-2 sm:items-end">
                   <label className="sr-only" htmlFor="admin-ai-question">
