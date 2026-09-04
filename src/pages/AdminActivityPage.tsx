@@ -575,7 +575,15 @@ export function AdminActivityPage() {
     setActionMenuId(null)
     try {
       const { report, reportId, imageGallery } = await api.activities.generateWeeklyReport({
-        ...appliedFilters,
+        userId: appliedFilters.userId,
+        customers: appliedFilters.customers,
+        period: appliedFilters.period,
+        from: appliedFilters.from,
+        to: appliedFilters.to,
+        oem: appliedFilters.oem,
+        severity: appliedFilters.severity,
+        minSeverity: appliedFilters.minSeverity,
+        limit: 500,
         includeCustomerSummaries: includeCustomerSummaries && selectedCustomers.length === 0,
         reportSections,
         includeReportPictures,
@@ -604,9 +612,10 @@ export function AdminActivityPage() {
       if (appliedFilters.period) search.set('period', appliedFilters.period)
       if (appliedFilters.from) search.set('from', appliedFilters.from)
       if (appliedFilters.to) search.set('to', appliedFilters.to)
-      if (appliedFilters.limit) search.set('limit', String(appliedFilters.limit))
       if (appliedFilters.severity) search.set('severity', appliedFilters.severity)
       if (appliedFilters.minSeverity) search.set('minSeverity', appliedFilters.minSeverity)
+      if (appliedFilters.oem) search.set('oem', appliedFilters.oem)
+      search.set('limit', '5000')
       if (tab === 'archived') search.set('archived', 'true')
       const qs = search.toString()
       const base = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -648,12 +657,18 @@ export function AdminActivityPage() {
       if (appliedFilters.to) search.set('to', appliedFilters.to)
       if (appliedFilters.severity) search.set('severity', appliedFilters.severity)
       if (appliedFilters.minSeverity) search.set('minSeverity', appliedFilters.minSeverity)
+      if (appliedFilters.oem) search.set('oem', appliedFilters.oem)
       if (tab === 'archived') search.set('archived', 'true')
-      const weekEnd =
-        appliedFilters.to ||
-        appliedFilters.from ||
-        new Date().toISOString().slice(0, 10)
-      search.set('weekEnd', weekEnd)
+      const useAllDates = datePeriod === 'all' && !appliedFilters.from && !appliedFilters.to
+      if (useAllDates) {
+        search.set('period', 'all')
+      } else {
+        const weekEnd =
+          appliedFilters.to ||
+          appliedFilters.from ||
+          new Date().toISOString().slice(0, 10)
+        search.set('weekEnd', weekEnd)
+      }
 
       const qs = search.toString()
       const base = import.meta.env.VITE_API_BASE_URL ?? ''
@@ -672,10 +687,16 @@ export function AdminActivityPage() {
       const downloadUrl = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = downloadUrl
+      const weekEndLabel =
+        appliedFilters.to ||
+        appliedFilters.from ||
+        new Date().toISOString().slice(0, 10)
       link.download =
-        appliedFilters.from && appliedFilters.to
-          ? `weekly-activity-report-${appliedFilters.from}_to_${appliedFilters.to}.xlsx`
-          : `weekly-activity-report-${weekEnd}.xlsx`
+        useAllDates
+          ? 'weekly-activity-report-all-dates.xlsx'
+          : appliedFilters.from && appliedFilters.to
+            ? `weekly-activity-report-${appliedFilters.from}_to_${appliedFilters.to}.xlsx`
+            : `weekly-activity-report-${weekEndLabel}.xlsx`
       document.body.appendChild(link)
       link.click()
       link.remove()
